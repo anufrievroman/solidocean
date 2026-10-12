@@ -1,0 +1,18 @@
+# conda env create -f environment.yml && conda activate solidocean && pip install -e . --no-deps
+name: solidocean
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - numpy
+  - scipy
+  - python-mumps      # fast sparse direct solver (falls back to scipy SuperLU if absent)
+  - gmsh
+  - python-gmsh
+  - matplotlib
+  - tomli-w
+  - pillow            # GUI: animated GIF export
+  - pyside6
+  - pyvista
+  - pyvistaqt
+  - pytest            # development: tests

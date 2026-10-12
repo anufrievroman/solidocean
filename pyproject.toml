@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solidocean"
+version = "0.1.0"
+description = "Open-source FEM solver for elastic eigenfrequencies, phonon dispersion and heat transfer in 3D structures"
+authors = [{ name = "Anufriev Roman" }]
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "gmsh", "matplotlib", "tomli_w"]
+
+[project.optional-dependencies]
+gui = ["PySide6", "pyvista", "pyvistaqt", "pillow"]
+dev = ["pytest"]
+
+[project.scripts]
+solidocean = "solidocean.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+solidocean = ["gui/resources/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
