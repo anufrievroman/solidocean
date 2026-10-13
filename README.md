@@ -2,24 +2,38 @@
 
 # SolidOcean
 
-SolidOcean is a free and open-source finite element tool for 3D structures: phonon dispersion and
-eigenfrequencies of periodic and finite structures, static and driven solid mechanics, and heat transfer.
-A desktop interface takes a model from geometry and mesh to physics, study and results; every model is a
-human-readable TOML file that can also be run headless from the command line, with variable sweeps.
+SolidOcean is a free and open-source finite element modelling tool for calculating and analysing phonon
+dispersion relations, mechanical waves, and heat transfer problems.
+
+Essentially, it is a Qt user interface that unites several open-source tools for creating a mesh (with the
+Gmsh mesher), solving differential equations with boundary conditions (with the MUMPS solver), and analysing
+the results (with Matplotlib). Every model is a simple human-readable TOML file that can also be run headless
+from the command line, making it ideal for scripting and working with agents.
 
 ![SolidOcean: the mesh of a silicon unit cell with an aluminium pillar](docs/screenshot.jpeg)
 
+## What it can do
+
+**Solid mechanics problems**
+- **Eigenfrequencies** and mode shapes calculations with phonon dispersion along chosen wavevector paths in
+  selected Brillouin zones.
+- **Stationary** displacement calculation with strain, stress and von Mises stress under fixed or prescribed
+  displacements and boundary loads.
+- **Frequency domain** studies with the driven response to oscillating loads or displacements, with loss
+  factors and absorbing regions.
+
+**Heat transfer problems**
+- **Stationary** and **transient** problems with fixed temperature, heat flux, convection and radiation
+  boundaries, volume heat sources with pulses and spatial profiles, thermal boundary resistances and thin
+  resistive layers at interfaces.
+- **Frequency domain** problems with the temperature oscillation driven at one frequency, as in the 3ω and
+  FDTR methods.
+
 ## Installation
 
-With [conda](https://conda-forge.org/download/), on macOS, Linux and Windows:
-
-```bash
-conda create -n solidocean -c conda-forge solidocean
-conda activate solidocean
-```
-
-This also adds SolidOcean to the applications menu (macOS: `~/Applications`; conda creates it, mamba does not).
-To work on the code instead, install the dependencies from conda-forge and SolidOcean from a clone:
+All dependencies are available from [conda-forge](https://conda-forge.org/download/) for macOS, Linux and
+Windows, which is the recommended way to install them (any conda distribution works;
+[Miniforge](https://conda-forge.org/download/) is the smallest one preconfigured for conda-forge):
 
 ```bash
 git clone https://github.com/anufrievroman/solidocean.git
@@ -29,6 +43,15 @@ conda activate solidocean
 pip install -e . --no-deps
 ```
 
+This is an editable install, so a `git pull` is enough to update it. Run `solidocean` to launch the
+interface (the first launch is a bit slow on macOS). On macOS, `solidocean --install-app` then adds
+`SolidOcean.app` to `~/Applications`, so it can be opened from Spotlight or the Dock.
+
+The solver is [MUMPS](https://mumps-solver.org) when `python-mumps` is installed (the conda environment
+installs it), otherwise SciPy's SuperLU, which is roughly ten times slower. Without conda,
+`pip install -e ".[gui,dev]"` works in a virtual environment, but `python-mumps` is not on PyPI and the
+`gmsh` wheels are not available for every platform.
+
 ## Usage
 
 ```bash
@@ -36,7 +59,7 @@ solidocean                                # the interface (File → New offers r
 solidocean --template square slab.toml    # a new model file from a template
 solidocean slab.toml                      # run it headless: CSV, NPZ and the model in slab/
 solidocean --set "r=0.35*a" slab.toml     # override a variable from the command line
-solidocean --install-app                  # macOS, installed from a clone: add SolidOcean.app to ~/Applications
+solidocean --install-app                  # macOS: add SolidOcean.app to ~/Applications
 ```
 
 Templates: `empty`, `bulk`, `membrane`, `beam`, `square`, `hexagonal`, `honeycomb`, `pillars`,
@@ -44,29 +67,15 @@ Templates: `empty`, `bulk`, `membrane`, `beam`, `square`, `hexagonal`, `honeycom
 `heat_pad`, `heat_radiation`, `heat_diode`, `heat_contact`, `heat_3omega`, `heat_fdtr` (heat transfer).
 The model file format is described in [docs/input-format.md](docs/input-format.md).
 
-## Physics
-
-**Solid mechanics** with anisotropic elasticity, rotated crystal orientations and several bonded materials
-(a library of Si, diamond, Ge, GaAs, 3C-SiC, 4H-SiC, Al, Au, Cr and SiO2, or your own):
-- *Eigenfrequencies* and mode shapes; in periodic structures (square, rectangular, hexagonal or custom
-  lattices) phonon dispersion along wavevector paths, with Bloch-periodic and symmetry boundaries.
-- *Stationary*: displacement, strain, stress and von Mises stress under fixed or prescribed displacements
-  and boundary loads (force per area, total force, pressure).
-- *Frequency domain*: the driven response to oscillating loads or displacements, with loss factors and
-  absorbing regions, e.g. the transmission of waves through a phononic structure.
-
-**Heat transfer** (Fourier conduction) with anisotropic and temperature-dependent properties:
-- *Stationary* and *transient*: fixed temperature, heat flux, convection and radiation boundaries, volume
-  heat sources with rectangular, Gaussian or repeated pulses and spatial profiles such as a Gaussian beam,
-  thermal boundary resistances and thin resistive layers at interfaces.
-- *Frequency domain*: the temperature oscillation driven at one frequency, as in the 3ω and FDTR
-  methods.
+## Models
 
 Any variable of a model (a dimension, a material property, a frequency) can be swept, and results are
 evaluated with expressions of the fields. Boundary conditions apply to faces of the model or of one object,
 optionally only inside a box. Geometry is built from blocks, cylinders, cones, spheres, prisms and lattice
 cells (added or subtracted, rotated, arrayed) and meshed with linear or quadratic tetrahedra, finer where
 needed.
+Materials may be anisotropic, rotated and temperature-dependent, with a built-in library of Si, diamond, Ge,
+GaAs, 3C-SiC, 4H-SiC, Al, Au, Cr and SiO2.
 
 ## Validation
 
