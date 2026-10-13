@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ... import fields
+from ... import fields, outputs
 from ...expressions import Evaluator, UNITS
 from ..base import Cancelled
 from . import fields as solid_fields
@@ -87,31 +87,44 @@ class ModalResults:
                     w.writerow(row)
         return path
 
-    def save(self, directory: Path, freq_unit: str = "GHz") -> list[Path]:
+    def save(self, directory: Path, freq_unit: str = "GHz", contents=outputs.CONTENTS) -> list[Path]:
+        """dispersion.csv ('tables': one row per solve) and results.npz ('data': frequencies,
+        wavevectors and quantities in SI)."""
         directory.mkdir(parents=True, exist_ok=True)
-        csv_path = self.save_csv(directory / "eigenfrequencies.csv", freq_unit)
-        npz_path = directory / "results.npz"
-        names = list(self.quantities)
-        np.savez(npz_path, freqs=self.freqs, k=self.k, x=self.x, outer_values=self.outer_values,
-                 **{f"q{n}": self.quantities[q] for n, q in enumerate(names)},
-                 meta=json.dumps({"x_label": self.x_label, "ticks": self.ticks, "quantities": names,
-                                  "outer_name": self.outer_name, "info": self.info}))
-        return [csv_path, npz_path]
+        files = []
+        if "tables" in contents:
+            files.append(self.save_csv(directory / "dispersion.csv", freq_unit))
+        if "data" in contents:
+            npz_path = directory / "results.npz"
+            names = list(self.quantities)
+            np.savez(npz_path, freqs=self.freqs, k=self.k, x=self.x, outer_values=self.outer_values,
+                     **{f"q{n}": self.quantities[q] for n, q in enumerate(names)},
+                     meta=json.dumps({"x_label": self.x_label, "ticks": self.ticks, "quantities": names,
+                                      "outer_name": self.outer_name, "info": self.info}))
+            files.append(npz_path)
+        return files
 
     def write_outputs(self, project, directory: Path, plots) -> list[Path]:
-        """Everything a headless run writes: eigenfrequencies.csv, results.npz, a CSV per other quantity and
-        (output.plot) a PNG per plot, the first as dispersion.png."""
-        from ...results.modal import draw
-        from ...results.style import save_png, slug
-        written = self.save(directory, project.frequency_unit)
-        for pl in plots:
-            extra = pl.color_by if pl.kind == "colored" else pl.quantity
-            if extra.strip() != "freq":  # eigenfrequencies.csv already holds the frequencies
-                written.append(self.save_table(directory / f"{slug(pl.name)}.csv", extra))
-        if project.output.plot:
-            for n, pl in enumerate(plots):
-                png = directory / ("dispersion.png" if n == 0 else f"{slug(pl.name)}.png")
-                written.append(save_png(png, lambda ax, pl=pl: draw(self, ax, project, pl)))
+        """Everything a run writes, as [output] contents says: dispersion.csv, results.npz, a CSV per
+        other quantity, and the model with its run record. Plots stay in the GUI ("Save plot…")."""
+        from ...results.style import slug
+        out = project.output
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        written = self.save(directory, project.frequency_unit, out.contents)
+        if out.wants("tables"):
+            for pl in plots:
+                extra = pl.color_by if pl.kind == "colored" else pl.quantity
+                # dispersion.csv already holds the frequencies; a quantity of a plot added after the run
+                # has no values yet
+                if extra.strip() == "freq" or self.values(extra) is None:
+                    continue
+                path = directory / f"{slug(pl.name)}.csv"
+                if path in written:      # a plot named like the frequencies file
+                    path = directory / f"{slug(pl.name)}_{slug(extra)}.csv"
+                written.append(self.save_table(path, extra))
+        if out.wants("model"):
+            written += outputs.write_record(project, directory, self)
         return written
 
     @classmethod

@@ -30,8 +30,9 @@ def test_cli_run(tmp_path, EXAMPLE):
     p.solid.study.num_eigs = 4
     path = p.save(tmp_path / "m.toml")
     assert main([str(path), "-q"]) == 0
-    assert (tmp_path / "m_results" / "eigenfrequencies.csv").exists()
-    assert (tmp_path / "m_results" / "dispersion.png").exists()
+    out = tmp_path / "m"
+    assert {f.name for f in out.iterdir()} == {"dispersion.csv", "results.npz", "model.toml",
+                                               "run.json", "dispersion_colored.csv"}
 
 
 def test_disabled_sweeps_roundtrip_and_are_skipped(tmp_path, EXAMPLE):

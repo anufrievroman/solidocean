@@ -14,7 +14,8 @@ from ...physics.heat.properties import nonlinear
 from ...selection import ALL_FACES, FACES, selection_text
 from .study import solver_box
 from .common import (
-    ERROR_STYLE, ExprEdit, Panel, field_quantity_rows, muted_label, objects, outer_labels, selection_box,
+    ERROR_STYLE, ExprEdit, Panel, equations, field_quantity_rows, muted_label, objects, outer_labels,
+    selection_box,
 )
 
 
@@ -155,13 +156,21 @@ def profile_box(panel, profile, refresh, surface=True) -> QGroupBox:
 
 class HeatPanel(Panel):
     title = "Heat Transfer"
-    help = ("Heat conduction (Fourier's law):  ρ cp ∂T/∂t = ∇·(k∇T) + Q.  Faces without a condition are "
-            "insulated (zero flux, equivalent to a mirror-symmetry plane). Conditions act on faces of the model's "
-            "bounding box or of one object (e.g. the top of a pad); heat sources fill all domains of a material. "
-            "Fluxes and sources can be pulsed in transient studies. Radiation and temperature-dependent material "
-            "properties (k, cp, ρ using T) make the model nonlinear: it is solved by iteration. Interfaces between "
-            "objects are perfect contacts unless they have a contact resistance or a thin layer (the temperature "
-            "then jumps across them).")
+    help = ("Conduction in the meshed structure. Conditions act on faces of the model's bounding box or of one "
+            "object (e.g. the top of a pad); heat sources fill all domains of a material, and fluxes and "
+            "sources can be pulsed in transient studies. Interfaces between objects are perfect contacts "
+            "unless given a contact resistance or a thin layer.")
+    formalism = equations(
+        ("ρ c<sub>p</sub> ∂T/∂t = ∇·(k ∇T) + Q", "Heat conduction (Fourier's law), with the heat sources Q "
+         "(W/m³). A stationary study drops the time term and solves ∇·(k ∇T) + Q = 0."),
+        ("n·(k ∇T) = 0", "On every face without a condition: insulated — the same as a mirror-symmetry plane."),
+        ("C Ṫ + K T = f", "The assembled system (quadratic tetrahedra). Stationary: K T = f, one sparse solve. "
+         "Transient: Crank-Nicolson time steps, the matrix factorised once if the properties are constant. "
+         "Frequency domain: (K + iωC) T̂ = f̂ for the complex amplitude of the temperature."),
+        "Radiation, or properties written with the temperature (k, c<sub>p</sub>, ρ using T), make the problem "
+        "nonlinear: it is then solved by Picard iteration until the temperature stops changing, re-assembling "
+        "only the matrix that varies.",
+    )
 
     def build(self):
         h = self.p.heat
@@ -196,8 +205,13 @@ class HeatPanel(Panel):
 
 class HeatInitialPanel(Panel):
     title = "Initial values"
-    help = ("Initial temperature for transient studies (also the starting guess elsewhere). May depend on "
-            "position, e.g.  300[K] + 10[K]*exp(-(x^2+y^2)/(100[nm])^2).")
+    help = ("The temperature a transient study starts from. May depend on position, e.g. "
+            "300[K] + 10[K]*exp(-(x^2+y^2)/(100[nm])^2).")
+    formalism = equations(
+        ("T(r, 0) = T₀(r)", "The initial condition of a transient study, evaluated at the nodes of the mesh. "
+         "In stationary and frequency-domain studies it is only the starting guess of the nonlinear "
+         "iteration (a linear model ignores it)."),
+    )
 
     def build(self):
         from ... import fields
@@ -223,25 +237,49 @@ class HeatInitialPanel(Panel):
         f.addRow(note)
 
 
+HEAT_CONDITION_HELP = {
+    "temperature": "The selected faces are held at a given temperature.",
+    "flux": "Heat entering the body through the selected faces, e.g. absorbed laser power: uniform or with a "
+            "spatial profile (a Gaussian beam), constant or pulsed / oscillating in time.",
+    "convection": "Cooling or heating by a fluid around the structure.",
+    "radiation": "Thermal radiation to the surroundings — often the main heat loss in vacuum.",
+}
+
+HEAT_CONDITION_FORMALISM = {
+    "temperature": equations(
+        ("T = T₀", "A fixed temperature (Dirichlet condition) on the selected faces. Implementation: every "
+         "node of those boundary faces is held at T₀ — its degree of freedom is removed from the system. "
+         "Where selections overlap, the later condition's temperature wins (fluxes, in contrast, add up)."),
+    ),
+    "flux": equations(
+        ("−n·(k ∇T) = q", "The heat flux into the body through the selected faces (W/m², positive = heating). "
+         "Implementation: ∫ v q dS over the selected boundary triangles, added to the right-hand side; no "
+         "degree of freedom is removed, so the faces are free to warm up. A spatial profile multiplies q "
+         "over the face, a pulse multiplies it in time (step-averaged over each time step)."),
+    ),
+    "convection": equations(
+        ("−n·(k ∇T) = h (T<sub>ext</sub> − T)", "Convective cooling or heating (a Robin condition) with the "
+         "heat-transfer coefficient h and the temperature T<sub>ext</sub> of the surrounding fluid. "
+         "Implementation: h ∫ v T dS joins the matrix and h T<sub>ext</sub> ∫ v dS the right-hand side, so the "
+         "condition stays linear — no iteration needed."),
+    ),
+    "radiation": equations(
+        ("−n·(k ∇T) = ε σ (T<sub>amb</sub>⁴ − T⁴)", "Surface-to-ambient thermal radiation, with the emissivity "
+         "ε (0 to 1) and the Stefan-Boltzmann constant σ. Implementation: the fourth power is Newton-linearised "
+         "about the current temperature (4 ε σ T³ in the matrix) and the solve is iterated until it settles. "
+         "It adds to other conditions on the same faces, e.g. convection."),
+    ),
+}
+
+
 class HeatConditionPanel(Panel):
     def __init__(self, win, index):
         self.index = index
         self.c = win.project.heat.conditions[index]
         self.title = f"{HEAT_TITLES.get(self.c.type, self.c.type)}: {self.c.name}" if self.c.name else \
             HEAT_TITLES.get(self.c.type, self.c.type)
-        self.help = {
-            "temperature": "Fixed temperature on the selected faces. Where selections overlap, the later "
-                           "condition's temperature wins; fluxes add up.",
-            "flux": "Heat flux into the body through the selected faces (W/m², positive = heating), e.g. "
-                    "absorbed laser power: uniform or with a spatial profile (e.g. a Gaussian beam), constant or "
-                    "pulsed / oscillating in time.",
-            "convection": "Convective cooling/heating: q = h (T_ext − T), with heat-transfer coefficient h and "
-                          "ambient temperature T_ext.",
-            "radiation": "Thermal radiation to the surroundings (surface-to-ambient): q = ε σ (T_amb⁴ − T⁴), with "
-                         "emissivity ε (0 to 1) and ambient temperature T_amb. Often the main heat loss of a "
-                         "structure in vacuum. Adds to other conditions on the same faces (e.g. convection); "
-                         "makes the model nonlinear (solved by iteration).",
-        }.get(self.c.type, "")
+        self.help = HEAT_CONDITION_HELP.get(self.c.type, "")
+        self.formalism = HEAT_CONDITION_FORMALISM.get(self.c.type, "")
         super().__init__(win)
 
     def build(self):
@@ -278,8 +316,13 @@ class HeatConditionPanel(Panel):
 
 class HeatSourcePanel(Panel):
     title = "Heat source"
-    help = ("Volumetric heat generation Q (W/m³) in every domain of the selected material (e.g. Joule heating). "
-            "In transient studies it may be pulsed or oscillate about its value.")
+    help = ("Heat generated inside the structure, e.g. Joule heating or absorption. In transient studies it "
+            "may be pulsed or oscillate about its value.")
+    formalism = equations(
+        ("Q(r, t)  [W/m³]", "The source term of the heat equation, filling every domain made of the selected "
+         "material. Implementation: ∫ v Q dV over the elements of those domains, added to the right-hand "
+         "side; a spatial profile shapes Q over the volume and a pulse shapes it in time."),
+    )
 
     def __init__(self, win, index):
         self.index = index
@@ -306,21 +349,41 @@ class HeatSourcePanel(Panel):
         self.outer.addWidget(pulse_box(self, q.pulse, refresh, lambda: q.value))
 
 
-class HeatInterfacePanel(Panel):
-    help = ("Thermal contact at the interfaces between two objects: the temperature jumps across them and the heat "
-            "flux through them is q = ΔT / R. Without one, interfaces are perfect contacts.\n"
-            "Contact resistance: a thermal boundary (Kapitza) resistance R; typically 1e-9 to 1e-8 m²K/W between "
-            "solids (conductances of 1 GW/(m²K) down to 100 MW/(m²K)), much more for poor mechanical contacts. "
-            "May depend on T (the mean of both sides).\n"
-            "Thin layer: a layer of a material that is too thin to mesh, e.g. a 5 nm Cr adhesion layer under a "
-            "gold pad: R = d / k (k across the layer), plus its heat capacity ρ cp d in transient studies; heat "
-            "does not flow along it. Its properties may depend on T.")
+INTERFACE_SIDES = ("Implementation: the nodes on the interface are duplicated, one copy for each side, and "
+                   "the two copies coupled by ∫ (T₁ − T₂)(v₁ − v₂) / R dS over the interface triangles. "
+                   "Junctions where several objects meet stay connected. Without an interface condition the "
+                   "sides share their nodes: a perfect contact.")
 
+INTERFACE_HELP = {
+    "resistance": "A thermal contact between two objects: the temperature jumps across it.",
+    "layer": "A layer of material too thin to mesh, e.g. a 5 nm Cr adhesion layer under a gold pad.",
+}
+
+INTERFACE_FORMALISM = {
+    "resistance": equations(
+        ("q = (T₁ − T₂) / R", "The heat flux through the interface; the temperature jumps across it by "
+         "ΔT = q R. A thermal boundary (Kapitza) resistance is typically 1e-9 to 1e-8 m²K/W between solids "
+         "(conductances of 1 GW/(m²K) down to 100 MW/(m²K)), much more for a poor mechanical contact. R may "
+         "depend on T, the mean of both sides."),
+        INTERFACE_SIDES,
+    ),
+    "layer": equations(
+        ("R = d / k", "The resistance of a layer of thickness d, with k taken across the layer; heat does not "
+         "flow along it. In transient studies the layer also carries its heat capacity ρ c<sub>p</sub> d, "
+         "split between the two sides. Its properties may depend on T."),
+        INTERFACE_SIDES,
+    ),
+}
+
+
+class HeatInterfacePanel(Panel):
     def __init__(self, win, index):
         self.index = index
         self.c = win.project.heat.interfaces[index]
         title = INTERFACE_TITLES.get(self.c.type, self.c.type)
         self.title = f"{title}: {self.c.name}" if self.c.name else title
+        self.help = INTERFACE_HELP.get(self.c.type, "")
+        self.formalism = INTERFACE_FORMALISM.get(self.c.type, "")
         super().__init__(win)
 
     def build(self):

@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
-    QPushButton, QTableWidgetItem, QVBoxLayout, QWidget,
+    QPushButton, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
 from ... import materials as mat
@@ -58,6 +58,55 @@ def set_value_item(item: QTableWidgetItem, text: str, ok: bool, tooltip: str = "
 def theme_text() -> str:
     """Normal text colour for matplotlib drawings embedded in panels."""
     return "#e6e6e6" if theme.is_dark() else "#222222"
+
+
+def labelled(label: str, widget: QWidget) -> QWidget:
+    """A widget under its own label, to be used full width (the label never steals room from the field)."""
+    box = QWidget()
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(2)
+    lay.addWidget(QLabel(label))
+    lay.addWidget(widget)
+    return box
+
+
+def spoiler(win, title: str, html: str, state: str) -> tuple[QToolButton, QLabel]:
+    """A collapsible block of help text: a title that folds the text away. Its open/closed state is
+    remembered on the window for the session, under the attribute `state`. Returns the two widgets, for
+    the caller to put in a form or a layout."""
+    toggle = QToolButton()
+    toggle.setCheckable(True)
+    toggle.setChecked(getattr(win, state, False))
+    toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+    toggle.setStyleSheet("QToolButton { border: none; background: transparent; font-weight: 600; }")
+    info = QLabel(html)
+    info.setWordWrap(True)
+    info.setTextFormat(Qt.TextFormat.RichText)
+    info.setStyleSheet(f"color: {theme.muted()}; padding-left: 18px;")
+
+    def show(on):
+        toggle.setText(("▾" if on else "▸") + f"  {title}")   # small text triangles
+        info.setVisible(on)
+        setattr(win, state, on)
+
+    toggle.toggled.connect(show)
+    show(toggle.isChecked())
+    return toggle, info
+
+
+def equations(*blocks: tuple[str, str] | str) -> str:
+    """The text of a panel's Formalism block: an (equation, meaning) pair puts the equation on a line of
+    its own, a plain string is a paragraph. Rich text, so <sub>/<sup> and entities may be used."""
+    out = []
+    for block in blocks:
+        if isinstance(block, str):
+            out.append(f"<p style='margin:4px 0'>{block}</p>")
+        else:
+            eq, meaning = block
+            out.append(f"<p style='margin:6px 0 2px 10px'><b>{eq}</b></p>"
+                       f"<p style='margin:0 0 4px 0'>{meaning}</p>")
+    return "".join(out)
 
 
 def muted_label(text: str) -> QLabel:
@@ -169,6 +218,8 @@ class VectorEdit(QWidget):
 class Panel(QWidget):
     title = ""
     help = ""
+    # equations of this part of the physics and how they are imposed, collapsed under "Formalism"
+    formalism = ""
     action: tuple[str, str] | None = None  # (button label, main-window method) shown under the title
 
     def __init__(self, win):
@@ -185,6 +236,8 @@ class Panel(QWidget):
         if self.help:
             self.outer.addWidget(muted_label(self.help))
         self.build()
+        if self.formalism:    # reference material, below the panel's own settings
+            self.spoiler("Formalism", self.formalism, "show_formalism")
         self.outer.addStretch(1)
 
     def build(self):
@@ -195,6 +248,28 @@ class Panel(QWidget):
         f = QFormLayout(box)
         self.outer.addWidget(box)
         return f
+
+    def field(self, label: str, widget: QWidget):
+        """A full-width field with its label on top."""
+        self.outer.addWidget(labelled(label, widget))
+
+    def field_row(self, *fields: tuple[str, QWidget], stretch: bool = True):
+        """Small fields side by side on one line, each with its label beside it. `stretch`: share the
+        width between them (off: each stays its natural size, the row fills up on the right)."""
+        row = QHBoxLayout()
+        for n, (label, widget) in enumerate(fields):
+            if n:
+                row.addSpacing(12)
+            row.addWidget(QLabel(label))
+            row.addWidget(widget, 1 if stretch else 0)
+        if not stretch:
+            row.addStretch(1)
+        self.outer.addLayout(row)
+
+    def spoiler(self, title: str, html: str, state: str):
+        """A collapsible block of help text at the end of the panel."""
+        for widget in spoiler(self.win, title, html, state):
+            self.outer.addWidget(widget)
 
     def button_row(self, *buttons: tuple[str, Callable]) -> QHBoxLayout:
         row = QHBoxLayout()

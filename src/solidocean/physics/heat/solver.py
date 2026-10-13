@@ -23,7 +23,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from ... import fields
-from ... import meshing, selection
+from ... import meshing, outputs, selection
 from ...expressions import Evaluator
 from ...fem import heat
 from ...geometry import evaluate_features
@@ -70,10 +70,12 @@ class HeatResults(FieldResults):
     def compute(self, project, quantity: str) -> np.ndarray:
         return compute_quantity(self, project, quantity)
 
-    def save(self, directory: Path) -> list[Path]:
-        """quantities.csv and temperature.npz (nodal temperatures, times and meshes, SI)."""
+    def save(self, directory: Path, contents=outputs.CONTENTS) -> list[Path]:
+        """quantities.csv ('tables') and temperature.npz ('data': nodal temperatures, times and meshes, SI)."""
         directory.mkdir(parents=True, exist_ok=True)
-        files = self.save_quantities(directory)
+        files = self.save_quantities(directory) if "tables" in contents else []
+        if "data" not in contents:
+            return files
         names = list(self.quantities)
         arrays = {}
         for i, T in enumerate(self.T):

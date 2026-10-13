@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ... import fields
+from ... import fields, outputs
 from ...results.field import FieldResults
 from ..base import Cancelled
 from . import fields as solid_fields
@@ -30,10 +30,12 @@ class StaticResults(FieldResults):
     def compute(self, project, quantity: str) -> np.ndarray:
         return compute_quantity(self, project, quantity)
 
-    def save(self, directory: Path) -> list[Path]:
-        """quantities.csv and displacement.npz (nodal displacements and meshes, SI)."""
+    def save(self, directory: Path, contents=outputs.CONTENTS) -> list[Path]:
+        """quantities.csv ('tables') and displacement.npz ('data': nodal displacements and meshes, SI)."""
         directory.mkdir(parents=True, exist_ok=True)
-        files = self.save_quantities(directory)
+        files = self.save_quantities(directory) if "tables" in contents else []
+        if "data" not in contents:
+            return files
         names = list(self.quantities)
         arrays = {}
         for i, u in enumerate(self.U):

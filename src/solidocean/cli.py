@@ -1,6 +1,6 @@
 """Command-line entry point.
 
-    solidocean model.toml            run the study headless, write results
+    solidocean model.toml            run the study headless, write results ([output])
     solidocean                       open the GUI
     solidocean --gui model.toml      open a model in the GUI
 """
@@ -46,7 +46,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="override a variable, e.g. --set 'a=600[nm]' (repeatable)")
     ap.add_argument("--check", action="store_true", help="validate the model file and exit")
     ap.add_argument("--mesh-only", action="store_true", help="build geometry and mesh, write mesh.msh, and exit")
-    ap.add_argument("-o", "--output", help="results directory (overrides output.dir)")
+    ap.add_argument("-o", "--output", metavar="DIR",
+                    help="write the results into DIR (exactly that folder, ignoring the [output] template)")
+    from .outputs import CONTENTS
+    ap.add_argument("--contents", metavar="LIST",
+                    help="what to write, overriding [output] contents: " + ",".join(CONTENTS))
     ap.add_argument("-q", "--quiet", action="store_true", help="only print errors")
     from . import physics
     from .templates import by_physics
@@ -94,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: cannot read {args.input}: {exc}", file=sys.stderr)
         return 2
     project.variables.update(_parse_set(args.set))
+    if args.contents is not None:
+        project.output.contents = [c.strip() for c in args.contents.split(",") if c.strip()]
     errors = project.validate_geometry() if args.mesh_only else project.validate()
     if errors:
         print("error: invalid model:\n  " + "\n  ".join(errors), file=sys.stderr)
@@ -102,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
         log("OK")
         return 0
 
-    out_dir = Path(args.output) if args.output else project.results_dir()
+    out_dir = Path(args.output) if args.output else project.run_dir()
     if args.mesh_only:
         from . import meshing
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -120,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         elif i == n or i % max(n // 10, 1) == 0:  # logs and pipes: about ten lines
             print(f"[{i}/{n}]", flush=True)
 
-    log(f"SolidOcean {__version__}: {project.name}")
+    log(f"SolidOcean {__version__}: {project.name} -> {out_dir}")
     written = _run(project, out_dir, log, progress)
     if written is None:
         return 1

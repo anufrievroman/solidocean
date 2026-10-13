@@ -20,23 +20,27 @@ src/solidocean/
   project.py                        the model: variables, materials, geometry, lattice, mesh, shared study,
                                     output, plots, and one settings section per physics
   tomlio.py                         compact TOML writing (no defaults, short arrays on one line)
+  outputs.py                        [output]: the run folder template and collision policy, which files a
+                                    run writes, and the model + run.json kept beside its results
   physics/                          one subpackage per physics + the registry
     base.py                         PhysicsSpec: the interface of a physics
     solid/  heat/                   settings model, validation, solver, results, field variables,
                                     plots, templates, spec (in __init__.py)
   results/                          results shared by all physics
-    style.py                        plot style, axes, PNG writing
+    style.py                        plot style, axes, file names
     field.py                        FieldResults (one field per variable value and time step) and
                                     their plots: vs time, vs variable, along a line
     modal.py                        plots of modal results (dispersion)
   templates.py                      collects the templates of every physics
   cli.py                            headless runs: spec.solver(...).run(), results.write_outputs()
+                                    into project.run_dir() (-o DIR writes exactly there)
   gui/
     main_window.py                  window shell: tree, panels, file ops, tasks, geometry and mesh
     results_view.py                 running studies, plots, the selected solution and its field, exports
     physics/                        GUI adapter per physics (PhysicsUI): tree nodes, panels, context
                                     menu, condition highlights, field display
-    panels/                         settings panels: common widgets, model, study, results, solid, heat
+    panels/                         settings panels: common widgets, model, study, results, output,
+                                    solid, heat
     viewer.py  plot_canvas.py       3D view (PyVista) and 2D plots (matplotlib)
 ```
 
@@ -52,7 +56,7 @@ outside `physics/<name>/` and `gui/{physics,panels}/<name>.py` mentions a specif
 |---|---|
 | `model.py` | settings dataclasses with `to_dict()` (`tomlio.without_defaults`) / `from_dict()`, the physics' own study settings, `validate_settings(project, ev, materials)` |
 | `solver.py` | the solver: `run(quantities)` returns results; caches mesh and matrices between sweep steps |
-| results | `FieldResults` subclass (implement `point_values`, `compute`, `save`), or an own results type with `write_outputs(project, dir, plots)` (e.g. solid `modal.ModalResults`) |
+| results | `FieldResults` subclass (implement `point_values`, `compute`, `save(dir, contents)`), or an own results type with `write_outputs(project, dir, plots)` honouring `[output]` contents (e.g. solid `modal.ModalResults`) |
 | `fields.py` | the field variables of quantities: `at_quadrature(quad, …)` and `at_points(sampler, …)` return name → array, or name → provider (computed on first use) |
 | `plots.py` | plot kinds, titles, field view, defaults |
 | `templates.py` | `TEMPLATES`: name → `templates.Template` |

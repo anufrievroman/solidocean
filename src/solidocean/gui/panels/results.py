@@ -6,14 +6,15 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QGridLayout, QGroupBox, QDoubleSpinBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QSpinBox, QToolButton,
+    QSpinBox,
 )
 
 from ... import physics, units
 from .. import theme
 from ...plots import plot_label
 from ...project import AXES
-from .common import ERROR_STYLE, ExprBox, ExprEdit, Panel, muted_label, outer_labels, quantity_builder, pretty_point
+from .common import (ERROR_STYLE, ExprBox, ExprEdit, Panel, muted_label, outer_labels, pretty_point,
+                     quantity_builder, spoiler)
 
 
 # ---------------------------------------------------------------------------
@@ -43,13 +44,14 @@ class ResultsPanel(Panel):
             grid.addWidget(b, n // 2, n % 2)
         self.outer.addWidget(add)
         if self.win.results is not None:
-            self.button_row(("Save results…", self.win.export_results), ("Load results…", self.win.load_results))
+            self.button_row(("Save this run", lambda: self.win.save_run()), ("Load results…", self.win.load_results))
             self.outer.addWidget(muted_label(
-                "Save results writes the result files (quantities.csv and the fields as .npz) and the current "
-                "plot into a folder — the same files the command line produces." if self.win.field_study else
-                "Save results writes eigenfrequencies.csv (wavevectors in rad/m, frequencies in the selected "
-                "unit), results.npz (SI) and dispersion.png into a folder — the same files the command line "
-                "produces."))
+                "Save this run writes quantities.csv, the fields as .npz and the model into the run folder of "
+                "the Output section — the same files the command line writes. Single plots: the Save plot "
+                "button of a plot." if self.win.field_study else
+                "Save this run writes dispersion.csv (wavevectors in rad/m, frequencies in the selected "
+                "unit), results.npz (SI) and the model into the run folder of the Output section — the same "
+                "files the command line writes. Single plots: the Save plot button of a plot."))
         else:
             self.button_row(("Load results…", self.win.load_results))
 
@@ -263,27 +265,11 @@ class PlotPanel(Panel):
         at.currentIndexChanged.connect(lambda i: (setattr(pl, "at", at.itemData(i)), self._refresh()))
 
     def _quantity_help(self, form):
-        """Collapsible reference ("spoiler"); its open/closed state is remembered for the session."""
-        toggle = QToolButton()
-        toggle.setCheckable(True)
-        toggle.setChecked(getattr(self.win, "show_quantity_help", False))
-        toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-        toggle.setStyleSheet("QToolButton { border: none; background: transparent; font-weight: 600; }")
+        """Collapsible reference; its open/closed state is remembered for the session."""
         help_items = physics.of(self.p).quantity_help(self.p)
-        info = QLabel("<br>".join(f"<b>{k}:</b> {v}" for k, v in help_items.items()))
-        info.setWordWrap(True)
-        info.setTextFormat(Qt.TextFormat.RichText)
-        info.setStyleSheet(f"color: {theme.muted()}; padding-left: 18px;")
-
-        def show(on):
-            toggle.setText(("▾" if on else "▸") + "  Available expressions")  # small text triangles
-            info.setVisible(on)
-            self.win.show_quantity_help = on
-
-        toggle.toggled.connect(show)
-        show(toggle.isChecked())
-        form.addRow(toggle)
-        form.addRow(info)
+        html = "<br>".join(f"<b>{k}:</b> {v}" for k, v in help_items.items())
+        for widget in spoiler(self.win, "Available expressions", html, "show_quantity_help"):
+            form.addRow(widget)
 
     def update_status(self):
         """Note below the expression: only shown when Compute will have to re-solve the sweep."""

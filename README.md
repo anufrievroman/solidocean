@@ -27,7 +27,7 @@ pip install -e . --no-deps
 ```bash
 solidocean                                # the interface (File → New offers ready-made models)
 solidocean --template square slab.toml    # a new model file from a template
-solidocean slab.toml                      # run it headless: CSV, NPZ and PNG plots in slab_results/
+solidocean slab.toml                      # run it headless: CSV, NPZ and the model in slab/
 solidocean --set "r=0.35*a" slab.toml     # override a variable from the command line
 solidocean --install-app                  # macOS: add SolidOcean.app to ~/Applications
 ```

@@ -75,18 +75,3 @@ def slug(name: str) -> str:
     """A plot name as a file name: 'Tip deflection' -> 'tip_deflection'."""
     import re
     return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_") or "plot"
-
-
-def save_png(path, draw_fn) -> "Path":
-    """Draw a plot with draw_fn(ax) on an off-screen figure and save it as a PNG."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    use_plot_style()  # before the figure exists, so its tick labels use it too
-    fig, ax = plt.subplots(figsize=(6, 4.5), layout="constrained")
-    try:
-        draw_fn(ax)
-        fig.savefig(path, dpi=150)
-    finally:
-        plt.close(fig)
-    return path

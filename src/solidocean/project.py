@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import physics, tomlio
+from . import outputs, physics, tomlio
 from .expressions import Evaluator
 from .tomlio import without_defaults
 from .lattice import Lattice
@@ -213,14 +213,25 @@ class Study:
 
 @dataclass
 class Output:
-    dir: str = ""  # default: <input stem>_results next to the input file
-    plot: bool = True  # write a PNG per results plot
+    """Where the results of a run go and which files are written ([output]); see outputs.py."""
+    dir: str = ""                  # results root, relative to the model file (default: the model's name)
+    folder: str = ""               # one folder per run inside it, a template: "{name} a={a}" ("": the root)
+    contents: list[str] = field(default_factory=lambda: list(outputs.CONTENTS))
+    on_exists: str = "increment"   # the run folder exists already: increment | timestamp | overwrite
+    autosave: bool = False         # GUI: write a run folder after every run (headless always writes one)
+
+    def wants(self, what: str) -> bool:
+        """Is `what` (one of outputs.CONTENTS) part of the files a run writes?"""
+        return what in self.contents
 
     def to_dict(self):
-        return without_defaults(self, {"dir": self.dir, "plot": self.plot})
+        return without_defaults(self, {"dir": self.dir, "folder": self.folder, "contents": list(self.contents),
+                                       "on_exists": self.on_exists, "autosave": self.autosave})
 
     @classmethod
     def from_dict(cls, d: dict) -> "Output":
+        d = dict(d)
+        d.pop("plot", None)    # earlier models had `plot` (a PNG per plot); plots stay in the GUI now
         return cls(**d)
 
 
@@ -317,10 +328,13 @@ class Project:
         proj.path = path
         return proj
 
+    def dumps(self) -> str:
+        """The model as the text of its TOML file."""
+        return "# SolidOcean model file — see docs/input-format.md\n\n" + tomlio.dumps(self.to_dict())
+
     def save(self, path: str | Path | None = None) -> Path:
         path = Path(path or self.path)
-        text = "# SolidOcean model file — see docs/input-format.md\n\n" + tomlio.dumps(self.to_dict())
-        path.write_text(text)
+        path.write_text(self.dumps())
         self.path = path
         return path
 
@@ -345,12 +359,18 @@ class Project:
         from .materials import DEFAULT_COLORS
         return {m.name: m.color or DEFAULT_COLORS[i % len(DEFAULT_COLORS)] for i, m in enumerate(self.materials)}
 
-    def results_dir(self) -> Path:
+    def results_root(self) -> Path:
+        """Where the runs of this model are written: [output] dir, or a folder named after the model file,
+        next to it."""
         base = self.path.parent if self.path else Path.cwd()
         if self.output.dir:
             return base / self.output.dir
-        stem = self.path.stem if self.path else "solidocean"
-        return base / f"{stem}_results"
+        return base / (self.path.stem if self.path else "solidocean")
+
+    def run_dir(self, root: str | Path | None = None, now=None) -> Path:
+        """The folder one run writes into: the results root plus the expanded [output] folder template,
+        made unique as [output] on_exists says. Creates nothing."""
+        return outputs.resolve(self, root, now)
 
     def validate_geometry(self) -> list[str]:
         """Problems that prevent building the geometry or the mesh (variables, features, lattice, mesh).
@@ -449,6 +469,7 @@ class Project:
                 ev.array(sw.values)
             except Exception as exc:
                 errors.append(f"study.sweep.values: {exc}")
+        errors += outputs.problems(self)
         from . import fields
         names = [pl.name for pl in self.plots]
         if len(set(names)) != len(names):

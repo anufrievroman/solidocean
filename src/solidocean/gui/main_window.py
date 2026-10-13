@@ -26,6 +26,7 @@ from ..project import FEATURE_TITLES, FEATURE_TYPES, Project
 from . import physics as gui_physics
 from . import theme
 from .panels import model as mp
+from .panels import output as op
 from .panels import results as rp
 from .panels.common import model_box, swatch
 from .panels.study import VariableSweepPanel
@@ -42,12 +43,13 @@ def new_project() -> Project:
 
 class MainWindow(ResultsMixin, QMainWindow):
     SECTIONS = [("variables", "Variables"), ("materials", "Materials"), ("geometry", "Geometry"),
-                ("mesh", "Mesh"), ("physics_list", "Physics"), ("study", "Study"), ("results", "Results")]
+                ("mesh", "Mesh"), ("physics_list", "Physics"), ("study", "Study"), ("results", "Results"),
+                ("output", "Output")]
     GEOMETRY_KINDS = ("geometry", "feature", "materials", "material")
     PANELS = {"model": mp.ModelPanel, "variables": mp.VariablesPanel, "materials": mp.MaterialsPanel,
               "physics_list": mp.PhysicsListPanel, "mesh_default": mp.MeshDefaultPanel,
               "geometry": mp.GeometryPanel, "mesh": mp.MeshPanel, "sweep": VariableSweepPanel,
-              "results": rp.ResultsPanel}
+              "results": rp.ResultsPanel, "output": op.OutputPanel}
 
     def __init__(self, path: str | None = None):
         super().__init__()
@@ -55,6 +57,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.cancel = threading.Event()
         self.busy = False
         self._stashed_plots = {}   # plots of the other physics, kept while switching back and forth
+        self._last_dir = Path.home()   # where file dialogs open while the model has no file of its own
         self.init_results_state()
         self.current_plot = 0
         self._view = None
@@ -693,12 +696,26 @@ class MainWindow(ResultsMixin, QMainWindow):
         b.setMinimumHeight(inner.sizeHint().height())
         return b
 
+    def start_dir(self, name: str = "") -> str:
+        """Where a file dialog opens: the folder of the model file, or the last folder used. `name` is a
+        file name offered in it."""
+        base = self.project.path.parent if self.project.path else self._last_dir
+        if not base.is_dir():
+            base = Path.home()
+        return str(base / name) if name else str(base)
+
+    def used_dir(self, path) -> Path:
+        """Remember the folder the user picked a file in (the next dialog opens there)."""
+        path = Path(path)
+        self._last_dir = path.parent
+        return path
+
     def open_dialog(self):
         if not self._confirm_discard():
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Open model", "", "SolidOcean model (*.toml)")
+        path, _ = QFileDialog.getOpenFileName(self, "Open model", self.start_dir(), "SolidOcean model (*.toml)")
         if path:
-            self.open_file(path)
+            self.open_file(self.used_dir(path))
     def open_file(self, path):
         try:
             self.set_project(Project.load(path))
@@ -715,11 +732,11 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.log(f"Saved {self.project.path}")
         return True
     def save_as(self) -> bool:
-        path, _ = QFileDialog.getSaveFileName(self, "Save model", f"{self.project.name}.toml",
+        path, _ = QFileDialog.getSaveFileName(self, "Save model", self.start_dir(f"{self.project.name}.toml"),
                                               "SolidOcean model (*.toml)")
         if not path:
             return False
-        self.project.path = Path(path)
+        self.project.path = self.used_dir(path)
         return self.save()
     def closeEvent(self, event):
         if self._confirm_discard():

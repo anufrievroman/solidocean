@@ -70,6 +70,8 @@ class ResultsMixin:
             self._mode_cache, self._mode, self.field_cache = {}, None, {}
             if solver._model is not None:
                 self.mesh = solver._model.mesh
+            if snap.output.autosave:
+                self.save_run(quiet=True)
             first = next((n for n, pl in enumerate(self.project.plots)
                           if pl.kind != "field" and not self.plot_unavailable(pl)), None)
             if first is None:
@@ -403,9 +405,10 @@ class ResultsMixin:
             self.viewer.stop_animation()
     def load_results(self):
         from ..physics.solid.modal import ModalResults
-        path, _ = QFileDialog.getOpenFileName(self, "Load results", "", "Results (results.npz)")
+        path, _ = QFileDialog.getOpenFileName(self, "Load results", self.results_start(),
+                                              "Results (results.npz)")
         if path:
-            self.results = ModalResults.load(Path(path))
+            self.results = ModalResults.load(self.used_dir(path))
             self.results_project = copy.deepcopy(self.project)
             self._mode_cache = {}
             self._mode = None
@@ -413,27 +416,56 @@ class ResultsMixin:
             self.rebuild_tree(("plot", 0) if self.project.plots else ("results", None))
             self.log(f"Loaded {path}")
 
-    # ---- export ---------------------------------------------------------
+    # ---- saving results -------------------------------------------------
+    def results_start(self, name: str = "") -> str:
+        """Where a dialog for a result file opens: the results root once it exists, else next to the
+        model file."""
+        root = self.project.results_root() if self.project.path else None
+        if root is not None and root.is_dir():
+            return str(root / name) if name else str(root)
+        return self.start_dir(name)
+
+    def _run_project(self):
+        """The project as it was run, with the [output] settings as they are now."""
+        snap = copy.deepcopy(self.results_project)
+        snap.output = copy.deepcopy(self.project.output)
+        snap.path = self.project.path
+        return snap
+
+    def save_run(self, directory=None, quiet: bool = False) -> Path | None:
+        """Write the files of the run in memory ([output] contents) into `directory`, by default the folder
+        the [output] template resolves to. The same files the command line writes."""
+        if self.results is None:
+            self.log("Nothing to save: no results.")
+            return None
+        snap = self._run_project()
+        if directory is None:
+            if snap.path is None:
+                self.log("Not saved: the model has no file yet — save the model, or use “Save to folder…”.")
+                return None
+            directory = snap.run_dir()
+        plots = [pl for pl in snap.plots if pl.kind != "field" and not self.plot_unavailable(pl)]
+        try:
+            written = self.results.write_outputs(snap, Path(directory), plots)
+        except Exception as exc:
+            self.log(f"Error: could not write the results: {exc}")
+            return None
+        if quiet:
+            self.log(f"Autosaved {len(written)} file(s) to {directory}")
+        else:
+            for f in written:
+                self.log(f"Wrote {f}")
+        return Path(directory)
+
     def export_results(self):
-        """Write the results files and the current plot into a folder chosen by the user."""
+        """Write the files of the run in memory into a folder chosen by the user."""
         if self.results is None:
             self.log("Nothing to save: no results.")
             return
-        start = str(self.project.results_dir()) if self.project.path else ""
-        folder = QFileDialog.getExistingDirectory(self, "Save results to folder", start)
-        if not folder:
-            return
-        out = Path(folder)
-        if isinstance(self.results, FieldResults):
-            files = self.results.save(out)
-            png = out / "plot.png"
-        else:
-            files = self.results.save(out, self.project.frequency_unit)
-            png = out / "dispersion.png"
-        self.plot.figure.savefig(png, dpi=150)
-        files.append(png)
-        for f in files:
-            self.log(f"Wrote {f}")
+        folder = QFileDialog.getExistingDirectory(self, "Save results to folder", self.results_start())
+        if folder:
+            self._last_dir = Path(folder)
+            self.save_run(folder)
 
     def export_csv(self):
         """Save the current plot's data (CSV) under a name of the user's choice."""
@@ -442,9 +474,9 @@ class ResultsMixin:
             return
         pdef = self.project.plots[self.current_plot]
         is_freq = pdef.quantity.strip() == "freq" and not isinstance(self.results, FieldResults)
-        default = "eigenfrequencies.csv" if is_freq else f"{pdef.name.replace(' ', '_')}.csv"
-        start = str(self.project.results_dir() / default) if self.project.path else default
-        path, _ = QFileDialog.getSaveFileName(self, "Save data", start, "CSV table (*.csv)")
+        default = "dispersion.csv" if is_freq else f"{pdef.name.replace(' ', '_')}.csv"
+        path, _ = QFileDialog.getSaveFileName(self, "Save data", self.results_start(default),
+                                              "CSV table (*.csv)")
         if not path:
             return
         if not path.lower().endswith(".csv"):
@@ -461,9 +493,11 @@ class ResultsMixin:
     def export_mesh(self):
         if not self._check(geometry_only=True):
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Export mesh", "mesh.msh", "Gmsh mesh (*.msh)")
+        path, _ = QFileDialog.getSaveFileName(self, "Export mesh", self.results_start("mesh.msh"),
+                                              "Gmsh mesh (*.msh)")
         if not path:
             return
+        self.used_dir(path)
         snap = copy.deepcopy(self.project)
         self.run_task("Exporting mesh…", lambda sig: meshing.generate(snap, snap.evaluator(), save_msh=path),
                       lambda mesh: self.log(f"Wrote {path}"))
@@ -473,9 +507,11 @@ class ResultsMixin:
             return
         sel = self.selection
         name = f"mode{sel['b'] + 1}_k{sel['j']}" + (f"_p{sel['i']}" if self.results.outer_name else "")
-        path, _ = QFileDialog.getSaveFileName(self, "Export animation", f"{name}.gif", "Animated GIF (*.gif)")
+        path, _ = QFileDialog.getSaveFileName(self, "Export animation", self.results_start(f"{name}.gif"),
+                                              "Animated GIF (*.gif)")
         if not path:
             return
+        self.used_dir(path)
         if not path.lower().endswith(".gif"):
             path += ".gif"
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -487,8 +523,11 @@ class ResultsMixin:
         finally:
             QApplication.restoreOverrideCursor()
     def export_plot(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save plot", "dispersion.png",
+        pl = self.project.plots[self.current_plot] if self.project.plots else None
+        name = (pl.name.replace(" ", "_") if pl else "plot") + ".png"
+        path, _ = QFileDialog.getSaveFileName(self, "Save plot", self.results_start(name),
                                               "Images (*.png *.pdf *.svg)")
         if path:
+            self.used_dir(path)
             self.plot.figure.savefig(path, dpi=200)
             self.log(f"Wrote {path}")

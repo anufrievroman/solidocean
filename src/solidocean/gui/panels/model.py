@@ -30,7 +30,7 @@ class ModelPanel(Panel):
     # preferred units: (project attribute, label, choices, what they apply to)
     UNITS = (("length_unit", "Length", units.LENGTH_UNITS, "Lengths and wavevectors in the GUI and plots."),
              ("frequency_unit", "Frequency", units.FREQUENCY_UNITS,
-              "Frequencies in the GUI, plots and eigenfrequencies.csv."),
+              "Frequencies in the GUI, plots and dispersion.csv."),
              ("time_unit", "Time", units.TIME_UNITS, "Times in the GUI and plots."))
 
     def build(self):
@@ -87,8 +87,7 @@ class PhysicsListPanel(Panel):
             "mechanics) or Joule heating, will be further choices of the setup.")
 
     def build(self):
-        f = self.form()
-        f.addRow("Setup", physics_selector(self.win))
+        self.outer.addWidget(physics_selector(self.win))
         g = self.form("Physics in this model")
         for spec in physics.active(self.p):
             b = QPushButton(spec.title)
@@ -212,17 +211,15 @@ class MaterialPanel(Panel):
         super().__init__(win)
 
     def build(self):
-        f = self.form()
         name = QLineEdit(self.m.name)
         name.editingFinished.connect(lambda: self._rename(name.text().strip()))
-        f.addRow("Name", name)
+        self.field("Name", name)
         model, props = mat.resolve_properties(self.m.props)
         self.model_box = QComboBox()
         self.model_box.addItems(list(mat.MODELS))
         self.model_box.setCurrentText(model)
         self.model_box.currentTextChanged.connect(self._change_model)
-        f.addRow("Model", self.model_box)
-        f.addRow("Colour", self._color_box())
+        self.field_row(("Model", self.model_box), ("Colour", self._color_box()))
 
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["Property", "Expression", "Value"])
@@ -512,21 +509,19 @@ class FeaturePanel(Panel):
         if self.f.type == "cell":
             self.outer.addWidget(muted_label(self.CELL_HELP))
             self._lattice_box()
-        f = self.form()
         name = QLineEdit(self.f.name)
         name.editingFinished.connect(self._rename(name))
-        f.addRow("Name", name)
+        self.field("Name", name)
         op = QComboBox()
         op.addItems(OPS)
         op.setCurrentText(self.f.op)
-        f.addRow("Operation", op)
         material = QComboBox()
         colors = self.p.material_colors()
         for m in self.p.materials:
             material.addItem(swatch(colors[m.name]), m.name)
         material.setCurrentText(self.f.material)
         material.setEnabled(self.f.op == "add")
-        f.addRow("Material", material)
+        self.field_row(("Operation", op), ("Material", material))
 
         def set_op(v):
             self.f.op = v

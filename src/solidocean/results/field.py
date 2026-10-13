@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .. import fields
+from .. import fields, outputs
 from .style import LINESTYLES, outer_axis, outer_text, plot_ranges, set_scales, time_axis, use_plot_style
 
 
@@ -38,23 +38,26 @@ class FieldResults:
         """Evaluate a quantity on the stored fields (n_outer, n_times) and keep it in `quantities`."""
         raise NotImplementedError
 
-    def save(self, directory: Path) -> list[Path]:
+    def save(self, directory: Path, contents=outputs.CONTENTS) -> list[Path]:
         """Write the results files (quantities.csv and the fields) into a directory."""
         raise NotImplementedError
 
     def write_outputs(self, project, directory: Path, plots) -> list[Path]:
-        """Everything a headless run writes: the results files, a CSV per line plot and (output.plot) a PNG
-        per plot."""
-        from .style import save_png, slug
-        written = self.save(directory)
-        for pl in plots:
-            if pl.kind == "line":  # profile along the line: one column per variable value
-                written.append(save_line_table(self, project, pl, directory / f"{slug(pl.name)}.csv"))
-            elif pl.kind == "section":
-                written.append(save_section_table(self, project, pl, directory / f"{slug(pl.name)}.csv"))
-        if project.output.plot:
+        """Everything a run writes, as [output] contents says: the results files, a CSV per line or
+        section plot, and the model with its run record. Plots stay in the GUI ("Save plot…")."""
+        from .style import slug
+        out = project.output
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        written = self.save(directory, out.contents)
+        if out.wants("tables"):
             for pl in plots:
-                written.append(save_png(directory / f"{slug(pl.name)}.png", lambda ax, pl=pl: draw(self, ax, project, pl)))
+                if pl.kind == "line":  # profile along the line: one column per variable value
+                    written.append(save_line_table(self, project, pl, directory / f"{slug(pl.name)}.csv"))
+                elif pl.kind == "section":
+                    written.append(save_section_table(self, project, pl, directory / f"{slug(pl.name)}.csv"))
+        if out.wants("model"):
+            written += outputs.write_record(project, directory, self)
         return written
 
     def save_table(self, path: Path, quantity: str) -> Path:

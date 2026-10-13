@@ -16,8 +16,8 @@ from ... import units
 from ...physics.solid.model import LOAD_TYPES, SOLID_CONDITION_TITLES, STUDY_TITLES, KPath, SolidCondition
 from ...project import AXES, Feature
 from ...selection import FACES, selection_text
-from .common import (ERROR_STYLE, ExprEdit, Panel, VectorEdit, field_quantity_rows, muted_label, outer_labels,
-                     pretty_point, selection_box, theme_text)
+from .common import (ERROR_STYLE, ExprEdit, Panel, VectorEdit, equations, field_quantity_rows, muted_label,
+                     outer_labels, pretty_point, selection_box, theme_text)
 from .study import SweepPanel, solver_box, sweep_summary
 from .lattice import _lattice_kind, hexagonal_vectors, lattice_mode, use_lattice_cell
 
@@ -39,11 +39,20 @@ def solid_condition_label(c) -> str:
 
 class SolidPanel(Panel):
     title = "Solid Mechanics"
-    help = ("Linear elasticity: eigenfrequencies of  ∇·(C:∇u) + ρω²u = 0, or the stationary displacement under "
-            "loads,  ∇·(C:∇u) = 0  (Study → Study type). Boundaries are traction-free unless a condition applies. "
-            "Fixed constraints, prescribed displacements and loads act on faces of the model or of one object "
-            "(bounding-box faces or all faces, optionally only inside a box) and are highlighted in the graphics "
-            "window.")
+    help = ("Linear elasticity; what is solved follows from Study → Study type. Fixed constraints, prescribed "
+            "displacements and loads act on faces of the model or of one object (bounding-box faces or all "
+            "faces, optionally only inside a box) and are highlighted in the graphics window.")
+    formalism = equations(
+        ("∇·(C : ∇u) + ρ ω² u = 0", "Eigenfrequency study: the free vibrations of the structure. Assembled as "
+         "(K − ω² M) u = 0 and solved for the lowest ω² by shift-invert Lanczos."),
+        ("∇·(C : ∇u) + f = 0", "Stationary study: the displacement under loads, assembled as K u = f."),
+        ("(K + i K<sub>loss</sub> − ω² M) û = f̂", "Frequency-domain study: the steady response to a drive at "
+         "ω = 2πf, with the loss factors η of the study and the materials (K<sub>loss</sub> = Σ η<sub>e</sub> "
+         "K<sub>e</sub>); û and f̂ are complex amplitudes, u(t) = Re(û e<sup>iωt</sup>)."),
+        ("n·(C : ∇u) = 0", "On every face without a condition: traction-free, a free surface."),
+        "C is the material's stiffness in the global frame (each material's crystal orientation is applied to "
+        "it); u is interpolated with quadratic tetrahedra.",
+    )
 
     def build(self):
         f = self.form("Boundary conditions")
@@ -68,9 +77,18 @@ class SolidPanel(Panel):
 
 class PeriodicityPanel(Panel):
     title = "Periodicity"
-    help = ("Bloch-Floquet condition u(r + R) = exp(i k·R) u(r) for every lattice translation R. Rectangular cells "
-            "repeat along x, y, z; hexagonal and custom lattices use lattice vectors a1, a2 (a3) and a unit-cell "
-            "geometry feature. Periodic face pairs are tinted (a1/x red, a2/y green, a3/z blue).")
+    help = ("Rectangular cells repeat along x, y, z; hexagonal and custom lattices use the lattice vectors "
+            "a1, a2 (a3) and a unit-cell geometry feature. Periodic face pairs are tinted in the graphics "
+            "window (a1/x red, a2/y green, a3/z blue).")
+    formalism = equations(
+        ("u(r + R) = e<sup>i k·R</sup> u(r)", "The Bloch-Floquet condition, for every lattice translation "
+         "R = n₁a₁ + n₂a₂ + n₃a₃ and the wavevector k of the current sweep point."),
+        "Implementation: each periodic face is paired with its partner by translating it along R, and their "
+        "nodes are matched (KD-tree). The partner's degrees of freedom are then not solved for: they are "
+        "e<sup>i k·R</sup> times those of its source, written as a reduction u = T(k) u<sub>r</sub>. The solver "
+        "assembles the real K and M once and reduces them per wavevector, K<sub>r</sub> = Tᴴ K T, "
+        "M<sub>r</sub> = Tᴴ M T — so a k-sweep never re-meshes or re-assembles.",
+    )
 
     def build(self):
         ph = self.p.lattice
@@ -192,9 +210,17 @@ class PeriodicityPanel(Panel):
 
 class SymmetryPanel(Panel):
     title = "Symmetry"
-    help = ("Symmetry plane: zero normal displacement, free tangential motion (mirror-symmetric modes). "
-            "Antisymmetry: zero tangential displacement, free normal motion (mirror-antisymmetric modes). "
-            "Modelling half a structure with each in turn gives all modes of the full structure.")
+    help = ("Planes of a model that is only half (or a quarter) of the real structure. Running it once with "
+            "symmetry and once with antisymmetry on the same plane gives all the modes of the full structure.")
+    formalism = equations(
+        ("u · n = 0", "Symmetry plane: no motion through the plane, free motion in it — the mirror-symmetric "
+         "half of the modes. Implementation: on every node of those faces the displacement along the face "
+         "normal is held at zero (that degree of freedom is removed from the system). The planes are "
+         "bounding-box faces, so the normal is always an axis."),
+        ("u − (u·n) n = 0", "Antisymmetry plane: no motion in the plane, free motion through it — the "
+         "mirror-antisymmetric half. Implementation: the two in-plane components of every node on those faces "
+         "are held at zero."),
+    )
 
     def build(self):
         ph = self.p.solid
@@ -647,13 +673,33 @@ LOAD_TITLES = {"area": "Force per area", "total": "Total force", "pressure": "Pr
 
 
 SOLID_HELP = {
-    "fixed": "Zero displacement (clamped) on the selected faces.",
-    "displacement": "Prescribed displacement on the selected faces, per component; an empty component is free "
-                    "(e.g. only ux: the face is moved along x and slides freely in y and z). Eigenfrequency studies "
-                    "hold the given components at zero.",
-    "load": "Force on the selected faces (stationary studies; eigenfrequency studies ignore it): a force per area "
-            "(traction, Pa), a total force (N) spread uniformly over the selected area, or a pressure pushing on "
-            "the surface (against its outward normal; negative = suction).",
+    "fixed": "The selected faces are clamped.",
+    "displacement": "The selected faces are moved by a given amount; an empty component is left free.",
+    "load": "Force on the selected faces. Stationary and frequency-domain studies only — an eigenfrequency "
+            "study has no loads.",
+}
+
+SOLID_FORMALISM = {
+    "fixed": equations(
+        ("u = 0", "The selected faces cannot move. Implementation: all three displacement components of every "
+         "node on those boundary faces are removed from the system, so they are never solved for. Where "
+         "selections overlap, the later condition in the list wins."),
+    ),
+    "displacement": equations(
+        ("u<sub>i</sub> = g<sub>i</sub>", "Prescribed displacement, component by component; an empty component "
+         "is free (only u<sub>x</sub> given: the face is moved along x and slides freely in y and z). "
+         "Implementation: the given components of every node on those faces are held at g. In stationary and "
+         "frequency-domain studies the prescribed values move to the right-hand side; an eigenfrequency study "
+         "holds them at zero, since a mode shape has no amplitude of its own."),
+    ),
+    "load": equations(
+        ("t = F / A", "Force per area (traction, Pa) on the selected faces."),
+        ("t = F<sub>total</sub> / A<sub>selected</sub>", "A total force (N), spread uniformly over the area "
+         "the selection covers."),
+        ("t = −p n", "A pressure p on the surface, pushing against its outward normal n (negative = suction)."),
+        "Implementation: ∫ v·t dS over the selected boundary triangles, added to the right-hand side. Loads "
+        "from several conditions on the same face add up.",
+    ),
 }
 
 
@@ -664,6 +710,7 @@ class SolidConditionPanel(Panel):
         kind = SOLID_CONDITION_TITLES.get(self.c.type, self.c.type)
         self.title = f"{kind}: {self.c.name}" if self.c.name else kind
         self.help = SOLID_HELP.get(self.c.type, "")
+        self.formalism = SOLID_FORMALISM.get(self.c.type, "")
         super().__init__(win)
 
     def build(self):

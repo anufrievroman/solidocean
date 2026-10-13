@@ -25,7 +25,7 @@ model shares, and one table for the physics it solves, named after it:
 [study]            # shared by every physics: variable sweep, linear solver
 [solid]            # solid mechanics: symmetry, [[solid.conditions]], [solid.study]
 [heat]             # heat transfer: initial values, [[heat.conditions]], [[heat.sources]], [heat.study]
-[output]
+[output]           # where the results go and which files are written
 [[plots]]
 ```
 
@@ -39,11 +39,11 @@ are written on one line.
 | `description` | free text |
 | `physics` | `"solid"` (default) or `"heat"` |
 | `length_unit` | preferred unit for displaying lengths and wavevectors (GUI, plots): `nm`, `um` (default), `mm`, `cm`, `m` |
-| `frequency_unit` | preferred unit for displaying frequencies (GUI, plots, `eigenfrequencies.csv`): `Hz`, `kHz`, `MHz`, `GHz` (default), `THz` |
+| `frequency_unit` | preferred unit for displaying frequencies (GUI, plots, `dispersion.csv`): `Hz`, `kHz`, `MHz`, `GHz` (default), `THz` |
 | `time_unit` | preferred unit for displaying times (GUI, plots): `ps`, `ns`, `us`, `ms`, `s` (default) |
 
 The preferred units only change how values are shown: inputs accept any unit (`500[nm]`), and everything
-is computed and saved in SI (except the frequency columns of `eigenfrequencies.csv`, which are in `frequency_unit`).
+is computed and saved in SI (except the frequency columns of `dispersion.csv`, which are in `frequency_unit`).
 
 ## `[variables]`
 `name = "expression"`. Variables may reference each other in any order.
@@ -211,13 +211,14 @@ load = ["0", "0", "-1[nN]"]
 
 An eigenfrequency study solves at every point of the k-path (inner loop) for every variable value
 (outer loop); with neither sweep, a single solve at `k`. Sweeping a variable used in `k` (e.g. `kx`)
-gives a dispersion without a k-path. Results: `eigenfrequencies.csv`, `results.npz`, `dispersion.png`.
+gives a dispersion without a k-path. Results: `dispersion.csv` and `results.npz` (see
+`[output]`).
 
 A stationary study solves K u = f once per value of the variable sweep (the k-path is not used).
 The model must be held against rigid-body motion by fixed constraints, prescribed displacements or
 symmetry planes; otherwise the run stops with an error. A periodic model gets the periodic solution
 (wavevector 0). Results: `quantities.csv` (every plotted quantity per variable value) and
-`displacement.npz` (nodal displacements and the mesh, SI), plus one PNG per plot.
+`displacement.npz` (nodal displacements and the mesh, SI); see `[output]`.
 
 A frequency-domain study solves (K (1 + iη) − ω² M) û = f̂ for every value of the variable sweep: the
 loads and prescribed displacements are the complex amplitudes of the drive (u(t) = Re(û e^{iωt})); fixed
@@ -395,7 +396,7 @@ out-of-phase parts); `T`, `Tx`…, `qx`… are the real parts. Amplitude and pha
 
 `[study.sweep]` also applies to heat models (one solve per variable value).
 Results: `quantities.csv` (every plotted quantity per time and variable value) and
-`temperature.npz` (nodal temperatures, times, mesh) plus one PNG per plot.
+`temperature.npz` (nodal temperatures, times, mesh); see `[output]`.
 
 **Heat quantities** for `[[plots]]` (`kind = "quantity"`): fields `T` (K), `Tx Ty Tz` (∇T, K/m),
 `qx qy qz` (heat flux −k∇T, W/m²), `x y z`, reduced with `mean()`, `integral()`, `max()`,
@@ -406,11 +407,42 @@ length a and cross-section a·t with a temperature difference dT along x is
 `integral(qx) / (dT * a * t)`. Plots show the quantity against time (transient) or the swept
 variable; `sweep = "variable"` puts the variable on the x axis of a transient sweep.
 
-## `[output]`
+## `[output]` — where a run's files go
 | key | default | meaning |
 |---|---|---|
-| `dir` | `""` | results directory, relative to the model file (default `<name>_results`) |
-| `plot` | `true` | write a PNG per 1D plot |
+| `dir` | `""` | results root, relative to the model file (default: a folder named after it) |
+| `folder` | `""` | one folder per run inside it, from a template (empty: every run writes into the root) |
+| `contents` | `["tables", "data", "model"]` | which files a run writes |
+| `on_exists` | `"increment"` | that folder exists already: `increment`, `timestamp` or `overwrite` |
+| `autosave` | `false` | GUI: write a run folder after every Run (headless always writes one) |
+
+```toml
+[output]
+dir = "runs"
+folder = "{name} a={a} t={t}"      # -> runs/Slab a=600nm t=200nm/
+contents = ["tables", "model"]
+```
+
+**The folder template.** `{a}` is any model variable: its own expression when that is a plain value
+(`600[nm]` → `600nm`), otherwise its value in the preferred units (`a/2` → `0.3um`). The built-ins are
+`{name}` (project name), `{physics}`, `{sweep}` (the variable sweep, e.g. `a_0.6-0.9um`), `{date}`,
+`{time}`, `{datetime}` and `{n}` (the lowest free run number, `001`, `002`, …). The swept variable itself
+has no single value in a run — `{sweep}` stands for it, and using its name is an error. Characters a file
+system objects to are replaced by `_`; folders are one level deep (use `dir` for the rest of the path).
+
+**Rerunning.** Changing a parameter named in the template puts the next run in its own folder. With the
+same parameters the name repeats, and `on_exists` decides: `increment` adds ` (2)`, `timestamp` always
+appends the date and time, `overwrite` writes into the same folder again. `{n}` in the template numbers
+runs instead.
+
+**Contents.** `tables`: `dispersion.csv` / `quantities.csv` and a table per 1D plot. `data`: the
+`.npz` with the fields and quantities in SI (reloadable in the GUI). `model`: a copy of the model as
+`model.toml` plus `run.json` (version, time, variable values and expressions, the sweep, what the solver
+reported) — the parameters of a saved run, next to its results. Plots are not written as images: save the
+one you want from the GUI.
+
+`solidocean model.toml -o DIR` writes into exactly `DIR`, ignoring the template; `--contents tables,model`
+overrides `contents` for one run.
 
 ## `[[plots]]` (repeatable) — results plots
 Every plot has a type, shown with its name in the GUI: **3D** views of the structure, **2D** maps on a
@@ -432,9 +464,8 @@ plot and the displacement field (stationary: the displacement field); heat trans
 field, plus the average temperature vs time for transient studies. Dispersion plots need an
 eigenfrequency study, line and section plots field results (heat transfer or a stationary study); others
 are skipped. Clicking a point of a 1D plot in the GUI shows the field there.
-The command line writes one PNG per XY, XYz and 2D plot (for solid mechanics the first as
-`dispersion.png`, others as `<name>.png`), a CSV for every non-frequency quantity, line and section; 3D
-field views are GUI only. Under every expression editor the GUI offers a menu of the physics' named
+A run writes a CSV per 1D plot (every non-frequency quantity, line and section); plots themselves
+are not written as images, and 3D field views are GUI only. Under every expression editor the GUI offers a menu of the physics' named
 quantities.
 
 Profiles along a line (`kind = "line"`) take `start` and `end` (`[x, y, z]`, expressions, e.g. `["-L/2", "0", "t/2"]`), `points`
@@ -531,5 +562,5 @@ colormap = "Blues"
 line_style = "none"
 ```
 
-Results (eigenfrequency studies): `eigenfrequencies.csv` (one row per solve), `results.npz` (arrays +
-metadata), `dispersion.png`.
+Results (eigenfrequency studies): `dispersion.csv` (one row per solve) and `results.npz`
+(arrays + metadata).
