@@ -426,9 +426,11 @@ class ResultsMixin:
         return self.start_dir(name)
 
     def _run_project(self):
-        """The project as it was run, with the [output] settings as they are now."""
+        """The project as it was run, with the [output] settings and the plots as they are now (plots added or
+        changed after the run are post-processing of the same results)."""
         snap = copy.deepcopy(self.results_project)
         snap.output = copy.deepcopy(self.project.output)
+        snap.plots = copy.deepcopy(self.project.plots)
         snap.path = self.project.path
         return snap
 
@@ -445,6 +447,13 @@ class ResultsMixin:
                 return None
             directory = snap.run_dir()
         plots = [pl for pl in snap.plots if pl.kind != "field" and not self.plot_unavailable(pl)]
+        if isinstance(self.results, FieldResults):  # fields are stored: evaluate quantities of plots not shown yet
+            for pl in plots:
+                if pl.kind in ("quantity", "time") and self.results.values(pl.quantity) is None:
+                    try:
+                        self.results.compute(self.results_project, pl.quantity)
+                    except Exception as exc:
+                        self.log(f"Not saved: cannot evaluate '{pl.quantity}' ({pl.name}): {exc}")
         try:
             written = self.results.write_outputs(snap, Path(directory), plots)
         except Exception as exc:
@@ -473,21 +482,37 @@ class ResultsMixin:
             self.log("Nothing to save: no results.")
             return
         pdef = self.project.plots[self.current_plot]
-        is_freq = pdef.quantity.strip() == "freq" and not isinstance(self.results, FieldResults)
+        if pdef.kind == "field":
+            self.log("A 3D view has no table: use “Save this run” for the fields, or add a line or section plot.")
+            return
+        field = isinstance(self.results, FieldResults)
+        is_freq = pdef.quantity.strip() == "freq" and not field
         default = "dispersion.csv" if is_freq else f"{pdef.name.replace(' ', '_')}.csv"
         path, _ = QFileDialog.getSaveFileName(self, "Save data", self.results_start(default),
                                               "CSV table (*.csv)")
         if not path:
             return
+        self.used_dir(path)
         if not path.lower().endswith(".csv"):
             path += ".csv"
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        if is_freq:
-            self.results.save_csv(Path(path), self.project.frequency_unit)
-        elif self.results.values(pdef.quantity) is not None:
-            self.results.save_table(Path(path), pdef.quantity)
-        else:
-            self.log(f"'{pdef.quantity}' has not been evaluated yet.")
+        from ..results.field import save_line_table, save_section_table
+        try:
+            if is_freq:
+                self.results.save_csv(Path(path), self.project.frequency_unit)
+            elif field and pdef.kind == "line":
+                save_line_table(self.results, self.results_project, pdef, Path(path))
+            elif field and pdef.kind == "section":
+                save_section_table(self.results, self.results_project, pdef, Path(path))
+            else:
+                if self.results.values(pdef.quantity) is None and field:
+                    self.results.compute(self.results_project, pdef.quantity)
+                if self.results.values(pdef.quantity) is None:
+                    self.log(f"'{pdef.quantity}' has not been evaluated yet (press Compute).")
+                    return
+                self.results.save_table(Path(path), pdef.quantity)
+        except Exception as exc:
+            self.log(f"Error: could not write {path}: {exc}")
             return
         self.log(f"Wrote {path}")
     def export_mesh(self):

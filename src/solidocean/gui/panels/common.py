@@ -218,7 +218,8 @@ class VectorEdit(QWidget):
 class Panel(QWidget):
     title = ""
     help = ""
-    # equations of this part of the physics and how they are imposed, collapsed under "Formalism"
+    # equations of this part of the physics and how they are imposed, collapsed under "Formalism" (under the
+    # description)
     formalism = ""
     action: tuple[str, str] | None = None  # (button label, main-window method) shown under the title
 
@@ -230,14 +231,14 @@ class Panel(QWidget):
         head = QLabel(self.title)
         head.setStyleSheet("font-size: 15px; font-weight: 600; padding-bottom: 4px;")
         self.outer.addWidget(head)
+        if self.help:
+            self.outer.addWidget(muted_label(self.help))
+        if self.formalism:    # reference material, with the description, before the panel's controls
+            self.spoiler("Formalism", self.formalism, "show_formalism")
         if self.action:
             label, method = self.action
             self.button_row((label, getattr(self.win, method)))
-        if self.help:
-            self.outer.addWidget(muted_label(self.help))
         self.build()
-        if self.formalism:    # reference material, below the panel's own settings
-            self.spoiler("Formalism", self.formalism, "show_formalism")
         self.outer.addStretch(1)
 
     def build(self):
@@ -267,7 +268,7 @@ class Panel(QWidget):
         self.outer.addLayout(row)
 
     def spoiler(self, title: str, html: str, state: str):
-        """A collapsible block of help text at the end of the panel."""
+        """A collapsible block of help text, added where the panel is at."""
         for widget in spoiler(self.win, title, html, state):
             self.outer.addWidget(widget)
 

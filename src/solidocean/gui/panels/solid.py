@@ -297,6 +297,40 @@ STUDY_HELP = {
 }
 
 
+STUDY_FORMALISM = {
+    "eigenfrequency": equations(
+        ("(K(k) − ω² M(k)) u = 0", "At every point of the wavevector sweep: the assembled stiffness K and mass M, "
+         "reduced to the free degrees of freedom by the periodicity, symmetry and fixed constraints "
+         "(K(k) = T(k)ᴴ K T(k), M(k) = T(k)ᴴ M T(k)). K and M are assembled once per mesh; only T(k) changes "
+         "along a wavevector sweep."),
+        ("(K − σM)⁻¹ M u = u / (ω² − σ)", "Shift-invert Lanczos (ARPACK): the n eigenvalues ω² closest to the "
+         "shift σ = (2π f<sub>search</sub>)², or a tiny negative σ when searching from 0, which keeps "
+         "K − σM invertible despite rigid-body modes. One sparse factorisation of K − σM per point; small "
+         "systems are solved densely instead."),
+        ("f = ω / 2π", "The eigenfrequencies reported, sorted; the eigenvectors are the mode shapes."),
+    ),
+    "stationary": equations(
+        ("K u = f", "The assembled stiffness K and load vector f (surface loads integrated over their faces)."),
+        ("u = T u<sub>r</sub> + g", "Constraints: T keeps the free degrees of freedom (symmetry planes and "
+         "periodic images map onto their source), g holds the prescribed displacements and zeros of fixed "
+         "faces."),
+        ("Tᵀ K T u<sub>r</sub> = Tᵀ (f − K g)", "The reduced system, one sparse direct solve. A residual "
+         "check catches a model that is not held against rigid-body motion (singular K)."),
+    ),
+    "frequency": equations(
+        ("(K + i K<sub>loss</sub> − ω² M) û = f̂", "At the drive frequency ω = 2πf: K and M as in the "
+         "eigenfrequency study, K<sub>loss</sub> = Σ η<sub>e</sub> K<sub>e</sub> with each element's loss factor "
+         "(the study's η plus the material's eta at the element, so it may vary in space). The loads and "
+         "prescribed displacements are the amplitudes f̂ and ĝ of the drive."),
+        ("Tᵀ A T û<sub>r</sub> = Tᵀ (f̂ − A ĝ)", "With A the matrix above and the same constraint "
+         "reduction as a stationary study: one complex sparse direct solve per frequency. Without loss A is "
+         "singular at an eigenfrequency."),
+        ("u(t) = Re(û e<sup>iωt</sup>)", "The complex amplitude û is the result: abs(û) the amplitude, "
+         "its argument the phase relative to the drive."),
+    ),
+}
+
+
 class SolidStudyPanel(Panel):
     action = ("Run ▶\ufe0e", "compute")
 
@@ -304,6 +338,7 @@ class SolidStudyPanel(Panel):
         st = win.project.solid.study
         self.title = f"Study: {STUDY_TITLES.get(st.type, st.type)}"
         self.help = STUDY_HELP.get(st.type, "")
+        self.formalism = STUDY_FORMALISM.get(st.type, "")
         super().__init__(win)
 
     def build(self):

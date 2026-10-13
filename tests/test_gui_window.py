@@ -132,3 +132,49 @@ def test_file_dialogs_start_next_to_the_model(tmp_path):
     assert w.start_dir() == str(pathlib.Path.home())           # that folder does not exist: home
     w.dirty = False
     w.close()
+
+
+def test_plots_added_after_the_run_are_saved(tmp_path, monkeypatch):
+    """A line or section plot added after a frequency-domain run is written by 'Save this run' (with the
+    quantity of a sweep plot not shown yet), and 'Save data…' on its page writes its table."""
+    import csv
+    from PySide6.QtWidgets import QApplication, QFileDialog
+    app = QApplication.instance() or QApplication([])
+    from solidocean.gui.main_window import MainWindow
+    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidStudy
+    from solidocean.physics.solid.solver import Solver
+    from solidocean.plots import ResultPlot
+    from solidocean.project import Feature, Material, MeshSettings, Project, Study, VariableSweep
+    props = {"model": "isotropic", "rho": "2000[kg/m^3]", "E": "100[GPa]", "nu": "0.25", "eta": "0.05"}
+    p = Project(name="bar", variables={"L": "2[um]", "w": "0.2[um]", "f": "1[GHz]"},
+                materials=[Material("M", props)],
+                geometry=[Feature("block", "Bar", material="M",
+                                  params={"center": ["L/2", "0", "0"], "size": ["L", "w", "w"]})],
+                mesh=MeshSettings(max_size="w/2"),
+                solid=SolidPhysics(symmetry=["ymin", "ymax", "zmin", "zmax"], conditions=[
+                    SolidCondition("displacement", ["xmin"], displacement=["1[nm]", "", ""])],
+                    study=SolidStudy(type="frequency", frequency="f")),
+                study=Study(sweep=VariableSweep("f", "[1, 2] * 1[GHz]")))
+    p.save(tmp_path / "m.toml")
+    w = MainWindow()
+    w.set_project(p)
+    w.results = Solver(p, log=lambda m: None).run()
+    w.results_project = Project.load(tmp_path / "m.toml")   # the run's copy: without the plots added below
+    w.results_project.path = p.path
+    p.plots = [w.spec.new_plot(p, "line", ((0, 0, 0), (2e-6, 0.2e-6, 0.2e-6))),
+               ResultPlot("Amplitude", "max(abs(ux))", kind="quantity")]
+    p.plots[0].name, p.plots[0].quantity = "Profile", "abs(ux)"
+
+    run = w.save_run(tmp_path / "run")
+    assert (run / "Profile.csv").is_file()
+    with open(run / "quantities.csv") as fh:
+        assert "max(abs(ux))" in next(csv.reader(fh))
+
+    out = tmp_path / "profile.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    w.current_plot = 0
+    w.export_csv()
+    rows = list(csv.reader(open(out)))
+    assert rows[0][1:] == ["f=1e+09", "f=2e+09"] and len(rows) > 10
+    w.dirty = False
+    w.close()

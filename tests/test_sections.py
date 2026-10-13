@@ -36,11 +36,15 @@ def test_section_axes_and_table_follow_the_origin(tmp_path):
     u, v, vals, i, j, names = section_values(r, p, pl)
     lo, hi = r.meshes[0].bounds()
     assert names == ("x", "z") and u[0] == pytest.approx(lo[0]) and u[-1] == pytest.approx(hi[0])
-    rows = list(csv.reader(open(save_section_table(r, p, pl, tmp_path / "s.csv"))))[1:]
-    assert all(float(a) == pytest.approx(float(x)) and float(b) == pytest.approx(float(z))
-               for a, b, x, _, z, _ in rows[:50])                  # displayed axes = model coordinates
+    rows = list(csv.reader(open(save_section_table(r, p, pl, tmp_path / "s.csv"))))
+    assert rows[0] == ["x [m]", "y [m]", "z [m]", "qx"]            # displayed axes = model coordinates
+    xs = [float(x) for x, _, _, _ in rows[1:]]
+    assert min(xs) == pytest.approx(u[0]) and max(xs) == pytest.approx(u[-1])
+    assert all(float(y) == pytest.approx(0.0) for _, y, _, _ in rows[1:])   # the plane y = 0
     pl.rotation = ["0", "0", "30"]
     assert section_values(r, p, pl)[5] == ("u", "v")
+    rows = list(csv.reader(open(save_section_table(r, p, pl, tmp_path / "r.csv"))))
+    assert rows[0] == ["u [m]", "v [m]", "x [m]", "y [m]", "z [m]", "qx"]
 
 
 def test_field_quantities_at_the_nodes():

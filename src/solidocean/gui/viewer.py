@@ -133,14 +133,14 @@ class Viewer(QWidget):
         tb = QToolBar()
         tb.setObjectName("viewToolbar")
         for text, tip, fn in (
-            ("Zoom In", "Zoom in", lambda: self._zoom(1.25)),
-            ("Zoom Out", "Zoom out", lambda: self._zoom(0.8)),
-            ("Zoom Fit", "Zoom to fit the whole model (keeps the view direction)", self.fit),
+            ("+", "Zoom in", lambda: self._zoom(1.25)),
+            ("−", "Zoom out", lambda: self._zoom(0.8)),
+            ("=", "Zoom to fit the whole model (keeps the view direction)", self.fit),
             (None, None, None),
-            ("X", "View along x (y-z plane). Click again for the opposite side.", lambda: self.axis_view("x")),
-            ("Y", "View along y (x-z plane). Click again for the opposite side.", lambda: self.axis_view("y")),
-            ("Z", "View along z (x-y plane). Click again for the opposite side.", lambda: self.axis_view("z")),
-            ("Default", "Default angled view", self.default_view),
+            ("yz", "The y-z plane (view along x). Click again for the opposite side.", lambda: self.axis_view("x")),
+            ("xz", "The x-z plane (view along y). Click again for the opposite side.", lambda: self.axis_view("y")),
+            ("xy", "The x-y plane (view along z). Click again for the opposite side.", lambda: self.axis_view("z")),
+            ("xyz", "Angled 3D view (the default)", self.default_view),
         ):
             if text is None:
                 tb.addSeparator()

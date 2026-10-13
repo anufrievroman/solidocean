@@ -165,7 +165,8 @@ class HeatPanel(Panel):
          "(W/m³). A stationary study drops the time term and solves ∇·(k ∇T) + Q = 0."),
         ("n·(k ∇T) = 0", "On every face without a condition: insulated — the same as a mirror-symmetry plane."),
         ("C Ṫ + K T = f", "The assembled system (quadratic tetrahedra). Stationary: K T = f, one sparse solve. "
-         "Transient: Crank-Nicolson time steps, the matrix factorised once if the properties are constant. "
+         "Transient: θ-scheme time steps (backward Euler or Crank–Nicolson), the matrix factorised once if the "
+         "properties are constant. "
          "Frequency domain: (K + iωC) T̂ = f̂ for the complex amplitude of the temperature."),
         "Radiation, or properties written with the temperature (k, c<sub>p</sub>, ρ using T), make the problem "
         "nonlinear: it is then solved by Picard iteration until the temperature stops changing, re-assembling "
@@ -453,6 +454,40 @@ class HeatInterfacePanel(Panel):
         self.win.mark_dirty()
 
 
+HEAT_STUDY_FORMALISM = {
+    "stationary": equations(
+        ("(K + A<sub>bc</sub>) T = b", "K: conduction, A<sub>bc</sub>: convection and contact terms, b: heat "
+         "sources and fluxes. Fixed temperatures are eliminated from the system; one sparse direct solve."),
+        ("Σ<sub>i</sub> (C T)<sub>i</sub> = Σ<sub>i</sub> (C T₀)<sub>i</sub>", "Without any heat sink (no fixed "
+         "temperature, convection or radiation) the temperature level is undetermined: it is fixed by keeping "
+         "the heat content of the initial values. A steady state then exists only if the net heat input is "
+         "zero."),
+        "A nonlinear model (radiation, temperature-dependent properties or contacts) is solved by Picard "
+        "iteration: the properties are taken at the previous iterate until the temperature stops changing.",
+    ),
+    "transient": equations(
+        ("(C/Δt + θA) T<sup>n+1</sup> = (C/Δt − (1 − θ) A) T<sup>n</sup> + b<sup>n+θ</sup>", "θ-scheme "
+         "steps of Δt = (t<sub>end</sub> − t<sub>start</sub>) / steps from T₀ (Initial values) at "
+         "t<sub>start</sub>; A = K + A<sub>bc</sub>, C the heat capacity matrix. θ = 1: backward Euler "
+         "(first order, never oscillates); θ = ½: Crank–Nicolson (second order, may ring after sudden "
+         "changes)."),
+        ("b<sup>n+θ</sup>", "Pulsed sources and fluxes are averaged over each step, so a pulse shorter than a "
+         "step still deposits its full energy."),
+        "The step matrix is factorised once when the properties are constant; a nonlinear model iterates "
+        "(Picard) within every step.",
+    ),
+    "frequency": equations(
+        ("(K + A<sub>bc</sub> + R + iωC) T̂ = b̂", "The small-signal response at ω = 2πf: b̂ holds the "
+         "oscillation amplitudes of the sources and fluxes, fixed temperatures have T̂ = 0 (they do not "
+         "oscillate). One complex sparse direct solve per frequency."),
+        ("R = 4εσT₀³", "Linearisation about the initial temperature T₀: radiation acts as a sink of this "
+         "strength, and temperature-dependent properties are taken at T₀."),
+        ("T(t) = T₀ + Re(T̂ e<sup>iωt</sup>)", "The results: Tamp = |T̂|, Tphase = arg T̂ (degrees, negative "
+         "= lagging the drive), Tre and Tim."),
+    ),
+}
+
+
 class HeatStudyPanel(Panel):
     title = "Study: Heat transfer"
     help = ("Stationary: the steady temperature field. Transient: the temperature evolution from the initial "
@@ -460,6 +495,10 @@ class HeatStudyPanel(Panel):
             "temperature oscillation driven by sources at one frequency (3ω, FDTR). A variable sweep (Study → "
             "Variable sweep) repeats any of them, e.g. over the frequency.")
     action = ("Run ▶︎", "compute")
+
+    def __init__(self, win):
+        self.formalism = HEAT_STUDY_FORMALISM.get(win.project.heat.study.type, "")
+        super().__init__(win)
 
     def build(self):
         st = self.p.heat.study

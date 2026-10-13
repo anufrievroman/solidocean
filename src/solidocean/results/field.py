@@ -329,20 +329,29 @@ def _section_range(project, st, vals):
 
 
 def save_section_table(results, project, pdef, path: Path) -> Path:
-    """The cross-section as a table: in-plane coordinates u, v, the point x, y, z (m) and the value."""
+    """The cross-section as a table, one row per sample: the point x, y, z (m) and the value; a rotated plane
+    also has its in-plane coordinates u, v (m) in front."""
+    from .. import physics
     u, v, vals, i, j, names = section_values(results, project, pdef)
     ev = project.evaluator()
     if results.outer_name:
         ev = ev.with_overrides({results.outer_name: results.outer_values[i]})
     origin, e1, e2, (u0, _), (v0, _) = section_plane(project, pdef, ev, results.meshes[i])
     du, dv = u[0] - u0, v[0] - v0          # the displayed axes may be shifted by the origin
+    in_plane = names == ("u", "v")         # an unrotated plane's axes are already among x, y, z
+    value = pdef.quantity.strip() or physics.of(project).field_quantity(project)
+    at = [f"{results.outer_name}={results.outer_values[i]:.6g}"] if results.outer_name else []
+    if len(results.times) > 1:
+        at.append(f"t={results.times[j]:.6g} s")
     with open(path, "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow([f"{names[0]} [m]", f"{names[1]} [m]", "x [m]", "y [m]", "z [m]", pdef.quantity or "value"])
+        w.writerow((["u [m]", "v [m]"] if in_plane else []) + ["x [m]", "y [m]", "z [m]"]
+                   + [f"{value} ({', '.join(at)})" if at else value])
         for b, vv in enumerate(v):
             for a, uu in enumerate(u):
                 p = origin + (uu - du) * e1 + (vv - dv) * e2
-                w.writerow([f"{uu:.10g}", f"{vv:.10g}"] + [f"{c:.10g}" for c in p] + [f"{vals[b, a]:.10g}"])
+                w.writerow(([f"{uu:.10g}", f"{vv:.10g}"] if in_plane else []) + [f"{c:.10g}" for c in p]
+                           + [f"{vals[b, a]:.10g}"])
     return Path(path)
 
 
