@@ -11,8 +11,15 @@ human-readable TOML file that can also be run headless from the command line, wi
 
 ## Installation
 
-Install the dependencies with [conda](https://conda-forge.org/download/) (they all come from conda-forge, for
-macOS, Linux and Windows), then SolidOcean itself:
+With [conda](https://conda-forge.org/download/), on macOS, Linux and Windows:
+
+```bash
+conda create -n solidocean -c conda-forge solidocean
+conda activate solidocean
+```
+
+This also adds SolidOcean to the applications menu (macOS: `~/Applications`; conda creates it, mamba does not).
+To work on the code instead, install the dependencies from conda-forge and SolidOcean from a clone:
 
 ```bash
 git clone https://github.com/anufrievroman/solidocean.git
@@ -29,7 +36,7 @@ solidocean                                # the interface (File → New offers r
 solidocean --template square slab.toml    # a new model file from a template
 solidocean slab.toml                      # run it headless: CSV, NPZ and the model in slab/
 solidocean --set "r=0.35*a" slab.toml     # override a variable from the command line
-solidocean --install-app                  # macOS: add SolidOcean.app to ~/Applications
+solidocean --install-app                  # macOS, installed from a clone: add SolidOcean.app to ~/Applications
 ```
 
 Templates: `empty`, `bulk`, `membrane`, `beam`, `square`, `hexagonal`, `honeycomb`, `pillars`,

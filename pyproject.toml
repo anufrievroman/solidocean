@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "solidocean"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Open-source FEM solver for elastic eigenfrequencies, phonon dispersion and heat transfer in 3D structures"
 authors = [{ name = "Anufriev Roman" }]
 license = "GPL-3.0-or-later"
@@ -18,6 +18,9 @@ dev = ["pytest"]
 
 [project.scripts]
 solidocean = "solidocean.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "solidocean.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
