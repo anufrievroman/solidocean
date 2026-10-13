@@ -71,7 +71,7 @@ def test_save_csv_custom_name(tmp_path):
     from solidocean.physics.solid.modal import ModalResults
     r = ModalResults(np.array([[[1e9, 2e9]]]), np.zeros((1, 1, 3)), np.zeros(1), "k")
     out = r.save_csv(tmp_path / "my_bands.csv", "GHz")
-    rows = list(csv.reader(open(out)))
+    rows = list(csv.reader(open(out, encoding="utf-8")))
     assert rows[0][-2:] == ["f1 [GHz]", "f2 [GHz]"] and rows[1][-2:] == ["1", "2"]
 
 
@@ -80,14 +80,14 @@ def test_file_layout(tmp_path):
     import tomllib
     for name, section, other in (("hexagonal", "solid", "heat"), ("heat_pad", "heat", "solid")):
         p = templates.create(name)
-        d = tomllib.loads(p.save(tmp_path / f"{name}.toml").read_text())
+        d = tomllib.loads(p.save(tmp_path / f"{name}.toml").read_text(encoding="utf-8"))
         assert section in d and other not in d and "physics" not in d
         assert Project.load(tmp_path / f"{name}.toml").to_dict() == p.to_dict()
-    d = tomllib.loads((tmp_path / "hexagonal.toml").read_text())
+    d = tomllib.loads((tmp_path / "hexagonal.toml").read_text(encoding="utf-8"))
     assert d["lattice"] == {"vectors": [["a", "0", "0"], ["a/2", "sqrt(3)*a/2", "0"]]}
     assert d["solid"]["study"]["kpath"]["path"] == ["G", "M", "K", "G"]
     assert "tol" not in d["solid"]["study"] and "output" not in d          # defaults are left out
-    assert '\ncenter = ["0", "0", "0"]\n' in (tmp_path / "hexagonal.toml").read_text()   # short arrays: one line
+    assert '\ncenter = ["0", "0", "0"]\n' in (tmp_path / "hexagonal.toml").read_text(encoding="utf-8")   # short arrays: one line
     import pytest
     with pytest.raises(ValueError, match="unknown section"):
         Project.from_dict({**d, "physics": {}})

@@ -71,7 +71,7 @@ def test_mesh_regions_round_trip_and_checks(tmp_path):
     q = Project.load(p.save(tmp_path / "m.toml"))
     r, = q.mesh.regions
     assert (r.on, r.max_size, r.name) == ("A", "h/4", "Fine")
-    assert 'on = "A"' in (tmp_path / "m.toml").read_text()
+    assert 'on = "A"' in (tmp_path / "m.toml").read_text(encoding="utf-8")
     q.mesh.regions[0].on = "Nope"
     q.mesh.regions[0].max_size = "-1[um]"
     errors = " ".join(q.validate_geometry())

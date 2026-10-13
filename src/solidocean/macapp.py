@@ -62,7 +62,7 @@ def install_app(dest_dir: str | Path) -> Path:
     macos.mkdir(parents=True)
     resources.mkdir()
     launcher = macos / "solidocean-launcher"
-    launcher.write_text(LAUNCHER.format(name=APP_NAME))
+    launcher.write_text(LAUNCHER.format(name=APP_NAME), encoding="utf-8")
     launcher.chmod(0o755)
     os.symlink(os.path.realpath(sys.executable), macos / APP_NAME)
     _make_icns(ICON_PNG, resources / "SolidOcean.icns")

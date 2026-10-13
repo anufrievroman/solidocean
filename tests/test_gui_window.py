@@ -167,14 +167,14 @@ def test_plots_added_after_the_run_are_saved(tmp_path, monkeypatch):
 
     run = w.save_run(tmp_path / "run")
     assert (run / "Profile.csv").is_file()
-    with open(run / "quantities.csv") as fh:
+    with open(run / "quantities.csv", encoding="utf-8") as fh:
         assert "max(abs(ux))" in next(csv.reader(fh))
 
     out = tmp_path / "profile.csv"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
     w.current_plot = 0
     w.export_csv()
-    rows = list(csv.reader(open(out)))
+    rows = list(csv.reader(open(out, encoding="utf-8")))
     assert rows[0][1:] == ["f=1e+09", "f=2e+09"] and len(rows) > 10
     w.dirty = False
     w.close()

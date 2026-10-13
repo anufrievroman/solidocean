@@ -43,7 +43,7 @@ tests are separate: `pytest`.
 
 def load_sections() -> dict:
     try:
-        return json.loads(SECTIONS.read_text())
+        return json.loads(SECTIONS.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 
@@ -67,7 +67,7 @@ def write_report(sections: dict) -> None:
     stamps = sorted({s["date"] for s in sections.values()})
     out.append(f"---\n*SolidOcean {__version__}; generated {', '.join(stamps)} on {platform.system()} "
                f"{platform.machine()}, Python {platform.python_version()}.*\n")
-    (common.ROOT / "docs" / "validation.md").write_text("\n".join(out))
+    (common.ROOT / "docs" / "validation.md").write_text("\n".join(out), encoding="utf-8")
 
 
 def main() -> int:
@@ -97,7 +97,7 @@ def main() -> int:
                           "n_checks": len(report.checks), "n_ok": sum(c.ok for c in report.checks),
                           "seconds": report.seconds, "date": datetime.date.today().isoformat()}
         common.FIGURES.mkdir(parents=True, exist_ok=True)
-        SECTIONS.write_text(json.dumps(sections, indent=1, ensure_ascii=False))
+        SECTIONS.write_text(json.dumps(sections, indent=1, ensure_ascii=False), encoding="utf-8")
         write_report(sections)
     print("failed: " + ", ".join(failed) if failed else "all passed")
     return 1 if failed else 0

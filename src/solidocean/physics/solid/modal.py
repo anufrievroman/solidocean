@@ -56,7 +56,7 @@ class ModalResults:
         path = Path(path)
         n_eigs = vals.shape[2]
         label = f" [{unit}]" if unit else ""
-        with open(path, "w", newline="") as fh:
+        with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(([self.outer_name] if self.outer_name else []) +
                        ["kx [rad/m]", "ky [rad/m]", "kz [rad/m]", self.x_label] +
@@ -73,7 +73,7 @@ class ModalResults:
         path = Path(path)
         scale = UNITS[freq_unit]
         n_eigs = self.freqs.shape[2]
-        with open(path, "w", newline="") as fh:
+        with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             head = ([self.outer_name] if self.outer_name else []) + \
                 ["kx [rad/m]", "ky [rad/m]", "kz [rad/m]", self.x_label] + \

@@ -62,7 +62,7 @@ class FieldResults:
 
     def save_table(self, path: Path, quantity: str) -> Path:
         vals = self.values(quantity)
-        with open(path, "w", newline="") as fh:
+        with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(([self.outer_name] if self.outer_name else []) + (["time [s]"] if self.timed else [])
                        + [quantity])
@@ -78,7 +78,7 @@ class FieldResults:
         if not names:
             return []
         path = directory / "quantities.csv"
-        with open(path, "w", newline="") as fh:
+        with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
             w.writerow(([self.outer_name] if self.outer_name else []) + (["time [s]"] if self.timed else []) + names)
             for i in range(len(self.outer_values)):
@@ -117,7 +117,7 @@ def line_profile(results, project, pdef):
 
 def save_line_table(results, project, pdef, path: Path) -> Path:
     xs, vals, j, label = line_profile(results, project, pdef)
-    with open(path, "w", newline="") as fh:
+    with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         xname = "s [m]" if pdef.line_axis == "s" else f"{pdef.line_axis} [m]"
         names = [f"{results.outer_name}={v:.6g}" for v in results.outer_values] if results.outer_name \
@@ -343,7 +343,7 @@ def save_section_table(results, project, pdef, path: Path) -> Path:
     at = [f"{results.outer_name}={results.outer_values[i]:.6g}"] if results.outer_name else []
     if len(results.times) > 1:
         at.append(f"t={results.times[j]:.6g} s")
-    with open(path, "w", newline="") as fh:
+    with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow((["u [m]", "v [m]"] if in_plane else []) + ["x [m]", "y [m]", "z [m]"]
                    + [f"{value} ({', '.join(at)})" if at else value])

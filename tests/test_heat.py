@@ -201,7 +201,7 @@ def test_oscillation_input_and_checks(tmp_path):
     q = Project.load(p.save(tmp_path / "m.toml"))
     pl = q.heat.conditions[0].pulse
     assert (pl.shape, pl.period, pl.amplitude, pl.duration) == ("sine", "1/(10[MHz])", "5e5[W/m^2]", "10[ns]")
-    assert "duration" not in (tmp_path / "m.toml").read_text()
+    assert "duration" not in (tmp_path / "m.toml").read_text(encoding="utf-8")
     assert q.validate() == []
     pl.amplitude, pl.period = "", "-1[s]"
     errors = " ".join(q.validate())

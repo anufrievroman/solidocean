@@ -174,7 +174,7 @@ def write_record(project, directory: Path, results=None) -> list[Path]:
     from . import __version__
     directory = Path(directory)
     model = directory / "model.toml"
-    model.write_text(project.dumps())
+    model.write_text(project.dumps(), encoding="utf-8")
     record = {"solidocean": __version__, "written": datetime.datetime.now().isoformat(timespec="seconds")}
     try:    # the variables as numbers (SI); their expressions are in model.toml
         ev = project.evaluator()
@@ -184,6 +184,6 @@ def write_record(project, directory: Path, results=None) -> list[Path]:
     if results is not None and getattr(results, "info", None):
         record["run"] = results.info
     path = directory / "run.json"
-    with open(path, "w") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         json.dump(record, fh, indent=2, default=str)
     return [model, path]

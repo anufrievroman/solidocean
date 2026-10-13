@@ -334,7 +334,7 @@ class Project:
 
     def save(self, path: str | Path | None = None) -> Path:
         path = Path(path or self.path)
-        path.write_text(self.dumps())
+        path.write_text(self.dumps(), encoding="utf-8")
         self.path = path
         return path
 

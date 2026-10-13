@@ -115,7 +115,7 @@ def test_the_run_record_holds_what_the_model_file_cannot_say(tmp_path, MODEL):
     r = results()
     r.info = {"elapsed_s": 1.5}
     r.write_outputs(MODEL, out, [])
-    record = json.loads((out / "run.json").read_text())
+    record = json.loads((out / "run.json").read_text(encoding="utf-8"))
     assert set(record) == {"solidocean", "written", "values", "run"}
     assert record["values"]["a"] == pytest.approx(6e-7) and record["run"] == {"elapsed_s": 1.5}
     assert Project.load(out / "model.toml").variables["a"] == "600[nm]"   # runnable as it stands
