@@ -1,7 +1,6 @@
 context:
   name: solidocean
   version: "0.1.1"
-  python_min: "3.11"
 
 package:
   name: ${{ name }}
@@ -51,7 +50,9 @@ tests:
         - solidocean.physics
         - solidocean.gui.app
       pip_check: true
-      python_version: ${{ python_min }}.*
+      python_version:
+        - ${{ python_min }}.*
+        - "*"
   - requirements:
       run:
         - python ${{ python_min }}.*
