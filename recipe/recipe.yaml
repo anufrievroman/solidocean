@@ -9,7 +9,7 @@ package:
 
 source:
   url: https://github.com/anufrievroman/solidocean/archive/refs/tags/v${{ version }}.tar.gz
-  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+  sha256: 2f6b871167d582406fc305b82846d3010ccc89c6da80452ce5fc062353c7b80b
 
 build:
   number: 0
