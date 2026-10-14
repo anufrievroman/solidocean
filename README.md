@@ -2,13 +2,9 @@
 
 # SolidOcean
 
-SolidOcean is a free and open-source finite element modelling tool for calculating and analysing phonon
-dispersion relations, mechanical waves, and heat transfer problems.
+SolidOcean is a free and open-source finite element modelling tool for calculating and analysing phonon dispersion relations, mechanical waves, and heat transfer problems.
 
-Essentially, it is a Qt user interface that unites several open-source tools for creating a mesh (with the
-Gmsh mesher), solving differential equations with boundary conditions (with the MUMPS solver), and analysing
-the results (with Matplotlib). Every model is a simple human-readable TOML file that can also be run headless
-from the command line, making it ideal for scripting and working with agents.
+Essentially, it is a Qt user interface uniting several open-source tools for creating meshes (with the Gmsh mesher), solving differential equations with boundary conditions (with the MUMPS solver), and analysing the results (with Matplotlib). Every model is a simple human-readable TOML file that can also be run headless from the command line, making it ideal for scripting and working with agents.
 
 **Documentation: [anufrievroman.gitbook.io/solidocean](https://anufrievroman.gitbook.io/solidocean)**
 
@@ -31,25 +27,27 @@ from the command line, making it ideal for scripting and working with agents.
 - **Frequency domain** problems with the temperature oscillation driven at one frequency, as in the 3ω and
   FDTR methods.
 
-The [formalism](https://anufrievroman.gitbook.io/solidocean/physics) pages describe the equations, elements
-and solvers, and the [tutorials](https://anufrievroman.gitbook.io/solidocean/tutorials) walk through example
-models.
+The [formalism](https://anufrievroman.gitbook.io/solidocean/physics) pages describe the equations, elements and solvers, and the [tutorials](https://anufrievroman.gitbook.io/solidocean/tutorials) walk through example models.
 
 ## Installation
 
-All dependencies are available from [conda-forge](https://conda-forge.org/download/) for macOS, Linux and
-Windows:
+### Step 1. Install conda
 
+Install [conda](https://conda-forge.org/download/), which will install all python dependencies.
+
+### Step 2. Install SolidOcean
+
+Run these two command in a terminal:
 ```bash
-git clone https://github.com/anufrievroman/solidocean.git
-cd solidocean
-conda env create -f environment.yml
+conda create -n solidocean -c conda-forge solidocean
 conda activate solidocean
-pip install -e . --no-deps
 ```
 
-See [Installation](https://anufrievroman.gitbook.io/solidocean/installation) for the details, the macOS app
-and installing without conda.
+### Step 3. Launch
+
+Launch using icon or by running `solidocean` in the terminal. First launch is slow, after that it's faster.
+
+See [Installation](https://anufrievroman.gitbook.io/solidocean/installation) for more details.
 
 ## Usage
 
@@ -72,13 +70,12 @@ How the code is organised, and how to add a physics, is described in
 
 ## Disclaimer
 
-SolidOcean is an independent project, a graphical interface to existing open-source tools that unites their
-workflow under one roof as a lab tool for academic research. It is provided as is, without any warranty;
-check the results of your models against known solutions before relying on them.
+SolidOcean is an independent project, it is a graphical interface to existing open-source tools and it unites their
+workflow under one roof, meant to be used as a lab tool for academic research. It is provided as is, without any warranty.
+Although the core physics was [validated](https://anufrievroman.gitbook.io/solidocean/validation), it may still contain bugs or be inappropriate for your research problem, so check the results of your models against known solutions before relying on them.
 
 ## License
 
-Copyright (C) 2026 Anufriev Roman. SolidOcean is free software under the
-[GNU General Public License v3.0 or later](LICENSE). It builds on Gmsh, MUMPS, NumPy, SciPy, Matplotlib,
-Qt for Python, PyVista and VTK, each under its own license; see
-[Licenses](https://anufrievroman.gitbook.io/solidocean/licenses) for the full statements.
+Copyright (C) 2026 Anufriev Roman.
+SolidOcean is free software under the [GNU General Public License v3.0 or later](LICENSE). It builds on Gmsh, MUMPS, NumPy, SciPy, Matplotlib,
+Qt for Python, PyVista and VTK, each under its own license; see [Licenses](https://anufrievroman.gitbook.io/solidocean/licenses) for the full statements.
