@@ -163,7 +163,7 @@ def run(quick: bool = False) -> Report:
     with Timer() as tm:
         # steady stack
         q, ends = steady_exact()
-        rows, steady_err, prof = [], 0.0, None
+        steady_err, prof = 0.0, None
         for o in (1, 2):
             p = steady_project(o)
             if o == 2:
@@ -177,25 +177,24 @@ def run(quick: bool = False) -> Report:
                 ex = Ta + (Tb - Ta) * (x - x0 * 1e-6) / ((x1 - x0) * 1e-6)
                 err = max(err, np.abs(T[nodes] - ex).max() / (T1 - T0))
             qf = res.quantities["mean(qx)"][0, 0]
-            rows.append((f"P{o}", f"{qf:.6e}", f"{abs(qf / q - 1):.1e}", f"{err:.1e}"))
             steady_err = max(steady_err, err, abs(qf / q - 1))
             if o == 2:
                 prof = (mesh, T)
-        r.table(f"Steady stack: exact flux {q:.6e} W/m²; largest nodal temperature error relative to T₁ − T₀.",
-                ["elements", "flux (W/m²)", "flux error", "temperature error"], rows)
         mesh, T = prof
         fig, ax = figure(6.2, 4.0)
         for d, (n, x0, x1, k) in enumerate(LAYERS):
             Ta, Tb = ends[d]
-            ax.plot([x0, x1], [Ta, Tb], "-", color=common.REF_COLOR, lw=1.5, label="exact" if d == 0 else None)
+            ax.plot([x0, x1], [Ta, Tb], "-", color=common.REF_COLOR, lw=1.5, label="Exact" if d == 0 else None)
             nodes, x = layer_nodes(mesh, n)
-            ax.plot(x * 1e6, T[nodes], "o", mfc="none", ms=4, color=common.COLORS[d], label=f"layer {n} (k = {k:g})")
-        for xi, lab in ((1.0, "R₁"), (1.5, "thin layer")):
+            sel = common.thin(np.argsort(x), 15)
+            ax.plot(x[sel] * 1e6, T[nodes[sel]], "o", ms=4, color=common.COLORS[d],
+                    label=f"Layer {n} ($k$ = {k:g})")
+        for xi, lab in ((1.0, "$R_1$"), (1.5, "Thin layer")):
             ax.axvline(xi, color="0.85", lw=1, zorder=0)
             ax.annotate(lab, (xi, T1 - 4), ha="center", fontsize=8, color="0.4")
-        ax.set_xlabel("x (µm)")
-        ax.set_ylabel("Temperature (K)")
-        ax.legend(fontsize=8)
+        ax.set_xlabel(r"Position, $x$ (µm)")
+        ax.set_ylabel(r"Temperature, $T$ (K)")
+        ax.legend()
         r.figure(fig, "stack_steady.png", "Steady temperature through the stack: jumps at the boundary resistance "
                                           "and at the thin layer, against the series law.")
 
@@ -216,36 +215,33 @@ def run(quick: bool = False) -> Report:
             err = max(err, ea, eb)
         err /= T1 - T0
         ia, ib = n_a[np.isclose(xa, L1_)], n_b[np.isclose(xb, L1_)]
-        fig, (ax, bx) = __import__("matplotlib.pyplot").pyplot.subplots(1, 2, figsize=(9.5, 3.8), layout="constrained")
+        fig, (ax, bx) = common.figures(2, 9.5, 3.8)
         tt = np.linspace(0.2e-9, T_END, 300)
-        ax.plot(tt * 1e9, ref(np.array([L1_]), tt[:, None], 1)[:, 0], "-", color="C3", lw=1.2)
-        ax.plot(tt * 1e9, ref(np.array([L1_]), tt[:, None], 2)[:, 0], "-", color="C0", lw=1.2)
-        ax.plot(times[1::3] * 1e9, res.T[0][1::3][:, ia].mean(axis=1), "o", mfc="none", ms=4, color="C3",
-                label="interface, side A")
-        ax.plot(times[1::3] * 1e9, res.T[0][1::3][:, ib].mean(axis=1), "s", mfc="none", ms=4, color="C0",
-                label="interface, side B")
-        ax.set_xlabel("Time (ns)")
-        ax.set_ylabel("Temperature (K)")
-        ax.legend(title="lines: exact", fontsize=8)
+        ax.plot(tt * 1e9, ref(np.array([L1_]), tt[:, None], 1)[:, 0], "-", color=common.SHORE[0], lw=1.2)
+        ax.plot(tt * 1e9, ref(np.array([L1_]), tt[:, None], 2)[:, 0], "-", color=common.SHORE[2], lw=1.2)
+        ts = common.thin(np.arange(1, len(times)))
+        ax.plot(times[ts] * 1e9, res.T[0][ts][:, ia].mean(axis=1), "o", ms=4, color=common.SHORE[0],
+                label="Interface, side A")
+        ax.plot(times[ts] * 1e9, res.T[0][ts][:, ib].mean(axis=1), "o", ms=4, color=common.SHORE[2],
+                label="Interface, side B")
+        ax.set_xlabel(r"Time, $t$ (ns)")
+        ax.set_ylabel(r"Temperature, $T$ (K)")
+        ax.legend(title="Lines: exact")
         xs1, xs2 = np.linspace(0, L1_, 100), np.linspace(L1_, L1_ + L2_, 100)
         for n, tf in enumerate((5e-9, 15e-9, 60e-9)):
             j = int(np.argmin(np.abs(times - tf)))
             c = common.COLORS[n]
             bx.plot(xs1 * 1e6, ref(xs1, times[j], 1), "-", color=c, lw=1.2)
             bx.plot(xs2 * 1e6, ref(xs2, times[j], 2), "-", color=c, lw=1.2)
-            sel = np.r_[n_a[np.argsort(xa)][::4], n_b[np.argsort(xb)][::4]]
-            bx.plot(mesh.points[sel, 0] * 1e6, res.T[0][j][sel], "o", mfc="none", ms=3.5, color=c,
-                    label=f"t = {times[j] * 1e9:.3g} ns")
-        bx.set_xlabel("x (µm)")
-        bx.set_ylabel("Temperature (K)")
-        bx.legend(title="lines: exact", fontsize=8)
+            sel = np.r_[common.thin(n_a[np.argsort(xa)], 13), common.thin(n_b[np.argsort(xb)], 13)]
+            bx.plot(mesh.points[sel, 0] * 1e6, res.T[0][j][sel], "o", ms=3.5, color=c,
+                    label=f"$t$ = {times[j] * 1e9:.3g} ns")
+        bx.set_xlabel(r"Position, $x$ (µm)")
+        bx.set_ylabel(r"Temperature, $T$ (K)")
+        bx.legend(title="Lines: exact")
         r.figure(fig, "stack_transient.png", "Two layers with a boundary resistance after the left face is raised "
                                              "to T₁: temperature on both sides of the interface against time, and "
                                              "profiles at three times (Crank-Nicolson, quadratic elements).")
-        r.table("Transient two-layer problem.", ["quantity", "value"], [
-            ("eigenvalues used", len(ref.modes)),
-            ("time steps (Crank-Nicolson)", p.heat.problem.steps),
-            ("largest nodal error for t ≥ 5 ns, relative to T₁ − T₀", f"{err:.1e}")])
         r.check("steady stack: flux and temperatures (P1 and P2)", steady_err, 1e-9)
         r.check("transient: largest nodal error for t ≥ 5 ns", err, 1e-3)
     r.seconds = tm.seconds

@@ -139,22 +139,22 @@ def run(quick: bool = False) -> Report:
         n_max = max(len(c) for c in curves)
         for b in range(n_max):
             ys = np.array([c[b] if b < len(c) else np.nan for c in curves])
-            ax.plot(kk, ys, ".", ms=1.2, color=common.REF_COLOR, label="exact" if b == 0 else None)
+            ax.plot(kk, ys, "-", lw=0.9, color=common.REF_COLOR, label="Exact" if b == 0 else None)
         for j, x in enumerate(kt):
-            exact, got, err = compare(res.freqs[0, j], x)
+            _, got, err = compare(res.freqs[0, j], x)
             worst = max(worst, err.max())
-            ax.plot(np.full(len(got), x), got, "o", mfc="none", ms=4, color=common.FEM_COLOR,
+            ax.plot(np.full(len(got), x), got, "o", ms=2.8, color=common.FEM_COLOR,
                     label="SolidOcean" if j == 0 else None)
         ax.set_xlim(0, KT_MAX)
         ax.set_ylim(0, OMEGA_MAX)
-        ax.set_xlabel("Wavenumber  k t")
-        ax.set_ylabel("Frequency  ω t / c_T")
+        ax.set_xlabel(r"Wavenumber, $k t$")
+        ax.set_ylabel(r"Frequency, $\omega t / c_\mathrm{T}$")
         ax.legend(loc="lower right")
         r.figure(fig, "lamb_dispersion.png", "Guided modes of a free plate: exact Rayleigh-Lamb and SH branches "
-                                             "(dots) and the computed eigenfrequencies (circles), mesh h = t/16.")
+                                             "(lines) and the computed eigenfrequencies (circles), mesh h = t/16.")
 
         # mesh convergence at kt = 3
-        rows, hs, errs = [], {1: [], 2: []}, {1: [], 2: []}
+        hs, errs = {1: [], 2: []}, {1: [], 2: []}
         fracs = [1 / 12, 1 / 16, 1 / 24] if quick else [1 / 12, 1 / 16, 1 / 24, 1 / 32]
         for o in (1, 2):
             for hf in fracs:
@@ -162,24 +162,19 @@ def run(quick: bool = False) -> Report:
                 s = Solver(q, log=quiet)
                 ev = q.evaluator()
                 f = s.solve_point(ev, s.k_of(ev))
-                exact, got, err = compare(f, 3.0)
+                _, _, err = compare(f, 3.0)
                 errs[o].append(err.max())
-                h = common.mean_edge(s._model.mesh) / 1e-6
-                hs[o].append(h)
-                rows.append((f"P{o}", f"{h:.4f}", s._model.constraints.n_free, len(exact),
-                             f"{np.median(err):.2e}", f"{err.max():.2e}"))
+                hs[o].append(common.mean_edge(s._model.mesh) / 1e-6)
         p1, p2 = order(hs[1], errs[1]), order(hs[2], errs[2])
-        r.table("Mesh convergence at kt = 3: all modes with ω t / c_T < 12.",
-                ["elements", "h / t", "DOFs", "modes", "median error", "max error"], rows)
         fig, ax = figure()
-        for o, c in ((1, "C0"), (2, "C3")):
+        for o, c in ((1, common.SHORE[2]), (2, common.FEM_COLOR)):
             ax.plot(hs[o], errs[o], "o-", color=c, label=f"P{o}: order {order(hs[o], errs[o]):.1f}")
         common.slope_guide(ax, hs[1], np.array(errs[1]), 2)
         common.slope_guide(ax, hs[2], np.array(errs[2]), 4)
-        common.convergence_axes(ax, "Mean element edge h / t", "Largest relative frequency error")
+        common.convergence_axes(ax, r"Element size, $h / t$", r"Largest frequency error, $|\Delta\omega| / \omega$")
         ax.legend()
         r.figure(fig, "lamb_convergence.png", "Mesh convergence of the eigenfrequencies at kt = 3 (largest error "
-                                              "of all modes below ω t / c_T = 12); expected orders 2h (P1: 2, P2: 4).")
+                                              "of all modes below ω t / c_T = 12); expected orders P1: 2, P2: 4.")
         r.check("largest frequency error along the path (h = t/16)", worst, 1e-3)
         r.check("P2 convergence order", p2, 3.5, "min", ".2f")
         r.check("P1 convergence order", p1, 1.8, "min", ".2f")

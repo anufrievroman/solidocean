@@ -85,7 +85,7 @@ def run(quick: bool = False) -> Report:
     r = Report("spreading_disk", TITLE, ABOUT)
     with Timer() as tm:
         fracs = [1 / 2, 1 / 3, 1 / 4] if quick else [1 / 2, 1 / 3, 1 / 4, 1 / 6]
-        rows, hs, e_mean, e_ctr, last = [], [], [], [], None
+        hs, e_mean, e_ctr, last = [], [], [], None
         for hf in fracs:
             p = project(hf)
             if hf == 1 / 3:
@@ -96,40 +96,25 @@ def run(quick: bool = False) -> Report:
             mean = disk_mean(mesh, T)
             pts = mesh.points
             ctr = T[np.argmin(np.linalg.norm(pts, axis=1))]
-            em, ec = abs(mean / (MEAN - SINK) - 1), abs(ctr / (surface_rise(0) - SINK) - 1)
-            h = common.mean_edge(mesh) / A_D
-            hs.append(h)
-            e_mean.append(em)
-            e_ctr.append(ec)
-            rows.append((f"a/{1 / hf:.0f}", f"{h:.3f}", mesh.n_nodes, f"{mean:.5f}", f"{em:.1e}", f"{ctr:.5f}",
-                         f"{ec:.1e}"))
+            hs.append(common.mean_edge(mesh) / A_D)
+            e_mean.append(abs(mean / (MEAN - SINK) - 1))
+            e_ctr.append(abs(ctr / (surface_rise(0) - SINK) - 1))
             last = (mesh, T)
-        r.table(f"Temperature rise of the disk (P = {P * 1e3:g} mW, a = 1 µm, k = {K_M:g} W/(m·K)); exact: mean "
-                f"{MEAN - SINK:.5f} K, centre {surface_rise(0) - SINK:.5f} K (half-space minus the sink's "
-                f"{SINK:.5f} K). h is the mean element edge / a.",
-                ["max size", "h", "nodes", "mean (K)", "error", "centre (K)", "error"], rows)
 
         mesh, T = last
         pts = mesh.points
         edge = (np.abs(pts[:, 1]) < 1e-12) & (np.abs(pts[:, 2]) < 1e-12) & (pts[:, 0] <= 3 * A_D)
         xs = np.linspace(0, 3 * A_D, 400)
         fig, ax = figure()
-        ax.plot(xs / A_D, surface_rise(xs) - SINK, "-", color=common.REF_COLOR, lw=1.5, label="exact")
+        ax.plot(xs / A_D, surface_rise(xs) - SINK, "-", color=common.REF_COLOR, lw=1.5, label="Exact")
         idx = np.flatnonzero(edge)
-        ax.plot(pts[idx, 0] / A_D, T[idx], "o", mfc="none", ms=4, color=common.FEM_COLOR, label="SolidOcean")
+        ax.plot(pts[idx, 0] / A_D, T[idx], "o", ms=4, color=common.FEM_COLOR, label="SolidOcean")
         ax.axvline(1, color="0.8", lw=1, zorder=0)
-        ax.set_xlabel("Distance from the centre r / a")
-        ax.set_ylabel("Surface temperature rise (K)")
+        ax.set_xlabel(r"Distance from the centre, $r / a$")
+        ax.set_ylabel(r"Surface temperature rise, $\Delta T$ (K)")
         ax.legend()
         r.figure(fig, "spreading_profile.png", f"Surface temperature along a radius (mesh a/{1 / fracs[-1]:.0f}) "
                                                "against the exact half-space solution (minus the sink's offset).")
-        fig, ax = figure()
-        ax.plot(hs, e_mean, "o-", color=common.FEM_COLOR, label=f"disk mean: order {order(hs, e_mean):.1f}")
-        ax.plot(hs, e_ctr, "s--", color="C0", mfc="none", label=f"centre: order {order(hs, e_ctr):.1f}")
-        common.convergence_axes(ax, "Mean element edge h / a", "Relative error")
-        ax.legend(fontsize=8)
-        r.figure(fig, "spreading_convergence.png", "Mesh convergence of the disk's mean and centre temperature "
-                                                   "(quadratic elements).")
         r.check("mean disk temperature (finest mesh)", e_mean[-1], 1e-3)
         r.check("centre temperature (finest mesh)", e_ctr[-1], 1e-3)
         r.check("convergence order of the mean", order(hs, e_mean), 1.5, "min", ".2f")

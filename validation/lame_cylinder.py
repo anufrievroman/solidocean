@@ -77,7 +77,7 @@ def run(quick: bool = False) -> Report:
         fracs = [1 / 3, 1 / 4, 1 / 6] if quick else [1 / 3, 1 / 4, 1 / 6, 1 / 8, 1 / 12, 1 / 16]
         errs = {(o, f): [] for o in (1, 2) for f in ("u", "s")}
         hs = {1: [], 2: []}
-        rows, profile = [], None
+        profile = None
         for o in (1, 2):
             for hf in fracs:
                 p = project(hf, o)
@@ -89,9 +89,7 @@ def run(quick: bool = False) -> Report:
                 eu, es = np.sqrt(q[U_ERR] / q[U_NORM]), np.sqrt(q[S_ERR] / q[S_NORM])
                 errs[(o, "u")].append(eu)
                 errs[(o, "s")].append(es)
-                h = common.mean_edge(res.meshes[0]) / (B_OUT - A_IN)
-                hs[o].append(h)
-                rows.append((f"P{o}", f"{h:.3f}", s._model.constraints.n_free, f"{eu:.2e}", f"{es:.2e}"))
+                hs[o].append(common.mean_edge(res.meshes[0]) / (B_OUT - A_IN))
                 if o == 2 and hf == fracs[-1]:
                     rr = np.linspace(A_IN, B_OUT, 60)
                     pts = np.column_stack([rr / np.sqrt(2), rr / np.sqrt(2), np.full_like(rr, 0.125e-6)])
@@ -102,35 +100,34 @@ def run(quick: bool = False) -> Report:
                                                   for e in ("sxx", "syy", "sxy", "szz", "ux", "uy"))
                     profile = (rr, sxx * c * c + syy * s_ * s_ + 2 * sxy * c * s_,
                                sxx * s_ * s_ + syy * c * c - 2 * sxy * c * s_, szz, ux * c + uy * s_)
-        r.table("Relative L² errors of the displacement and the stress; h is the mean element edge / (b − a).",
-                ["elements", "h", "DOFs", "displacement", "stress"], rows)
         ords = {k: order(hs[k[0]], v) for k, v in errs.items()}
 
         rr, sr, st, sz, ur = profile
-        er, et, ez, eu = exact(rr)
-        fig, (ax, bx) = __import__("matplotlib.pyplot").pyplot.subplots(1, 2, figsize=(9, 3.8), layout="constrained")
+        fig, (ax, bx) = common.figures(2, 9.0, 3.8)
         rf = np.linspace(A_IN, B_OUT, 200)
         ex = exact(rf)
-        for vals, ref, lab, c in ((sr, ex[0], "σ_r", "C0"), (st, ex[1], "σ_θ", "C3"), (sz, ex[2], "σ_z", "C2")):
+        for vals, ref, lab, c in ((sr, ex[0], r"$\sigma_r$", common.SHORE[0]),
+                                  (st, ex[1], r"$\sigma_\theta$", common.SHORE[1]),
+                                  (sz, ex[2], r"$\sigma_z$", common.SHORE[2])):
             ax.plot(rf * 1e6, ref / 1e6, "-", color=c, lw=1.2)
-            ax.plot(rr[::3] * 1e6, vals[::3] / 1e6, "o", mfc="none", ms=4, color=c, label=lab)
-        ax.set_xlabel("Radius r (µm)")
-        ax.set_ylabel("Stress (MPa)")
-        ax.legend(title="lines: Lamé", fontsize=8)
-        bx.plot(rf * 1e6, ex[3] * 1e9, "-", color="C0", lw=1.2, label="Lamé")
-        bx.plot(rr[::3] * 1e6, ur[::3] * 1e9, "o", mfc="none", ms=4, color="C0", label="SolidOcean")
-        bx.set_xlabel("Radius r (µm)")
-        bx.set_ylabel("Radial displacement u_r (nm)")
-        bx.legend(fontsize=8)
+            ax.plot(rr[::3] * 1e6, vals[::3] / 1e6, "o", ms=4, color=c, label=lab)
+        ax.set_xlabel(r"Radius, $r$ (µm)")
+        ax.set_ylabel(r"Stress, $\sigma$ (MPa)")
+        ax.legend(title="Lines: Lamé")
+        bx.plot(rf * 1e6, ex[3] * 1e9, "-", color=common.REF_COLOR, lw=1.2, label="Lamé")
+        bx.plot(rr[::3] * 1e6, ur[::3] * 1e9, "o", ms=4, color=common.FEM_COLOR, label="SolidOcean")
+        bx.set_xlabel(r"Radius, $r$ (µm)")
+        bx.set_ylabel(r"Radial displacement, $u_r$ (nm)")
+        bx.legend()
         r.figure(fig, "lame_profiles.png", "Stresses and radial displacement through the wall (along the 45° line, "
                                            "quadratic elements, finest mesh) against Lamé's solution.")
         fig, ax = figure()
-        for (o, f), c, m in (((1, "u"), "C0", "o-"), ((1, "s"), "C0", "s--"), ((2, "u"), "C3", "o-"),
-                             ((2, "s"), "C3", "s--")):
-            ax.plot(hs[o], errs[(o, f)], m, color=c, mfc="none" if f == "s" else c,
+        for (o, f), c, m in (((1, "u"), common.SHORE[2], "o-"), ((1, "s"), common.SHORE[2], "o--"),
+                             ((2, "u"), common.FEM_COLOR, "o-"), ((2, "s"), common.FEM_COLOR, "o--")):
+            ax.plot(hs[o], errs[(o, f)], m, color=c,
                     label=f"P{o} {'displacement' if f == 'u' else 'stress'}: order {ords[(o, f)]:.1f}")
-        common.convergence_axes(ax, "Mean element edge h / (b − a)", "Relative L² error")
-        ax.legend(fontsize=8)
+        common.convergence_axes(ax, r"Element size, $h / (b - a)$", r"Relative $L^2$ error, $\varepsilon$")
+        ax.legend()
         r.figure(fig, "lame_convergence.png", "Mesh convergence of displacement and stress (expected orders: P1 2 "
                                               "and 1, P2 3 and 2).")
         r.check("P2 stress error (finest mesh)", errs[(2, "s")][-1], 2e-3)

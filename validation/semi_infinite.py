@@ -75,33 +75,23 @@ def run(quick: bool = False) -> Report:
             j = int(round(frac * (len(res.times) - 1)))
             t = res.times[j]
             ax.plot(xs * 1e6, exact(xs, t) - T0, "-", color=common.COLORS[n], lw=1.2)
-            sel = order_x[x[order_x] <= 4e-6][::2]
-            ax.plot(x[sel] * 1e6, res.T[0][j][sel] - T0, "o", mfc="none", ms=4, color=common.COLORS[n],
-                    label=f"t = {t * 1e9:.3g} ns")
-        ax.set_xlabel("Depth x (µm)")
-        ax.set_ylabel("Temperature rise T − T₀ (K)")
-        ax.legend(title="lines: exact", fontsize=8)
+            sel = common.thin(order_x[x[order_x] <= 4e-6])
+            ax.plot(x[sel] * 1e6, res.T[0][j][sel] - T0, "o", ms=4, color=common.COLORS[n],
+                    label=f"$t$ = {t * 1e9:.3g} ns")
+        ax.set_xlabel(r"Depth, $x$ (µm)")
+        ax.set_ylabel(r"Temperature rise, $T - T_0$ (K)")
+        ax.legend(title="Lines: exact")
         r.figure(fig, "semi_infinite_profiles.png", "Temperature profiles at three times (Crank-Nicolson, 400 steps, "
                                                     "quadratic elements) against the erfc solution.")
         profile_err = error(res, x)
 
+        # convergence studies: the orders are the checks below, the plots add nothing to them
         steps = [10, 20, 40, 80] if quick else [10, 20, 40, 80, 160, 320]
         errs = {1.0: [], 0.5: []}
         for theta in errs:
             for n in steps:
                 errs[theta].append(error(*solve(project(n, theta, "w/4"))))
         be = order(1 / np.array(steps), errs[1.0])
-        dts = T_END / np.array(steps)
-        fig, ax = figure()
-        ax.plot(dts * 1e9, errs[1.0], "o-", color="C0", label=f"backward Euler: order {be:.2f}")
-        ax.plot(dts * 1e9, errs[0.5], "s-", color="C3", label="Crank-Nicolson")
-        common.slope_guide(ax, dts * 1e9, np.array(errs[1.0]), 1)
-        common.convergence_axes(ax, "Time step (ns)", "Largest error / surface temperature rise")
-        ax.legend(fontsize=8)
-        r.figure(fig, "semi_infinite_time.png", "Time-step convergence at t_end (mesh h = w/4, quadratic elements).")
-        r.table("Time-step convergence: largest nodal error at t_end relative to the surface temperature rise.",
-                ["steps", "dt (ns)", "backward Euler", "Crank-Nicolson"],
-                [(n, f"{d * 1e9:.3g}", f"{a:.2e}", f"{b:.2e}") for n, d, a, b in zip(steps, dts, errs[1.0], errs[0.5])])
 
         sizes = ["0.5[um]", "0.25[um]", "0.125[um]"] + ([] if quick else ["0.0625[um]"])
         hs, errh = {1: [], 2: []}, {1: [], 2: []}
@@ -111,12 +101,6 @@ def run(quick: bool = False) -> Report:
                 hs[o].append(common.mean_edge(res_h.meshes[0]) * 1e6)
                 errh[o].append(error(res_h, x_h))
         orders = {o: order(hs[o], errh[o]) for o in (1, 2)}
-        fig, ax = figure()
-        for o, c in ((1, "C0"), (2, "C3")):
-            ax.plot(hs[o], errh[o], "o-", color=c, label=f"P{o}: order {orders[o]:.1f}")
-        common.convergence_axes(ax, "Mean element edge h (µm)", "Largest error / surface temperature rise")
-        ax.legend(fontsize=8)
-        r.figure(fig, "semi_infinite_mesh.png", "Mesh convergence at t_end (Crank-Nicolson, 2000 steps).")
 
         r.check("profile error (CN, 400 steps)", profile_err, 1e-4)
         r.check("backward Euler order", be, 0.95, "min", ".2f")

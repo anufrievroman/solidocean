@@ -103,7 +103,7 @@ def run(quick: bool = False) -> Report:
         breathing = [x for x, lab, _ in modes if lab == "S0"][0]
         r.check("breathing mode: determinant vs closed form", abs(breathing / breathing_closed_form() - 1), 1e-12)
         fracs = [1 / 5, 1 / 6, 1 / 8] if quick else [1 / 5, 1 / 6, 1 / 8, 1 / 10]
-        errs, rows, finest, hs = [], [], None, []
+        errs, finest, hs = [], None, []
         for hf in fracs:
             p = project(hf)
             if hf == fracs[0]:
@@ -117,39 +117,26 @@ def run(quick: bool = False) -> Report:
             errs.append(err.max())
             finest = got
             hs.append(common.mean_edge(s._model.mesh) / 1e-6)
-            rows.append((f"{hs[-1]:.3f}", s._model.constraints.n_free, f"{np.median(err):.2e}", f"{err.max():.2e}"))
         p2 = order(hs, errs)
-
-        # spectrum table at the finest mesh: one row per multiplet
-        table, i = [], 0
-        for x, lab, m in modes:
-            g = finest[i:i + m]
-            table.append((lab, m, f"{x:.6f}", f"{g.mean():.6f}", f"{np.abs(g - x).max() / x:.1e}"))
-            i += m
-        r.table(f"Mode multiplets below ω a / c_T = {X_MAX} (mesh a/{1 / fracs[-1]:.0f}): T torsional, "
-                "S spheroidal, index l.", ["mode", "multiplicity", "exact ω a/c_T", "computed (mean)", "max error"],
-                table)
-        r.table("Mesh convergence (quadratic elements, all modes below the limit).",
-                ["h / a", "DOFs", "median error", "max error"], rows)
 
         fig, ax = figure(6.4, 4.4)
         n = np.arange(1, len(exact) + 1)
-        ax.step(n, exact, where="mid", color=common.REF_COLOR, lw=1.5, label="exact (Lamb)")
-        ax.plot(n, finest, "o", mfc="none", ms=4, color=common.FEM_COLOR, label="SolidOcean")
+        ax.step(n, exact, where="mid", color=common.REF_COLOR, lw=1.5, label="Exact (Lamb)")
+        ax.plot(n, finest, "o", ms=4, color=common.FEM_COLOR, label="SolidOcean")
         i = 0
         for x, lab, m in modes:
             ax.annotate(lab, (i + 1 + (m - 1) / 2, x), xytext=(0, 6), textcoords="offset points", ha="center",
                         fontsize=8, color="0.3")
             i += m
-        ax.set_xlabel("Mode number (rigid-body modes removed)")
-        ax.set_ylabel("Frequency  ω a / c_T")
+        ax.set_xlabel(r"Mode number, $n$ (rigid-body modes removed)")
+        ax.set_ylabel(r"Frequency, $\omega a / c_\mathrm{T}$")
         ax.legend(loc="lower right")
         r.figure(fig, "sphere_spectrum.png", f"Spectrum of the free sphere: exact multiplets and the computed "
                                              f"eigenfrequencies, mesh a/{1 / fracs[-1]:.0f}.")
         fig, ax = figure()
         ax.plot(hs, errs, "o-", color=common.FEM_COLOR, label=f"P2: order {p2:.1f}")
         common.slope_guide(ax, hs, np.array(errs), 4)
-        common.convergence_axes(ax, "Mean element edge h / a", "Largest relative frequency error")
+        common.convergence_axes(ax, r"Element size, $h / a$", r"Largest frequency error, $|\Delta\omega| / \omega$")
         ax.legend()
         r.figure(fig, "sphere_convergence.png", "Mesh convergence of the sphere's eigenfrequencies (curved quadratic "
                                                 "elements; expected order 4).")

@@ -81,20 +81,14 @@ def run(quick: bool = False) -> Report:
         ref = np.array([layered(f, p) for f in fs])
         dphase = np.degrees(np.angle(fem) - np.angle(ref))
         damp = np.abs(fem) / np.abs(ref) - 1
-        r.table(f"Probed temperature oscillation (P = 1 mW, w = 2 µm, G = 150 MW/(m²·K); mesh {p.mesh.max_size}, "
-                f"{res.meshes[0].n_nodes} nodes).",
-                ["f (MHz)", "layered model: phase (°)", "amplitude (K)", "SolidOcean: phase (°)", "amplitude (K)",
-                 "phase difference (°)", "amplitude difference"],
-                [(f"{f / 1e6:.3g}", f"{np.degrees(np.angle(a)):.2f}", f"{abs(a):.4f}", f"{np.degrees(np.angle(b)):.2f}",
-                  f"{abs(b):.4f}", f"{d:+.2f}", f"{e:+.1e}") for f, a, b, d, e in zip(fs, ref, fem, dphase, damp)])
         fig, ax = figure()
         ff = np.logspace(np.log10(fs[0]), np.log10(fs[-1]), 40)
         ax.plot(ff / 1e6, [np.degrees(np.angle(layered(f, p))) for f in ff], "-", color=common.REF_COLOR,
-                label="layered model")
-        ax.plot(fs / 1e6, np.degrees(np.angle(fem)), "o", mfc="none", color=common.FEM_COLOR, label="SolidOcean")
+                label="Layered model")
+        ax.plot(fs / 1e6, np.degrees(np.angle(fem)), "o", color=common.FEM_COLOR, label="SolidOcean")
         ax.set_xscale("log")
-        ax.set_xlabel("Modulation frequency (MHz)")
-        ax.set_ylabel("Phase of the probed temperature (°)")
+        ax.set_xlabel(r"Modulation frequency, $f$ (MHz)")
+        ax.set_ylabel(r"Phase of the probed temperature, $\varphi$ (°)")
         ax.legend()
         r.figure(fig, "fdtr_phase.png", "FDTR phase against frequency: the 3D model and the layered analytic model.")
         r.notes.append("The difference at the lowest frequencies comes from the finite model: the far faces, held at the "

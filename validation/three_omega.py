@@ -93,24 +93,18 @@ def run(quick: bool = False) -> Report:
         ref = np.array([cahill(f) for f in fs])
         err = np.abs(fem - ref) / np.abs(ref)
         dphase = np.degrees(np.angle(fem) - np.angle(ref))
-        r.table("Mean temperature oscillation of the strip (P = 1 W/m, b = 1 µm, k = 1.4 W/(m·K)).",
-                ["f (Hz)", "penetration depth (µm)", "Cahill in-phase (K)", "out-of-phase (K)", "SolidOcean in-phase",
-                 "out-of-phase", "amplitude error", "phase error (°)"],
-                [(f"{f:.3g}", f"{np.sqrt(ALPHA / (2 * np.pi * f)) * 1e6:.2f}", f"{a.real:.4f}", f"{a.imag:.4f}",
-                  f"{b.real:.4f}", f"{b.imag:.4f}", f"{e:.1e}", f"{d:+.2f}")
-                 for f, a, b, e, d in zip(fs, ref, fem, err, dphase)])
         fig, ax = figure(6.2, 4.4)
         ff = np.logspace(np.log10(fs[0]), np.log10(fs[-1]), 60)
         rr = np.array([cahill(f) for f in ff])
-        ax.plot(ff, rr.real, "-", color="C3", lw=1.2, label="in-phase, Cahill")
-        ax.plot(ff, rr.imag, "-", color="C0", lw=1.2, label="out-of-phase, Cahill")
-        ax.plot(fs, fem.real, "o", mfc="none", color="C3", label="in-phase, SolidOcean")
-        ax.plot(fs, fem.imag, "s", mfc="none", color="C0", label="out-of-phase, SolidOcean")
+        ax.plot(ff, rr.real, "-", color=common.SHORE[0], lw=1.2, label="In-phase, Cahill")
+        ax.plot(ff, rr.imag, "-", color=common.SHORE[2], lw=1.2, label="Out-of-phase, Cahill")
+        ax.plot(fs, fem.real, "o", color=common.SHORE[0], label="In-phase, SolidOcean")
+        ax.plot(fs, fem.imag, "o", color=common.SHORE[2], label="Out-of-phase, SolidOcean")
         ax.set_xscale("log")
         ax.axhline(0, color="0.8", lw=0.8, zorder=0)
-        ax.set_xlabel("Frequency of the temperature oscillation (Hz)")
-        ax.set_ylabel("Strip temperature oscillation (K)")
-        ax.legend(fontsize=8)
+        ax.set_xlabel(r"Frequency, $f$ (Hz)")
+        ax.set_ylabel(r"Temperature oscillation, $\Delta\hat{T}$ (K)")
+        ax.legend()
         r.figure(fig, "three_omega.png", "In-phase and out-of-phase temperature oscillation of the heater strip "
                                          "against Cahill's formula.")
         slope_fem = np.polyfit(np.log(2 * np.pi * fs[:3]), fem.real[:3], 1)[0]

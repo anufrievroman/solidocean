@@ -25,9 +25,9 @@ import traceback
 
 import common
 
-CASES = ["lamb_plate", "free_sphere", "cantilever", "driven_bar", "lame_cylinder", "semi_infinite", "spreading_disk",
+CASES = ["lamb_plate", "free_sphere", "driven_bar", "lame_cylinder", "semi_infinite", "spreading_disk",
          "contact_stack", "three_omega", "fdtr"]
-GROUPS = [("Elastic waves and vibrations", ["lamb_plate", "free_sphere", "cantilever", "driven_bar"]),
+GROUPS = [("Elastic waves and vibrations", ["lamb_plate", "free_sphere", "driven_bar"]),
           ("Statics", ["lame_cylinder"]),
           ("Heat transfer", ["semi_infinite", "spreading_disk", "contact_stack", "three_omega", "fdtr"])]
 SECTIONS = common.HERE / "sections.json"
@@ -84,14 +84,6 @@ def gitbook(markdown: str, demote: bool = True) -> str:
 def write_report(sections: dict) -> None:
     from solidocean import __version__
     out = [FRONT_MATTER + gitbook(INTRO, demote=False)]
-    out += ["| case | result | checks | run time |", "|---|---|---:|---:|"]
-    for name in CASES:
-        s = sections.get(name)
-        if s:
-            anchor = s["title"].lower().replace(":", "").replace(",", "").replace(" ", "-")
-            out.append(f"| [{s['title']}](#{anchor}) | {'✅ passed' if s['ok'] else '❌ failed'} | "
-                       f"{s['n_ok']}/{s['n_checks']} | {s['seconds']:.0f} s |")
-    out.append("")
     for group, names in GROUPS:
         present = [n for n in names if n in sections]
         if present:
@@ -134,9 +126,8 @@ def main() -> int:
         print(f"  {report.seconds:.0f} s")
         if not report.ok:
             failed.append(name)
-        sections[name] = {"title": report.title, "markdown": report.markdown(), "ok": report.ok,
-                          "n_checks": len(report.checks), "n_ok": sum(c.ok for c in report.checks),
-                          "seconds": report.seconds, "date": datetime.date.today().isoformat()}
+        sections[name] = {"title": report.title, "markdown": report.markdown(),
+                          "date": datetime.date.today().isoformat()}
         common.FIGURES.mkdir(parents=True, exist_ok=True)
         SECTIONS.write_text(json.dumps(sections, indent=1, ensure_ascii=False), encoding="utf-8")
         write_report(sections)

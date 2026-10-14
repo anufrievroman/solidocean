@@ -60,22 +60,14 @@ def run(quick: bool = False) -> Report:
         err = np.abs(tip - ref) / np.abs(ref).max()
         fig, ax = figure(6.4, 4.2)
         ff = np.linspace(fs[0], fs[-1], 2000)
-        ax.plot(ff / 1e9, np.abs(exact(ff)) * 1e12, "-", color=common.REF_COLOR, lw=1.3, label="exact")
-        ax.plot(fs / 1e9, np.abs(tip) * 1e12, "o", mfc="none", ms=3.5, color=common.FEM_COLOR, label="SolidOcean")
+        ax.plot(ff / 1e9, np.abs(exact(ff)) * 1e12, "-", color=common.REF_COLOR, lw=1.3, label="Exact")
+        ax.plot(fs / 1e9, np.abs(tip) * 1e12, "o", ms=3.5, color=common.FEM_COLOR, label="SolidOcean")
         ax.set_yscale("log")
-        ax.set_xlabel("Drive frequency (GHz)")
-        ax.set_ylabel("End displacement amplitude (pm)")
+        ax.set_xlabel(r"Drive frequency, $f$ (GHz)")
+        ax.set_ylabel(r"End displacement amplitude, $|u(L)|$ (pm)")
         ax.legend()
         r.figure(fig, "driven_bar.png", f"Resonance curve of the bar's end (loss factor η = {ETA:g}): the first "
                                         "three quarter-wave resonances against the exact solution.")
-        rows = []
-        for m in range(1, 4):
-            fm = (2 * m - 1) * f1
-            i = int(np.argmin(np.abs(fs - fm)))
-            rows.append((m, f"{fm / 1e9:.4f}", f"{abs(ref[i]) * 1e12:.2f}", f"{abs(tip[i]) * 1e12:.2f}",
-                         f"{abs(tip[i] / ref[i]) - 1:+.1e}"))
-        r.table("Amplitude near the resonances (the sweep point closest to each).",
-                ["mode", "f_n (GHz)", "exact (pm)", "SolidOcean (pm)", "difference"], rows)
         r.check("largest error relative to the peak amplitude", err.max(), 1e-4)
     r.seconds = tm.seconds
     return r
