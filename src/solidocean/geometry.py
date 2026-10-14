@@ -55,6 +55,8 @@ def evaluate_features(project: Project, ev: Evaluator) -> list[EvaluatedFeature]
             try:
                 if k == "points":
                     vals[k] = np.array([[ev(c) for c in p] for p in v], dtype=float)
+                elif k == "sections":
+                    vals[k] = _loft_sections(v, ev)
                 elif isinstance(v, list):
                     vals[k] = ev.vector(v)
                 else:
@@ -63,6 +65,24 @@ def evaluate_features(project: Project, ev: Evaluator) -> list[EvaluatedFeature]
                 raise ValueError(f"object '{f.name}', {k}: {exc}") from exc
         out.append(EvaluatedFeature(f, vals))
     return out
+
+
+def _loft_sections(sections, ev: Evaluator) -> np.ndarray:
+    """Loft sections -> corners (sections, corners, xyz), SI."""
+    if len(sections) < 2:
+        raise ValueError("a loft needs at least 2 sections")
+    out = []
+    for n, sec in enumerate(sections, 1):
+        pts = sec.get("points", [])
+        if any(len(p) != 2 for p in pts):
+            raise ValueError(f"section {n}: points need 2 coordinates (x, y)")
+        if len(pts) < 3:
+            raise ValueError(f"section {n}: a polygon needs at least 3 points")
+        z = ev(sec.get("z", "0"))
+        out.append([[ev(x), ev(y), z] for x, y in pts])
+    if len({len(p) for p in out}) > 1:
+        raise ValueError("all sections need the same number of points (corner i joins corner i of the next)")
+    return np.array(out, dtype=float)
 
 
 LENGTH_KEYS = ("size", "radius", "radius1", "radius2", "height", "base", "thickness")
@@ -78,6 +98,8 @@ def _sizes(features: list[EvaluatedFeature], periods: dict[str, float]) -> list[
                 sizes.extend(np.abs(np.atleast_1d(v[key])).tolist())
         if "points" in v:
             sizes.append(float(np.ptp(v["points"], axis=0).max()))
+        if "sections" in v:
+            sizes.append(float(np.ptp(v["sections"].reshape(-1, 3), axis=0).max()))
         sizes.extend(np.abs(array_extent(ef)).tolist())
     return [s for s in sizes if s > 0]
 
@@ -130,10 +152,12 @@ def array_extent(ef: EvaluatedFeature) -> np.ndarray:
 
 def rotation_pivot(ef: EvaluatedFeature) -> np.ndarray:
     """The point a feature rotates about (SI): its center (base center for cylinders/cones); for a polygon
-    prism the centroid of its corners at mid-height."""
+    prism the centroid of its corners at mid-height; for a loft the centroid of all its corners."""
     v = ef.values
     if ef.feature.type == "prism":
         return np.r_[v["points"].mean(axis=0), v["z0"] + v["height"] / 2]
+    if ef.feature.type == "loft":
+        return v["sections"].reshape(-1, 3).mean(axis=0)
     return np.asarray(v["center"], dtype=float)
 
 
@@ -241,9 +265,40 @@ def _make_shape(ef: EvaluatedFeature, s: float, lattice_vectors=()) -> list[tupl
         surf = occ.addPlaneSurface([occ.addCurveLoop(lines)])
         ext = occ.extrude([(2, surf)], 0, 0, h)
         return [dt for dt in ext if dt[0] == 3]
+    elif t == "loft":
+        return _make_loft(ef, s)
     else:
         raise ValueError(f"unknown object type '{t}'")
     return [(3, tag)]
+
+
+def _make_loft(ef: EvaluatedFeature, s: float) -> list[tuple[int, int]]:
+    """Polygon sections joined by ruled (straight) side faces, OCC ThruSections."""
+    occ = gmsh.model.occ
+    secs = ef.values["sections"] * s
+    z = secs[:, 0, 2]
+    if np.any(np.diff(z) == 0):
+        raise ValueError(f"object '{ef.feature.name}': consecutive loft sections need different z")
+
+    def area(p):   # signed area of a polygon in x-y (> 0: counter-clockwise)
+        x, y = p[:, 0], p[:, 1]
+        return 0.5 * float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
+
+    if any(area(p) == 0 for p in secs):
+        return []
+    wires = []
+    for p in secs:
+        if area(p) * area(secs[0]) < 0:  # same sense as the first section: corner i stays corner i
+            p = np.r_[p[:1], p[:0:-1]]
+        ptags = [occ.addPoint(*c) for c in p]
+        lines = [occ.addLine(ptags[i], ptags[(i + 1) % len(ptags)]) for i in range(len(ptags))]
+        wires.append(occ.addWire(lines))
+    try:
+        out = occ.addThruSections(wires, makeSolid=True, makeRuled=True)
+    except Exception as exc:
+        raise ValueError(f"object '{ef.feature.name}': joining the loft sections failed in OpenCASCADE ({exc}). "
+                         "Check that no polygon crosses itself.") from exc
+    return [dt for dt in out if dt[0] == 3]
 
 
 FEATURE_TAG = 10001   # physical-group tags of objects (materials use 1, 2, ...)

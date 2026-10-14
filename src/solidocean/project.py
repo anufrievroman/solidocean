@@ -36,9 +36,13 @@ FEATURE_TYPES: dict[str, dict[str, Any]] = {
     "prism": {"points": [["0", "0"], ["1", "0"], ["0", "1"]], "z0": "0", "height": "1"},
     # isosceles triangle in the x-y plane (base along x, apex towards +y), extruded along z; centred on its box
     "triangle": {"center": ["0", "0", "0"], "base": "1", "height": "1", "thickness": "1"},
+    # polygons in x-y planes at heights z (same number of corners each), joined by straight side faces in order:
+    # corner i of one section connects to corner i of the next
+    "loft": {"sections": [{"z": "0", "points": [["-1", "-1"], ["1", "-1"], ["1", "1"], ["-1", "1"]]},
+                          {"z": "1", "points": [["-0.5", "-0.5"], ["0.5", "-0.5"], ["0.5", "0.5"], ["-0.5", "0.5"]]}]},
 }
 FEATURE_TITLES = {"cell": "Lattice cell", "block": "Block", "cylinder": "Cylinder", "cone": "Cone",
-                  "sphere": "Sphere", "prism": "Prism", "triangle": "Triangular block"}
+                  "sphere": "Sphere", "prism": "Prism", "triangle": "Triangular block", "loft": "Loft"}
 # every feature except the lattice cell (which must match the lattice) can be rotated: angles in degrees about
 # the global x, then y, then z axis, around the feature's reference point (center; base center for cylinders/cones)
 ROTATION_KEY = "rotation"

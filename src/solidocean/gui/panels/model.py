@@ -430,6 +430,10 @@ def default_feature(project, ftype: str) -> Feature:
                       z0=L(lo[2]), height=L(span[2]))
     elif ftype == "triangle":
         params.update(center=[L(x) for x in c], base=L(span[0] / 2), height=L(span[1] / 2), thickness=L(span[2]))
+    elif ftype == "loft":   # a square frustum: base 2r, top r
+        params.update(sections=[{"z": L(z), "points": [[L(c[0] + sx * h), L(c[1] + sy * h)]
+                                                       for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]}
+                                for z, h in ((lo[2], r), (hi[2], r / 2))])
     return Feature(ftype, f"{stem} {i}", "add", material, params)
 
 
@@ -539,7 +543,9 @@ class FeaturePanel(Panel):
             label = self.LABELS.get(key, key)
             if key == "center" and self.f.type in ("cylinder", "cone"):
                 label = "Base center"
-            if key == "points":
+            if key == "sections":
+                self._sections_box(g)
+            elif key == "points":
                 edit = QPlainTextEdit("\n".join(", ".join(str(c) for c in pt) for pt in params[key]))
                 edit.setMaximumHeight(120)
 
@@ -557,6 +563,10 @@ class FeaturePanel(Panel):
         if self.f.type == "triangle":
             g.addRow(muted_label("Isosceles triangle: base along x, apex towards +y, extruded along z; centred on "
                                  "its bounding box. Rotate it for other orientations."))
+        if self.f.type == "loft":
+            g.addRow(muted_label("Polygons in x-y planes at heights z, joined by straight side faces: corner i of "
+                                 "one section joins corner i of the next, so all sections need the same number "
+                                 "of corners."))
         if ROTATION_KEY in params:
             rot = VectorEdit(self.win, params[ROTATION_KEY])
             rot.setToolTip("Degrees about the global x, then y, then z axis, around the "
@@ -564,6 +574,39 @@ class FeaturePanel(Panel):
             g.addRow("Rotation (deg)", rot)
         if ARRAY_KEY in params:
             self._array_box()
+
+    def _sections_box(self, g):
+        """Loft sections: z and a polygon each, plus adding/removing sections."""
+        sections = self.f.params["sections"]
+        for n, sec in enumerate(sections, 1):
+            g.addRow(f"Section {n}: z", ExprEdit(self.win, lambda sec=sec: sec["z"],
+                                                 lambda t, sec=sec: sec.__setitem__("z", t)))
+            edit = QPlainTextEdit("\n".join(", ".join(str(c) for c in pt) for pt in sec["points"]))
+            edit.setMaximumHeight(120)
+
+            def set_points(edit=edit, sec=sec):
+                pts = [[c.strip() for c in line.split(",")] for line in edit.toPlainText().splitlines() if line.strip()]
+                sec["points"] = [p for p in pts if len(p) == 2]
+                self.win.mark_dirty()
+
+            edit.textChanged.connect(set_points)
+            g.addRow("  Polygon (x, y per line)", edit)
+        row = QHBoxLayout()
+        add = QPushButton("Add section")
+        add.setToolTip("Append a copy of the last section; then change its z and corners")
+        add.clicked.connect(lambda: self._edit_sections(lambda: sections.append(copy.deepcopy(sections[-1]))))
+        remove = QPushButton("Remove last section")
+        remove.setEnabled(len(sections) > 2)
+        remove.clicked.connect(lambda: self._edit_sections(sections.pop))
+        row.addWidget(add)
+        row.addWidget(remove)
+        row.addStretch(1)
+        g.addRow(row)
+
+    def _edit_sections(self, change):
+        change()
+        self.win.mark_dirty()
+        self.win.rebuild_tree(("feature", self.index))
 
     def _array_box(self):
         """Copies of the feature along x, y, z, one object together."""

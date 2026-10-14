@@ -255,3 +255,34 @@ def test_plots_added_after_the_run_are_saved(tmp_path, monkeypatch):
     assert rows[0][1:] == ["f=1e+09", "f=2e+09"] and len(rows) > 10
     w.dirty = False
     w.close()
+
+
+def test_loft_sections_are_added_and_removed_in_the_object_panel():
+    """The loft panel edits one z and polygon per section; Add / Remove change the number of sections."""
+    from PySide6.QtWidgets import QApplication, QPlainTextEdit, QPushButton
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    w = MainWindow()
+    w.show()
+    w.set_project(templates.create("square"))
+    w.add_feature("loft")
+    i = len(w.project.objects) - 1
+    w.select_node("feature", i)
+    app.processEvents()
+    sections = w.project.objects[i].params["sections"]
+    assert len(w.settings.widget().findChildren(QPlainTextEdit)) == 2
+
+    def press(text):
+        next(b for b in w.settings.widget().findChildren(QPushButton) if b.text() == text).click()
+        app.processEvents()
+
+    press("Add section")
+    assert len(sections) == 3 and len(w.settings.widget().findChildren(QPlainTextEdit)) == 3
+    w.settings.widget().findChildren(QPlainTextEdit)[2].setPlainText("0, 0\n1[um], 0\n0, 1[um]\n0, 0.5[um]")
+    assert sections[2]["points"][1] == ["1[um]", "0"]
+    press("Remove last section")
+    assert len(sections) == 2
+    w.cancel.set()
+    w.dirty = False
+    w.close()

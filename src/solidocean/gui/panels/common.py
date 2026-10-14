@@ -340,6 +340,10 @@ def model_box(project, only: str | None = None) -> tuple[np.ndarray, np.ndarray]
             z = sorted([v["z0"], v["z0"] + v["height"]])
             lo.append(np.r_[v["points"].min(axis=0), z[0]])
             hi.append(np.r_[v["points"].max(axis=0), z[1]])
+        elif t == "loft":
+            pts = v["sections"].reshape(-1, 3)
+            lo.append(pts.min(axis=0))
+            hi.append(pts.max(axis=0))
         elif t == "triangle":
             half = np.abs([v["base"], v["height"], v["thickness"]]) / 2
             lo.append(v["center"] - half)

@@ -49,7 +49,7 @@ def test_default_features_scale_with_model():
     from solidocean.gui.panels.model import default_feature
     p = slab()
     ev = p.evaluator()
-    for t in ("block", "cylinder", "cone", "sphere", "prism"):
+    for t in ("block", "cylinder", "cone", "sphere", "prism", "loft"):
         f = default_feature(p, t)
         for key in ("radius", "height"):
             if key in f.params:
@@ -122,3 +122,37 @@ def test_array_of_features(tmp_path):
     assert "array" not in r.objects[0].to_dict() and "spacing" not in r.objects[0].to_dict()
     r.objects[1].params["array"] = ["2.5", "1", "1"]
     assert any("whole numbers" in e for e in r.validate_geometry())
+
+
+def _square(half, z, clockwise=False):
+    pts = [[f"-{half}", f"-{half}"], [half, f"-{half}"], [half, half], [f"-{half}", half]]
+    return {"z": z, "points": pts[::-1] if clockwise else pts}
+
+
+def test_loft_frustum_volume_and_roundtrip(tmp_path):
+    """Square frustum (2a base, a top, height a): V = h/3 (A1 + A2 + sqrt(A1 A2)); sections given in opposite
+    senses are joined without twisting; the sections survive saving."""
+    mesa = Feature("loft", "mesa", material="Si",
+                   params={"sections": [_square("a", "0"), _square("a/2", "a", clockwise=True)]})
+    p = slab()
+    p.objects = [mesa]
+    v, lo, hi = _volume_box(p)
+    assert v == pytest.approx(1e-18 / 3 * (4 + 1 + 2), rel=1e-9)
+    np.testing.assert_allclose(np.r_[lo, hi], [-1e-6, -1e-6, 0, 1e-6, 1e-6, 1e-6], atol=1e-15)
+    q = Project.load(p.save(tmp_path / "m.toml"))
+    assert q.objects[0].params["sections"] == mesa.params["sections"]
+
+
+def test_loft_three_sections_and_errors():
+    """A bulging loft through three sections; sections with different corner counts are rejected."""
+    p = slab()
+    p.objects = [Feature("loft", "bulge", material="Si",
+                         params={"sections": [_square("a/2", "0"), _square("a", "a"), _square("a/2", "2*a")]})]
+    v, lo, hi = _volume_box(p)
+    assert v == pytest.approx(2 * 1e-18 / 3 * (1 + 4 + 2), rel=1e-9)
+    assert hi[2] == pytest.approx(2e-6)
+    bad = _square("a", "a")
+    bad["points"] = bad["points"][:3]
+    p.objects[0].params["sections"] = [_square("a", "0"), bad]
+    with pytest.raises(ValueError, match="same number of points"):
+        meshing.preview_geometry(p, p.evaluator())
