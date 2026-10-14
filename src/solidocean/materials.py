@@ -44,6 +44,9 @@ LIBRARY: dict[str, dict[str, str]] = {
     # chromium, polycrystalline (adhesion layers); bulk values, sputtered films are often softer
     "Cr": {"model": "isotropic", "rho": "7190[kg/m^3]", "E": "279[GPa]", "nu": "0.21",
            "k": "93.9[W/(m*K)]", "cp": "449[J/(kg*K)]"},
+    # palladium, polycrystalline; bulk values
+    "Pd": {"model": "isotropic", "rho": "12023[kg/m^3]", "E": "121[GPa]", "nu": "0.39",
+           "k": "71.8[W/(m*K)]", "cp": "244[J/(kg*K)]"},
     "GaAs": {"model": "cubic", "rho": "5317[kg/m^3]", "C11": "118.8[GPa]", "C12": "53.8[GPa]", "C44": "59.4[GPa]",
              "k": "55[W/(m*K)]", "cp": "330[J/(kg*K)]"},
     "Diamond": {"model": "cubic", "rho": "3515[kg/m^3]", "C11": "1076[GPa]", "C12": "125[GPa]",
@@ -56,6 +59,13 @@ LIBRARY: dict[str, dict[str, str]] = {
     "4H-SiC": {"model": "hexagonal", "rho": "3210[kg/m^3]", "C11": "507[GPa]", "C12": "108[GPa]",
                "C13": "52[GPa]", "C33": "547[GPa]", "C44": "159[GPa]",
                "k": "370[W/(m*K)]", "cp": "690[J/(kg*K)]"},
+    # lithium niobate, congruent, trigonal 3m: c-axis along z, x along a crystal a-axis (IEEE convention).
+    # Stiffness at constant electric field (Kovacs et al. 1990; piezoelectric stiffening not included)
+    "LiNbO3": {"model": "anisotropic", "rho": "4647[kg/m^3]",
+               "C11": "198.39[GPa]", "C12": "54.72[GPa]", "C13": "65.13[GPa]", "C14": "7.88[GPa]",
+               "C22": "198.39[GPa]", "C23": "65.13[GPa]", "C24": "-7.88[GPa]", "C33": "227.9[GPa]",
+               "C44": "59.65[GPa]", "C55": "59.65[GPa]", "C56": "7.88[GPa]", "C66": "71.835[GPa]",
+               "kxx": "4.6[W/(m*K)]", "kyy": "4.6[W/(m*K)]", "kzz": "4.2[W/(m*K)]", "cp": "628[J/(kg*K)]"},
 }
 
 THERMAL_KEYS = ("k", "kxx", "kyy", "kzz", "cp")

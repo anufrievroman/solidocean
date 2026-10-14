@@ -78,7 +78,7 @@ def test_library_materials_are_physical():
     import pytest
     from solidocean.expressions import Evaluator
     from solidocean.materials import LIBRARY, evaluate
-    known_vL = {"Si": 8433, "Diamond": 17496, "Ge": 4913, "3C-SiC": 11023, "Al": 6420, "Au": 3240}  # m/s, [100] / bulk
+    known_vL = {"Si": 8433, "Diamond": 17496, "Ge": 4913, "3C-SiC": 11023, "Al": 6420, "Au": 3240, "Pd": 4480}  # m/s, [100] / bulk
     for name in LIBRARY:
         C, rho = evaluate({"library": name}, Evaluator({}))
         assert np.all(np.linalg.eigvalsh(C) > 0), name
@@ -87,6 +87,10 @@ def test_library_materials_are_physical():
             assert vL == pytest.approx(known_vL[name], rel=0.01), name
     C, rho = evaluate({"library": "4H-SiC"}, Evaluator({}))
     assert np.sqrt(C[2, 2] / rho) == pytest.approx(13054, rel=0.01)   # longitudinal along the c-axis
+    from solidocean.materials import rotate_stiffness, rotation_matrix
+    C, rho = evaluate({"library": "LiNbO3"}, Evaluator({}))
+    assert np.allclose(rotate_stiffness(C, rotation_matrix([0, 0, 120])), C, atol=1e-6 * C.max())  # 3-fold c-axis
+    assert np.sqrt(C[2, 2] / rho) == pytest.approx(7003, rel=0.01)
 
 
 def test_material_sweep_reuses_mesh():
