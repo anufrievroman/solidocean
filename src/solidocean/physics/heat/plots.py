@@ -22,5 +22,5 @@ def time_plot(name: str = "Average temperature", quantity: str = "mean(T)",
 
 
 def default_plots(transient: bool = False) -> list[ResultPlot]:
-    """The temperature field, plus the average temperature vs time for transient studies."""
+    """The temperature field, plus the average temperature vs time for transient problems."""
     return [field_plot()] + ([time_plot()] if transient else [])

@@ -2,9 +2,9 @@
 import numpy as np
 import pytest
 
-from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatSource, HeatStudy, Pulse
+from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatSource, HeatProblem, Pulse
 from solidocean.physics.heat.solver import SIGMA, HeatSolver
-from solidocean.project import Feature, Material, MeshSettings, VariableSweep, Project, Study
+from solidocean.project import Feature, Material, MeshSettings, VariableSweep, Project, Problem
 
 K, RHO, CP = 100.0, 2000.0, 500.0
 ALPHA = K / (RHO * CP)
@@ -14,11 +14,11 @@ def bar(conditions=(), sources=(), L="1[um]", h="L/8", f="10[MHz]", initial="300
     m = Material("A", {"model": "isotropic", "rho": f"{RHO:g}[kg/m^3]", "E": "100[GPa]", "nu": "0.3",
                        "k": f"{K:g}[W/(m*K)]", "cp": f"{CP:g}[J/(kg*K)]"})
     return Project(name="bar", physics_kind="heat", variables={"L": L, "w": "0.2[um]", "f": f}, materials=[m],
-                   geometry=[Feature("block", "A", material="A", params={"center": ["L/2", "0", "0"],
+                   objects=[Feature("block", "A", material="A", params={"center": ["L/2", "0", "0"],
                                                                          "size": ["L", "w", "w"]})],
                    mesh=MeshSettings(max_size=h),
                    heat=HeatPhysics(initial=initial, conditions=list(conditions), sources=list(sources),
-                                    study=HeatStudy(type="frequency")))
+                                    problem=HeatProblem(type="frequency")))
 
 
 def run(p, quantities=()):
@@ -43,7 +43,7 @@ def test_surface_flux_on_a_semi_infinite_solid():
     q0 = 1e9
     p = bar([HeatCondition("flux", ["xmin"], f"{q0:g}[W/m^2]"), HeatCondition("temperature", ["xmax"], "300[K]")],
             L="20[um]", h="0.15[um]")
-    p.study = Study(sweep=VariableSweep("f", "[10, 40] * 1[MHz]"))
+    p.problem = Problem(sweep=VariableSweep("f", "[10, 40] * 1[MHz]"))
     res = run(p)
     x = res.meshes[0].points[:, 0]
     for i, f in enumerate(res.outer_values):
@@ -70,10 +70,10 @@ def test_sine_amplitude_drives_and_radiation_is_linearised():
     np.testing.assert_allclose(res.T[0][0], exact, rtol=1e-6)
 
 
-def test_frequency_study_input_and_checks(tmp_path):
+def test_frequency_problem_input_and_checks(tmp_path):
     p = bar([HeatCondition("flux", ["xmin"], "1e6[W/m^2]", pulse=Pulse("rect"))])     # pulses: ignored
     q = Project.load(p.save(tmp_path / "m.toml"))
-    assert (q.heat.study.type, q.heat.study.frequency) == ("frequency", "f")
+    assert (q.heat.problem.type, q.heat.problem.frequency) == ("frequency", "f")
     assert q.validate() == []
     q.variables["f"] = "-1[Hz]"
     assert any("frequency must be positive" in e for e in q.validate())

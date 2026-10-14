@@ -28,11 +28,11 @@ class Mesh:
     order: int
     length_scale: float = 1.0     # L0 used during geometry construction
     info: dict = field(default_factory=dict)
-    cell_feature: np.ndarray | None = None   # (E,) index into feature_names (geometry feature owning the cell)
+    cell_feature: np.ndarray | None = None   # (E,) index into feature_names (the object owning the cell)
     feature_names: list[str] = field(default_factory=list)
 
     def region(self, name: str) -> np.ndarray:
-        """Boolean mask of the cells of a geometry feature or a material (features take precedence)."""
+        """Boolean mask of the cells of an object or a material (objects take precedence)."""
         if name in self.feature_names and self.cell_feature is not None:
             return self.cell_feature == self.feature_names.index(name)
         if name in self.material_names:
@@ -86,7 +86,7 @@ def _apply_mesh_options(project: Project, ev: Evaluator, L0: float) -> None:
 
 
 def _object_volumes(name: str) -> list[int]:
-    """gmsh volumes of a geometry feature (what is left of it) or of all domains of a material."""
+    """gmsh volumes of an object (what is left of it) or of all domains of a material."""
     for dim, tag in gmsh.model.getPhysicalGroups(3):
         if gmsh.model.getPhysicalName(dim, tag) == f"feature:{name}":
             return [int(v) for v in gmsh.model.getEntitiesForPhysicalGroup(dim, tag)]

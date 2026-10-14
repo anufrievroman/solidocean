@@ -37,7 +37,7 @@ def lattice_mode(lt) -> tuple[str, str]:
 def use_lattice_cell(win):
     """Make the unit cell of the lattice the base solid: replace the first block or add a cell."""
     from ...project import Feature
-    geo = win.project.geometry
+    geo = win.project.objects
     block = next((f for f in geo if f.enabled and f.op == "add" and f.type == "block"), None)
     if block is not None:
         size = block.params.get("size", ["1", "1", "1"])
@@ -48,7 +48,7 @@ def use_lattice_cell(win):
     else:
         material = win.project.materials[0].name if win.project.materials else ""
         geo.insert(0, Feature("cell", "cell", "add", material, {"center": ["0", "0", "0"], "height": "1[um]"}))
-        win.log("Added a lattice unit cell feature")
+        win.log("Added a lattice unit cell object")
     win.preview = None
     win.mark_dirty()
     win.rebuild_tree(("periodicity", None))

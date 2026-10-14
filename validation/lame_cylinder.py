@@ -34,7 +34,7 @@ def exact(r):
 
 
 def project(h_frac: float, order_: int = 2):
-    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidStudy
+    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidProblem
     from solidocean.project import Feature, Material, MeshSettings, Project
     return Project(
         name="Lame cylinder", physics_kind="solid",
@@ -42,7 +42,7 @@ def project(h_frac: float, order_: int = 2):
         variables={"a": "1[um]", "b": "2[um]", "H": "0.25[um]", "p": f"{P / 1e6:g}[MPa]"},
         materials=[Material("M", {"model": "isotropic", "rho": "2000[kg/m^3]", "E": f"{E / 1e9:g}[GPa]",
                                    "nu": str(NU)})],
-        geometry=[
+        objects=[
             Feature("cylinder", "Tube", material="M",
                     params={"center": ["0", "0", "0"], "axis": ["0", "0", "1"], "radius": "b", "height": "H"}),
             Feature("cylinder", "Bore", op="subtract",
@@ -54,7 +54,7 @@ def project(h_frac: float, order_: int = 2):
             symmetry=["xmin", "ymin", "zmin", "zmax"],
             conditions=[SolidCondition("load", ["all"], load_type="pressure", pressure="p", name="Internal pressure",
                                        box={"min": ["0", "0", "0"], "max": ["a", "a", "H"]})],
-            study=SolidStudy(type="stationary")))
+            problem=SolidProblem(type="stationary")))
 
 
 R2 = "(x^2 + y^2)"

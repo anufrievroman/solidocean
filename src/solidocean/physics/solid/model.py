@@ -1,5 +1,5 @@
 """Solid mechanics settings ([solid] in the model file): symmetry planes, boundary conditions on selections
-and the study (eigenfrequency or stationary)."""
+and the problem (eigenfrequency or stationary)."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ LOAD_TYPES = ("area", "total", "pressure")   # force per area (Pa), total force 
 class SolidCondition:
     """Boundary condition on a selection of boundary faces (bounding-box faces or all faces of the model or
     of one object, optionally only inside a box): fixed constraint, prescribed displacement (per component;
-    an empty component is free) or boundary load (stationary studies only)."""
+    an empty component is free) or boundary load (stationary problems only)."""
     type: str = "fixed"                # fixed | displacement | load
     faces: list[str] = field(default_factory=list)
     name: str = ""
@@ -66,13 +66,13 @@ class KPath:
 
 
 @dataclass
-class SolidStudy:
-    """Study of solid mechanics: eigenfrequencies (modes, phonon dispersion along a k-path), the stationary
+class SolidProblem:
+    """Problem of solid mechanics: eigenfrequencies (modes, phonon dispersion along a k-path), the stationary
     response to loads, or the harmonic (frequency-domain) response to loads and displacements oscillating at a
-    frequency ([solid.study])."""
+    frequency ([solid.problem])."""
     type: str = "eigenfrequency"     # eigenfrequency | stationary | frequency
     num_eigs: int = 12               # eigenfrequencies per solve
-    search_freq: Expr = "0"          # find the eigenfrequencies nearest this frequency
+    search_freq: Expr = "0[GHz]"     # find the eigenfrequencies nearest this frequency
     k: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])   # Bloch wave vector (rad/m) without k-path
     kpath: KPath | None = None       # wavevector sweep (inner loop of a variable sweep)
     tol: float = 0.0                 # relative eigenvalue tolerance (0 = machine precision)
@@ -93,14 +93,14 @@ class SolidStudy:
         return self.type == "frequency"
 
     @property
-    def field_study(self) -> bool:
-        """A study with displacement fields as results (stationary or frequency domain), not modes."""
+    def field_problem(self) -> bool:
+        """A problem with displacement fields as results (stationary or frequency domain), not modes."""
         return self.type in ("stationary", "frequency")
 
     @property
     def active_kpath(self) -> KPath | None:
         kp = self.kpath
-        return kp if kp and kp.enabled and not self.field_study else None
+        return kp if kp and kp.enabled and not self.field_problem else None
 
     def to_dict(self):
         if self.harmonic:
@@ -116,7 +116,7 @@ class SolidStudy:
 
 @dataclass
 class SolidPhysics:
-    """Settings of solid mechanics ([solid]): symmetry planes, boundary conditions on selections, study. The
+    """Settings of solid mechanics ([solid]): symmetry planes, boundary conditions on selections, problem. The
     periodicity is the model's lattice (project.lattice)."""
     # bounding-box faces with zero normal displacement (symmetry plane)
     symmetry: list[str] = field(default_factory=list)
@@ -124,12 +124,12 @@ class SolidPhysics:
     antisymmetry: list[str] = field(default_factory=list)
     # fixed constraints, prescribed displacements and loads on selections of faces
     conditions: list[SolidCondition] = field(default_factory=list)
-    study: SolidStudy = field(default_factory=SolidStudy)
+    problem: SolidProblem = field(default_factory=SolidProblem)
 
     def __post_init__(self):
         self.conditions = [c if isinstance(c, SolidCondition) else SolidCondition(**c) for c in self.conditions]
-        if isinstance(self.study, dict):
-            self.study = SolidStudy(**self.study)
+        if isinstance(self.problem, dict):
+            self.problem = SolidProblem(**self.problem)
 
     @classmethod
     def from_dict(cls, d: dict) -> "SolidPhysics":
@@ -139,7 +139,7 @@ class SolidPhysics:
         d = {key: list(getattr(self, key)) for key in ("symmetry", "antisymmetry") if getattr(self, key)}
         if self.conditions:
             d["conditions"] = [c.to_dict() for c in self.conditions]
-        d["study"] = self.study.to_dict()
+        d["problem"] = self.problem.to_dict()
         return d
 
     def face_conditions(self, lattice) -> dict[str, str]:
@@ -154,12 +154,12 @@ class SolidPhysics:
         return out
 
 
-STUDY_TYPES = ("eigenfrequency", "stationary", "frequency")
-STUDY_TITLES = {"eigenfrequency": "Eigenfrequency", "stationary": "Stationary", "frequency": "Frequency domain"}
+PROBLEM_TYPES = ("eigenfrequency", "stationary", "frequency")
+PROBLEM_TITLES = {"eigenfrequency": "Eigenfrequency", "stationary": "Stationary", "frequency": "Frequency domain"}
 
 
 def validate_settings(project, ev, material_names) -> list[str]:
-    """Problems with the solid-mechanics settings: symmetry faces, conditions, study type."""
+    """Problems with the solid-mechanics settings: symmetry faces, conditions, problem type."""
     errors, seen = [], {}
     ph = project.solid
     periodic = project.lattice.periodic_axes()
@@ -173,7 +173,7 @@ def validate_settings(project, ev, material_names) -> list[str]:
             if face in seen:
                 errors.append(f"solid: face {face} is both {seen[face]} and {kind}")
             seen[face] = kind
-    objects = {f.name for f in project.geometry} | set(material_names)
+    objects = {f.name for f in project.objects} | set(material_names)
     for c in ph.conditions:
         where = f"condition '{c.name or SOLID_CONDITION_TITLES.get(c.type, c.type)}'"
         if c.type not in SOLID_CONDITION_TYPES:
@@ -205,17 +205,17 @@ def validate_settings(project, ev, material_names) -> list[str]:
                     errors.append(f"{where}: load needs 3 components")
             except Exception as exc:
                 errors.append(f"{where}: load: {exc}")
-    st = ph.study
-    if st.type not in STUDY_TYPES:
-        errors.append(f"solid.study.type must be one of {', '.join(STUDY_TYPES)}")
+    st = ph.problem
+    if st.type not in PROBLEM_TYPES:
+        errors.append(f"solid.problem.type must be one of {', '.join(PROBLEM_TYPES)}")
     if st.harmonic:
         try:
             if ev(st.frequency) <= 0:
-                errors.append("solid.study.frequency must be positive")
+                errors.append("solid.problem.frequency must be positive")
             if ev(st.loss) < 0:
-                errors.append("solid.study.loss must not be negative")
+                errors.append("solid.problem.loss must not be negative")
         except Exception as exc:
-            errors.append(f"solid.study: {exc}")
+            errors.append(f"solid.problem: {exc}")
     from ... import fields, materials as mat
     for m in project.materials:
         eta = mat.loss_factor(m.props) if m.name in material_names else ""
@@ -225,20 +225,20 @@ def validate_settings(project, ev, material_names) -> list[str]:
             except Exception as exc:
                 errors.append(f"material '{m.name}': eta: {exc}")
     if st.num_eigs < 1:
-        errors.append("solid.study.num_eigs must be at least 1")
+        errors.append("solid.problem.num_eigs must be at least 1")
     if st.tol < 0 or st.maxiter < 0:
-        errors.append("solid.study: tol and maxiter must be >= 0")
+        errors.append("solid.problem: tol and maxiter must be >= 0")
     try:
         ev(st.search_freq)
         if len(ev.vector(st.k)) != 3:
-            errors.append("solid.study.k needs 3 components")
+            errors.append("solid.problem.k needs 3 components")
     except Exception as exc:
-        errors.append(f"solid.study: {exc}")
+        errors.append(f"solid.problem: {exc}")
     kp = st.active_kpath
     if kp:
         if not project.lattice.is_periodic:
-            errors.append("solid.study.kpath needs a periodic lattice ([lattice])")
+            errors.append("solid.problem.kpath needs a periodic lattice ([lattice])")
         for p in kp.path:
             if p not in kp.points:
-                errors.append(f"solid.study.kpath: point '{p}' not defined")
+                errors.append(f"solid.problem.kpath: point '{p}' not defined")
     return errors

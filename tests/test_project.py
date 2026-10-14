@@ -26,8 +26,8 @@ def test_cli_check(EXAMPLE):
 def test_cli_run(tmp_path, EXAMPLE):
     p = Project.load(EXAMPLE)
     p.mesh.max_size = "a/3"
-    p.solid.study.kpath.n = 2
-    p.solid.study.num_eigs = 4
+    p.solid.problem.kpath.n = 2
+    p.solid.problem.num_eigs = 4
     path = p.save(tmp_path / "m.toml")
     assert main([str(path), "-q"]) == 0
     out = tmp_path / "m"
@@ -37,12 +37,12 @@ def test_cli_run(tmp_path, EXAMPLE):
 
 def test_disabled_sweeps_roundtrip_and_are_skipped(tmp_path, EXAMPLE):
     p = Project.load(EXAMPLE)
-    p.solid.study.kpath.enabled = False
-    p.study.solver = "superlu"
+    p.solid.problem.kpath.enabled = False
+    p.problem.solver = "superlu"
     q = Project.load(p.save(tmp_path / "m.toml"))
-    assert q.solid.study.kpath is not None and q.solid.study.kpath.enabled is False
-    assert q.solid.study.active_kpath is None
-    assert q.study.solver == "superlu"
+    assert q.solid.problem.kpath is not None and q.solid.problem.kpath.enabled is False
+    assert q.solid.problem.active_kpath is None
+    assert q.problem.solver == "superlu"
 
 
 def test_solver_backends_agree(EXAMPLE):
@@ -56,13 +56,13 @@ def test_solver_backends_agree(EXAMPLE):
     k = np.array([2e6, 1e6, 0])
     results = {}
     for b in eigen.available_backends():
-        p.study.solver = b
+        p.problem.solver = b
         results[b] = s.solve_point(ev, k, n=8)
     ref = results["superlu"]
     for f in results.values():
         np.testing.assert_allclose(f, ref, rtol=1e-8)
-    p.study.solver = "nonsense"
-    assert any("study.solver" in e for e in p.validate())
+    p.problem.solver = "nonsense"
+    assert any("problem.solver" in e for e in p.validate())
 
 
 def test_save_csv_custom_name(tmp_path):
@@ -85,8 +85,8 @@ def test_file_layout(tmp_path):
         assert Project.load(tmp_path / f"{name}.toml").to_dict() == p.to_dict()
     d = tomllib.loads((tmp_path / "hexagonal.toml").read_text(encoding="utf-8"))
     assert d["lattice"] == {"vectors": [["a", "0", "0"], ["a/2", "sqrt(3)*a/2", "0"]]}
-    assert d["solid"]["study"]["kpath"]["path"] == ["G", "M", "K", "G"]
-    assert "tol" not in d["solid"]["study"] and "output" not in d          # defaults are left out
+    assert d["solid"]["problem"]["kpath"]["path"] == ["G", "M", "K", "G"]
+    assert "tol" not in d["solid"]["problem"] and "output" not in d          # defaults are left out
     assert '\ncenter = ["0", "0", "0"]\n' in (tmp_path / "hexagonal.toml").read_text(encoding="utf-8")   # short arrays: one line
     import pytest
     with pytest.raises(ValueError, match="unknown section"):
@@ -112,3 +112,32 @@ def test_log_axes_round_trip_and_draw(tmp_path):
     draw(res, ax, q, q.plots[1])
     assert ax.get_yscale() == "log" and ax.get_xscale() == "log"
     plt.close(fig)
+
+
+def test_objects_section_and_old_geometry_name():
+    """The geometry is the [[objects]] section; a file with the old [[geometry]] name says what to rename."""
+    import pytest
+
+    from solidocean import templates
+    from solidocean.project import Project
+    d = templates.create("square").to_dict()
+    assert "objects" in d and "geometry" not in d
+    assert Project.from_dict(d).objects[0].name == d["objects"][0]["name"]
+    old = {("geometry" if k == "objects" else k): v for k, v in d.items()}
+    with pytest.raises(ValueError, match=r"\[\[geometry\]\] is now \[\[objects\]\]"):
+        Project.from_dict(old)
+
+
+def test_problem_sections_and_old_study_names():
+    """The problem settings are [problem] and [<physics>.problem]; old [study] names say what to rename."""
+    import pytest
+
+    from solidocean import templates
+    from solidocean.project import Project
+    d = templates.create("heat_3omega").to_dict()
+    assert "problem" in d and "problem" in d["heat"] and "study" not in d and "study" not in d["heat"]
+    assert Project.from_dict(d).heat.problem.type == "frequency"
+    old = {("study" if k == "problem" else k): v for k, v in d.items()}
+    old["heat"] = {("study" if k == "problem" else k): v for k, v in d["heat"].items()}
+    with pytest.raises(ValueError, match=r"\[study\] is now \[problem\], \[heat.study\] is now \[heat.problem\]"):
+        Project.from_dict(old)

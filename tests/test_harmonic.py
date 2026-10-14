@@ -3,7 +3,7 @@ solution (uniaxial strain), loss factors, and absorbing ends."""
 import numpy as np
 import pytest
 
-from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidStudy
+from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidProblem
 from solidocean.physics.solid.solver import Solver
 from solidocean.project import Feature, Material, MeshSettings, Project
 
@@ -20,11 +20,11 @@ def bar(conditions, f, loss="0", eta=None, length="L"):
         props["eta"] = eta
     return Project(name="bar", variables={"L": "4[um]", "w": "0.2[um]", "f": f"{f:g}[Hz]"},
                    materials=[Material("M", props)],
-                   geometry=[Feature("block", "Bar", material="M", params={"center": [f"{length}/2", "0", "0"],
+                   objects=[Feature("block", "Bar", material="M", params={"center": [f"{length}/2", "0", "0"],
                                                                            "size": [length, "w", "w"]})],
                    mesh=MeshSettings(max_size="w/2"),
                    solid=SolidPhysics(symmetry=["ymin", "ymax", "zmin", "zmax"], conditions=list(conditions),
-                                      study=SolidStudy(type="frequency", frequency="f", loss=loss)))
+                                      problem=SolidProblem(type="frequency", frequency="f", loss=loss)))
 
 
 def run(p):
@@ -76,16 +76,16 @@ def test_graded_absorber_gives_a_travelling_wave():
     assert slope == pytest.approx(-k, rel=0.02)                         # travelling towards +x
 
 
-def test_frequency_study_input_and_checks(tmp_path):
+def test_frequency_problem_input_and_checks(tmp_path):
     p = bar([SolidCondition("displacement", ["xmin"], displacement=["1[nm]", "", ""])], 1e9, loss="0.01",
             eta="0.1 * x / L")
     q = Project.load(p.save(tmp_path / "m.toml"))
-    st = q.solid.study
+    st = q.solid.problem
     assert (st.type, st.frequency, st.loss) == ("frequency", "f", "0.01")
     assert q.materials[0].props["eta"] == "0.1 * x / L"
     assert q.validate() == []
     q.variables["f"] = "0[Hz]"
-    q.solid.study.loss = "-1"
+    q.solid.problem.loss = "-1"
     errors = " ".join(q.validate())
     assert "frequency must be positive" in errors and "loss must not be negative" in errors
     q.materials[0].props["eta"] = "foo"

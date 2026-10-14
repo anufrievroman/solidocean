@@ -37,7 +37,7 @@ RISE = exact(0.0, T_END) - T0
 
 
 def project(steps: int, theta: float, h: str = "w/2", order_: int = 2):
-    from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatStudy
+    from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatProblem
     from solidocean.project import Feature, Material, MeshSettings, Project
     return Project(
         name="Semi-infinite solid", physics_kind="heat",
@@ -45,11 +45,11 @@ def project(steps: int, theta: float, h: str = "w/2", order_: int = 2):
         variables={"Lb": f"{LB * 1e6:g}[um]", "w": "0.25[um]", "q": f"{Q:g}[W/m^2]", "T0": f"{T0:g}[K]"},
         materials=[Material("M", {"model": "isotropic", "rho": "1000[kg/m^3]", "E": "100[GPa]", "nu": "0.3",
                                   "k": f"{K:g}[W/(m*K)]", "cp": f"{RHOC / 1000:g}[J/(kg*K)]"})],
-        geometry=[Feature("block", "Bar", material="M", params={"center": ["Lb/2", "0", "0"], "size": ["Lb", "w", "w"]})],
+        objects=[Feature("block", "Bar", material="M", params={"center": ["Lb/2", "0", "0"], "size": ["Lb", "w", "w"]})],
         mesh=MeshSettings(max_size=h, order=order_),
         heat=HeatPhysics(initial="T0", conditions=[HeatCondition("flux", ["xmin"], "q", name="Surface flux"),
                                                    HeatCondition("temperature", ["xmax"], "T0", name="Far end")],
-                         study=HeatStudy(type="transient", t_end=f"{T_END:.6g}[s]", steps=steps, theta=theta)))
+                         problem=HeatProblem(type="transient", t_end=f"{T_END:.6g}[s]", steps=steps, theta=theta)))
 
 
 def solve(p):

@@ -33,7 +33,7 @@ def test_bulk_isotropic_in_hexagonal_cell():
     p = Project(
         variables={"a": "1[um]", "c": "1[um]"},
         materials=[Material("iso", dict(ISO))],
-        geometry=[Feature("cell", "cell", material="iso", params={"center": ["0", "0", "0"], "height": "c"})],
+        objects=[Feature("cell", "cell", material="iso", params={"center": ["0", "0", "0"], "height": "c"})],
         mesh=MeshSettings(max_size="a/3"),
         lattice=Lattice(vectors=HEX + [["0", "0", "c"]]),
     )
@@ -58,7 +58,7 @@ def hole_slab(lattice_vectors, holes, cell):
     for n, (x, y) in enumerate(holes):
         geometry.append(Feature("cylinder", f"hole{n}", op="subtract",
                                 params={"center": [x, y, "-t/2"], "radius": "r", "height": "t"}))
-    return Project(variables=params, materials=[Material("iso", dict(ISO))], geometry=geometry,
+    return Project(variables=params, materials=[Material("iso", dict(ISO))], objects=geometry,
                    mesh=MeshSettings(max_size="a/6"), lattice=Lattice(vectors=lattice_vectors))
 
 

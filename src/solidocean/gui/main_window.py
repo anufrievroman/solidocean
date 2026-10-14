@@ -1,7 +1,7 @@
 """Main window: model tree | settings | graphics, toolbar on top, messages below.
 
 The window is physics-neutral: everything specific to a physics comes from its GUI adapter (gui/physics/,
-`self.ui`) and its core PhysicsSpec (`self.spec`). Running studies, results plots and field views are in
+`self.ui`) and its core PhysicsSpec (`self.spec`). Running problems, results plots and field views are in
 results_view.ResultsMixin.
 """
 
@@ -29,7 +29,7 @@ from .panels import model as mp
 from .panels import output as op
 from .panels import results as rp
 from .panels.common import model_box, swatch
-from .panels.study import VariableSweepPanel
+from .panels.problem import VariableSweepPanel
 from .plot_canvas import PlotCanvas
 from .results_view import ResultsMixin
 from .viewer import Viewer
@@ -42,13 +42,13 @@ def new_project() -> Project:
 
 
 class MainWindow(ResultsMixin, QMainWindow):
-    SECTIONS = [("variables", "Variables"), ("materials", "Materials"), ("geometry", "Geometry"),
-                ("mesh", "Mesh"), ("physics_list", "Physics"), ("study", "Study"), ("results", "Results"),
+    SECTIONS = [("variables", "Variables"), ("materials", "Materials"), ("objects", "Objects"),
+                ("mesh", "Mesh"), ("physics_list", "Physics"), ("problem", "Problem"), ("results", "Results"),
                 ("output", "Output")]
-    GEOMETRY_KINDS = ("geometry", "feature", "materials", "material")
+    GEOMETRY_KINDS = ("objects", "feature", "materials", "material")
     PANELS = {"model": mp.ModelPanel, "variables": mp.VariablesPanel, "materials": mp.MaterialsPanel,
               "physics_list": mp.PhysicsListPanel, "mesh_default": mp.MeshDefaultPanel,
-              "geometry": mp.GeometryPanel, "mesh": mp.MeshPanel, "sweep": VariableSweepPanel,
+              "objects": mp.ObjectsPanel, "mesh": mp.MeshPanel, "sweep": VariableSweepPanel,
               "results": rp.ResultsPanel, "output": op.OutputPanel}
 
     def __init__(self, path: str | None = None):
@@ -94,7 +94,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.run_actions = [
             action("Build ◱", self.build_geometry, "F6", "Build the geometry (F6)"),
             action("Mesh ◪", self.build_mesh, "F7", "Build the mesh (F7)"),
-            action(f"Run ▶{T}", self.compute, "F8", "Run the study (F8)"),
+            action(f"Run ▶{T}", self.compute, "F8", "Run the problem (F8)"),
         ]
         # right end of the toolbar: what a task is doing, its progress and the cancel button (shown while busy)
         spacer = QWidget()
@@ -228,8 +228,8 @@ class MainWindow(ResultsMixin, QMainWindow):
         heading.setBold(True)
         items = {}
         for key, label in [("model", "Model")] + self.SECTIONS:
-            if key == "study":
-                label = ui.study_label(self.project)
+            if key == "problem":
+                label = ui.problem_label(self.project)
             it = QTreeWidgetItem([label])
             it.setFont(0, heading)
             it.setSizeHint(0, QSize(0, 30))           # air above each heading
@@ -251,11 +251,11 @@ class MainWindow(ResultsMixin, QMainWindow):
             it.setIcon(0, swatch(colors[m.name], 10))
             it.setData(0, Qt.ItemDataRole.UserRole, ("material", i))
             items[("material", i)] = it
-        for i, f in enumerate(self.project.geometry):
+        for i, f in enumerate(self.project.objects):
             label = f"{f.name} ({f.type}{', ' + f.array_label if f.arrayed else ''})" + ("  −" if f.op == "subtract" else "")
             if not f.enabled:
                 label += "  (bypassed)"
-            it = QTreeWidgetItem(items[("geometry", None)], [label])
+            it = QTreeWidgetItem(items[("objects", None)], [label])
             it.setIcon(0, swatch(colors.get(f.material) if f.op == "add" else None, 10))
             if not f.enabled:
                 it.setForeground(0, QColor(theme.disabled_text()))
@@ -268,7 +268,7 @@ class MainWindow(ResultsMixin, QMainWindow):
             it = QTreeWidgetItem(items[("mesh", None)], [label])
             it.setData(0, Qt.ItemDataRole.UserRole, node)
             items[node] = it
-        for parent, nodes in (("physics", ui.physics_nodes(self.project)), ("study", ui.study_nodes(self.project))):
+        for parent, nodes in (("physics", ui.physics_nodes(self.project)), ("problem", ui.problem_nodes(self.project))):
             for label, node, dimmed in nodes:
                 it = QTreeWidgetItem(items[(parent, None)], [label])
                 if dimmed:
@@ -314,8 +314,8 @@ class MainWindow(ResultsMixin, QMainWindow):
             return ui.indexed_panels[kind](self, idx)
         if kind == "physics":
             return ui.physics_panel(self)
-        if kind == "study":
-            return ui.study_panel(self)
+        if kind == "problem":
+            return ui.problem_panel(self)
         return {**self.PANELS, **ui.node_panels}[kind](self)
 
     def _on_tree_select(self, item, _prev):
@@ -453,7 +453,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.log(f"Physics: {self.spec.title}")
         self.rebuild_tree(("model", None))
 
-    def study_changed(self):
+    def problem_changed(self):
         self.mark_dirty()
         self.rebuild_tree(refresh_panel=False)
     def physics_changed(self):
@@ -469,7 +469,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         kind, idx = item.data(0, Qt.ItemDataRole.UserRole)
         menu = QMenu(self)
         if kind == "feature":
-            f = self.project.geometry[idx]
+            f = self.project.objects[idx]
             menu.addAction("Enable" if not f.enabled else "Bypass", lambda: self.toggle_feature(idx))
             menu.addAction("Delete", lambda: self.delete_feature(idx))
             menu.addSeparator()
@@ -480,7 +480,7 @@ class MainWindow(ResultsMixin, QMainWindow):
             menu.addAction("Build up to here", lambda: self.build_geometry(upto=idx))
         elif kind == "material":
             menu.addAction("Delete", lambda: self.delete_material(idx))
-        elif kind == "geometry":
+        elif kind == "objects":
             for t in FEATURE_TYPES:
                 menu.addAction(f"Add {FEATURE_TITLES[t]}", lambda t=t: self.add_feature(t))
             menu.addSeparator()
@@ -491,7 +491,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         elif kind == "mesh_region":
             menu.addAction("Delete", lambda: self.delete_mesh_region(idx))
             menu.addAction("Mesh", self.build_mesh)
-        elif kind == "study":
+        elif kind == "problem":
             menu.addAction("Run", self.compute)
         elif kind == "results":
             from ..plots import ResultPlot
@@ -508,7 +508,7 @@ class MainWindow(ResultsMixin, QMainWindow):
             menu.addSeparator()
             menu.addAction("Delete", lambda: self.delete_plot(idx))
         elif kind == "sweep":
-            sweep = self.project.study.sweep
+            sweep = self.project.problem.sweep
             on = sweep is not None and sweep.enabled
             menu.addAction("Disable" if on else "Enable", self.toggle_sweep)
         else:
@@ -518,7 +518,7 @@ class MainWindow(ResultsMixin, QMainWindow):
 
     def toggle_sweep(self):
         from ..project import VariableSweep
-        st = self.project.study
+        st = self.project.problem
         if st.sweep is None:
             st.sweep = VariableSweep(next(iter(self.project.variables), ""), "", enabled=False)
         st.sweep.enabled = not st.sweep.enabled
@@ -537,10 +537,10 @@ class MainWindow(ResultsMixin, QMainWindow):
             self.ui.delete_node(self, *node)
 
     def add_mesh_region(self):
-        """A mesh region: by default the last geometry feature, at half the model's element size."""
+        """A mesh region: by default the last object, at half the model's element size."""
         from ..project import MeshRegion
         ms = self.project.mesh
-        on = next((f.name for f in reversed(self.project.geometry) if f.op == "add" and f.enabled), "")
+        on = next((f.name for f in reversed(self.project.objects) if f.op == "add" and f.enabled), "")
         ms.regions.append(MeshRegion(on=on, max_size=f"({ms.max_size})/2"))
         self.mark_dirty()
         self.rebuild_tree(("mesh_region", len(ms.regions) - 1))
@@ -552,20 +552,20 @@ class MainWindow(ResultsMixin, QMainWindow):
 
     def add_feature(self, ftype: str):
         f = mp.default_feature(self.project, ftype)
-        self.project.geometry.append(f)
-        self.log(f"Added geometry feature '{f.name}'")
+        self.project.objects.append(f)
+        self.log(f"Added object '{f.name}'")
         self.mark_dirty()
-        self.rebuild_tree(("feature", len(self.project.geometry) - 1))
+        self.rebuild_tree(("feature", len(self.project.objects) - 1))
     def toggle_feature(self, i):
-        f = self.project.geometry[i]
+        f = self.project.objects[i]
         f.enabled = not f.enabled
-        self.log(f"{'Enabled' if f.enabled else 'Bypassed'} geometry feature '{f.name}'")
+        self.log(f"{'Enabled' if f.enabled else 'Bypassed'} object '{f.name}'")
         self.mark_dirty()
         self.rebuild_tree(("feature", i))
     def duplicate_feature(self, i):
         """Copy of feature i, inserted right after it (same place in the build order), with a unique name."""
         import re
-        g = self.project.geometry
+        g = self.project.objects
         f = copy.deepcopy(g[i])
         names = {x.name for x in g}
         m = re.fullmatch(r"(.*?)(\d+)", f.name)
@@ -574,23 +574,23 @@ class MainWindow(ResultsMixin, QMainWindow):
             n += 1
         f.name = f"{stem}{n}"
         g.insert(i + 1, f)
-        self.log(f"Duplicated geometry feature '{g[i].name}' as '{f.name}'")
+        self.log(f"Duplicated object '{g[i].name}' as '{f.name}'")
         self.mark_dirty()
         self.rebuild_tree(("feature", i + 1))
     def delete_feature(self, i):
-        f = self.project.geometry.pop(i)
-        self.log(f"Deleted geometry feature '{f.name}'")
+        f = self.project.objects.pop(i)
+        self.log(f"Deleted object '{f.name}'")
         self.mark_dirty()
-        self.rebuild_tree(("geometry", None))
+        self.rebuild_tree(("objects", None))
     def move_feature(self, i, d):
-        g = self.project.geometry
+        g = self.project.objects
         if 0 <= i + d < len(g):
             g[i], g[i + d] = g[i + d], g[i]
             self.mark_dirty()
             self.rebuild_tree(("feature", i + d))
     def delete_material(self, i):
         m = self.project.materials[i]
-        users = [f.name for f in self.project.geometry if f.op == "add" and f.material == m.name]
+        users = [f.name for f in self.project.objects if f.op == "add" and f.material == m.name]
         if users and self.ask("Delete material", f"Material '{m.name}' is used by: {', '.join(users)}. "
                               "Delete it anyway?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) \
                 != QMessageBox.StandardButton.Yes:
@@ -812,17 +812,17 @@ class MainWindow(ResultsMixin, QMainWindow):
         left out), to inspect the construction step by step."""
         snap = copy.deepcopy(self.project)
         if upto is not None:
-            snap.geometry = snap.geometry[:upto + 1]
-            if not any(f.enabled and f.op == "add" for f in snap.geometry):
-                self.log(f"Nothing to build up to '{self.project.geometry[upto].name}': no solid ('add') "
-                         "feature before it.")
+            snap.objects = snap.objects[:upto + 1]
+            if not any(f.enabled and f.op == "add" for f in snap.objects):
+                self.log(f"Nothing to build up to '{self.project.objects[upto].name}': no solid ('add') "
+                         "object before it.")
                 return
         errors = snap.validate_geometry()
         if errors:
             self.log("Model has errors:\n  " + "\n  ".join(errors))
             QMessageBox.warning(self, "Model has errors", "\n".join(errors))
             return
-        upto_name = self.project.geometry[upto].name if upto is not None else None
+        upto_name = self.project.objects[upto].name if upto is not None else None
 
         def done(preview):
             self.preview = preview

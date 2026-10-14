@@ -3,7 +3,7 @@
 A quantity is one number per solution (mode, time step, variable value), e.g. ``freq``, ``max(T)`` or
 ``mean(abs(uz)^2)``. Field variables live on the mesh and must be reduced with ``mean()``, ``integral()``,
 ``max()`` or ``min()``; integrals use the solver's quadrature, so they are exact for the finite-element
-field. A second argument restricts a reduction to one object, a geometry feature or a material:
+field. A second argument restricts a reduction to one object, one of the objects or a material:
 ``mean(T, "pad")``, ``integral(qz, "Au")``. Line plots evaluate expressions point by point instead.
 
 The engine knows only the coordinates x, y, z. Each physics defines its own field and scalar names
@@ -114,7 +114,7 @@ class Quadrature:
 
     def grad_at_points(self, nodal: np.ndarray) -> np.ndarray:
         """Gradient of a scalar nodal field at the quadrature points: (E, Q, 3)."""
-        if self._G is None:  # computed once per mesh: transient studies evaluate many time steps
+        if self._G is None:  # computed once per mesh: transient problems evaluate many time steps
             self._G = []
             for q in range(len(self.dN)):
                 J = np.einsum("eai,aj->eij", self.X, self.dN[q])

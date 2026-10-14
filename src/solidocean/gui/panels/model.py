@@ -1,4 +1,4 @@
-"""Panels of the model shared by every physics: model, variables, materials, geometry, mesh."""
+"""Panels of the model shared by every physics: model, variables, materials, objects, mesh."""
 
 from __future__ import annotations
 
@@ -74,7 +74,7 @@ def physics_selector(win) -> QComboBox:
         phys.addItem(spec.title, kind)
         phys.setItemData(phys.count() - 1, spec.description, Qt.ItemDataRole.ToolTipRole)
     phys.setCurrentIndex(max(0, phys.findData(win.project.physics_kind)))
-    phys.setToolTip("Physics of this model; it defines the boundary conditions and studies available. "
+    phys.setToolTip("Physics of this model; it defines the boundary conditions and problems available. "
                     "Switching clears the results.")
     phys.currentIndexChanged.connect(lambda i: win.set_physics(phys.itemData(i)))
     return phys
@@ -168,7 +168,7 @@ class VariablesPanel(Panel):
 # ---------------------------------------------------------------------------
 class MaterialsPanel(Panel):
     title = "Materials"
-    help = "Materials are assigned to geometry features. Elastic constants in Voigt notation, crystal axes along x, y, z."
+    help = "Materials are assigned to objects. Elastic constants in Voigt notation, crystal axes along x, y, z."
 
     def build(self):
         self.list = QListWidget()
@@ -252,7 +252,7 @@ class MaterialPanel(Panel):
         bl.addLayout(row)
         bl.addWidget(muted_label(
             "Rotates the crystal relative to the global axes: first about x, then y, then z (degrees; numbers "
-            "or expressions, e.g. a variable swept by the study). The constants above stay in the crystal frame; the stiffness used by the solver is "
+            "or expressions, e.g. a variable swept by the problem). The constants above stay in the crystal frame; the stiffness used by the solver is "
             "transformed. Example: 45 about z puts a Si <110> direction along x."))
         self.outer.addWidget(box)
 
@@ -394,7 +394,7 @@ class MaterialPanel(Panel):
         if not new or new == old:
             return
         self.m.name = new
-        for f in self.p.geometry:
+        for f in self.p.objects:
             if f.material == old:
                 f.material = new
         self.win.mark_dirty()
@@ -403,7 +403,7 @@ class MaterialPanel(Panel):
 
 def default_feature(project, ftype: str) -> Feature:
     """A new feature sized and placed relative to the existing geometry."""
-    names = {f.name for f in project.geometry}
+    names = {f.name for f in project.objects}
     stem = FEATURE_TITLES.get(ftype, ftype.capitalize())   # e.g. "Cylinder 1", "Lattice cell 1"
     i = 1
     while f"{stem} {i}" in names:
@@ -436,15 +436,15 @@ def default_feature(project, ftype: str) -> Feature:
 BUILD_GEOMETRY = ("Build ◱", "build_geometry")
 
 
-class GeometryPanel(Panel):
-    title = "Geometry"
+class ObjectsPanel(Panel):
+    title = "Objects"
     action = BUILD_GEOMETRY
-    help = ("Features are applied top to bottom. 'add' creates solid with a material (later features win where "
+    help = ("Objects are applied top to bottom. 'add' creates solid with a material (later objects win where "
             "they overlap); 'subtract' removes material from everything above it.")
 
     def build(self):
         self.list = QListWidget()
-        for f in self.p.geometry:
+        for f in self.p.objects:
             text = (f"{f.name}  ({f.type}, {f.op}{', ' + f.material if f.op == 'add' else ''}"
                     f"{', array ' + f.array_label if f.arrayed else ''})")
             self.list.addItem(text + ("  — bypassed" if not f.enabled else ""))
@@ -462,7 +462,7 @@ class GeometryPanel(Panel):
                               ("Delete", lambda: self._on_selected(self.win.delete_feature)))
         self.button_row(("Move up", lambda: self._on_selected(self.win.move_feature, -1)),
                         ("Move down", lambda: self._on_selected(self.win.move_feature, 1)))
-        add = QPushButton("Add feature")
+        add = QPushButton("Add object")
         menu = QMenu(add)
         for t in FEATURE_TYPES:
             menu.addAction(FEATURE_TITLES[t], lambda t=t: self._add(t))
@@ -488,7 +488,7 @@ class FeaturePanel(Panel):
                  "the periodicity. Add holes or pillars inside it.")
 
     def __init__(self, win, index):
-        self.f: Feature = win.project.geometry[index]
+        self.f: Feature = win.project.objects[index]
         self.index = index
         self.title = f"{FEATURE_TITLES.get(self.f.type, self.f.type)}: {self.f.name}" + ("  (bypassed)" if not self.f.enabled else "")
         super().__init__(win)
@@ -496,15 +496,15 @@ class FeaturePanel(Panel):
     def build(self):
         i = self.index
         up = self.button_row(("Build up to here ◱", lambda: self.win.build_geometry(upto=i)))
-        up.itemAt(0).widget().setToolTip("Build the geometry from the first feature down to this one; later "
-                                         "features are left out")
+        up.itemAt(0).widget().setToolTip("Build the geometry from the first object down to this one; later "
+                                         "objects are left out")
         self.button_row(("Enable" if not self.f.enabled else "Bypass", lambda: self.win.toggle_feature(i)),
                         ("Duplicate", lambda: self.win.duplicate_feature(i)),
                         ("Delete", lambda: self.win.delete_feature(i)),
                         ("Move up", lambda: self.win.move_feature(i, -1)),
                         ("Move down", lambda: self.win.move_feature(i, 1)))
         if not self.f.enabled:
-            self.outer.addWidget(muted_label("This feature is bypassed: it is kept in the model but ignored "
+            self.outer.addWidget(muted_label("This object is bypassed: it is kept in the model but ignored "
                                              "when building the geometry."))
         if self.f.type == "cell":
             self.outer.addWidget(muted_label(self.CELL_HELP))
@@ -575,7 +575,7 @@ class FeaturePanel(Panel):
             ("feature", self.index), refresh_panel=False)))
         spacing = VectorEdit(self.win, params[SPACING_KEY])
         spacing.setToolTip("Shift between neighbouring copies along each axis (negative: towards -x, -y, -z); "
-                           "the feature itself is the first copy")
+                           "the object itself is the first copy")
         a.addRow("Spacing", spacing)
 
     def _lattice_box(self):
@@ -673,7 +673,7 @@ class MeshDefaultPanel(Panel):
 
 
 class MeshRegionPanel(Panel):
-    help = ("A maximum element size for one object: a geometry feature (what is left of it after later features) or "
+    help = ("A maximum element size for one object: one of the Objects (what is left of it after later objects) or "
             "all domains of a material. Regions apply in order; a later one wins where they overlap. The mesh stays "
             "continuous across the object's interfaces, where the smaller size applies, and grades away from them.")
 

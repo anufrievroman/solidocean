@@ -9,7 +9,7 @@ TreeNode = tuple[str, tuple, bool]   # (label, (node kind, index or None), dimme
 class PhysicsUI:
     kind = ""
     physics_panel: type = None       # settings panel of the physics node
-    study_panel: type = None         # settings panel of the study node
+    problem_panel: type = None         # settings panel of the problem node
     field_panel: type = None         # panel of 3D field plots (the field of the selected solution)
     node_panels: dict[str, type] = {}        # node kind -> panel class, panel(win)
     indexed_panels: dict[str, type] = {}     # node kind -> panel class, panel(win, index)
@@ -20,11 +20,11 @@ class PhysicsUI:
         """Children of the physics node."""
         return []
 
-    def study_label(self, project) -> str:
-        return "Study"
+    def problem_label(self, project) -> str:
+        return "Problem"
 
-    def study_nodes(self, project) -> list[TreeNode]:
-        """Children of the study node."""
+    def problem_nodes(self, project) -> list[TreeNode]:
+        """Children of the problem node."""
         return []
 
     def context_menu(self, win, kind: str, index, menu) -> None:

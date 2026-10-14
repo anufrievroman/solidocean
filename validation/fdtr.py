@@ -72,7 +72,7 @@ def run(quick: bool = False) -> Report:
     r = Report("fdtr", TITLE, ABOUT)
     with Timer() as tm:
         p = templates.create("heat_fdtr")
-        p.study.sweep.values = "logspace(6, 7.3, 4) * 1[Hz]" if quick else "logspace(6, 7.3, 7) * 1[Hz]"
+        p.problem.sweep.values = "logspace(6, 7.3, 4) * 1[Hz]" if quick else "logspace(6, 7.3, 7) * 1[Hz]"
         common.save_model(p, "fdtr")
         res = HeatSolver(p, log=quiet).run()
         fs = res.outer_values

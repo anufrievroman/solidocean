@@ -1,5 +1,5 @@
-"""Solid mechanics panels: physics overview, periodicity, symmetry, boundary conditions, study
-(eigenfrequency / stationary), solutions, wavevector sweep, solver and the displacement field."""
+"""Solid mechanics panels: physics overview, periodicity, symmetry, boundary conditions, problem
+(eigenfrequency / stationary) with its solutions, wavevector sweep, solver and the displacement field."""
 
 from __future__ import annotations
 
@@ -13,12 +13,12 @@ from PySide6.QtWidgets import (
 )
 
 from ... import units
-from ...physics.solid.model import LOAD_TYPES, SOLID_CONDITION_TITLES, STUDY_TITLES, KPath, SolidCondition
+from ...physics.solid.model import LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_TITLES, KPath, SolidCondition
 from ...project import AXES, Feature
 from ...selection import FACES, selection_text
 from .common import (ERROR_STYLE, ExprEdit, Panel, VectorEdit, equations, field_quantity_rows, muted_label,
                      outer_labels, pretty_point, selection_box, theme_text)
-from .study import SweepPanel, solver_box, sweep_summary
+from .problem import SweepPanel, solver_box, sweep_summary
 from .lattice import _lattice_kind, hexagonal_vectors, lattice_mode, use_lattice_cell
 
 
@@ -39,15 +39,15 @@ def solid_condition_label(c) -> str:
 
 class SolidPanel(Panel):
     title = "Solid Mechanics"
-    help = ("Linear elasticity; what is solved follows from Study → Study type. Fixed constraints, prescribed "
+    help = ("Linear elasticity; what is solved follows from Problem → Problem type. Fixed constraints, prescribed "
             "displacements and loads act on faces of the model or of one object (bounding-box faces or all "
             "faces, optionally only inside a box) and are highlighted in the graphics window.")
     formalism = equations(
-        ("∇·(C : ∇u) + ρ ω² u = 0", "Eigenfrequency study: the free vibrations of the structure. Assembled as "
+        ("∇·(C : ∇u) + ρ ω² u = 0", "Eigenfrequency problem: the free vibrations of the structure. Assembled as "
          "(K − ω² M) u = 0 and solved for the lowest ω² by shift-invert Lanczos."),
-        ("∇·(C : ∇u) + f = 0", "Stationary study: the displacement under loads, assembled as K u = f."),
-        ("(K + i K<sub>loss</sub> − ω² M) û = f̂", "Frequency-domain study: the steady response to a drive at "
-         "ω = 2πf, with the loss factors η of the study and the materials (K<sub>loss</sub> = Σ η<sub>e</sub> "
+        ("∇·(C : ∇u) + f = 0", "Stationary problem: the displacement under loads, assembled as K u = f."),
+        ("(K + i K<sub>loss</sub> − ω² M) û = f̂", "Frequency-domain problem: the steady response to a drive at "
+         "ω = 2πf, with the loss factors η of the problem and the materials (K<sub>loss</sub> = Σ η<sub>e</sub> "
          "K<sub>e</sub>); û and f̂ are complex amplitudes, u(t) = Re(û e<sup>iωt</sup>)."),
         ("n·(C : ∇u) = 0", "On every face without a condition: traction-free, a free surface."),
         "C is the material's stiffness in the global frame (each material's crystal orientation is applied to "
@@ -78,7 +78,7 @@ class SolidPanel(Panel):
 class PeriodicityPanel(Panel):
     title = "Periodicity"
     help = ("Rectangular cells repeat along x, y, z; hexagonal and custom lattices use the lattice vectors "
-            "a1, a2 (a3) and a unit-cell geometry feature. Periodic face pairs are tinted in the graphics "
+            "a1, a2 (a3) and a unit-cell object. Periodic face pairs are tinted in the graphics "
             "window (a1/x red, a2/y green, a3/z blue).")
     formalism = equations(
         ("u(r + R) = e<sup>i k·R</sup> u(r)", "The Bloch-Floquet condition, for every lattice translation "
@@ -114,7 +114,7 @@ class PeriodicityPanel(Panel):
         if mode != "rect":
             self._cell_hint()
         g = self.form("Bloch wave vector (rad/m, used when no k-path sweep is defined)")
-        g.addRow(VectorEdit(self.win, self.p.solid.study.k, ("kx", "ky", "kz")))
+        g.addRow(VectorEdit(self.win, self.p.solid.problem.k, ("kx", "ky", "kz")))
 
     # ---- modes -----------------------------------------------------------
     def _switch(self, mode):
@@ -123,9 +123,9 @@ class PeriodicityPanel(Panel):
         if mode == "rect":
             ph.vectors = []
             ph.periodic = {"x": "a", "y": "a"}
-            for n, ft in enumerate(self.p.geometry):  # a lattice cell becomes the matching block
+            for n, ft in enumerate(self.p.objects):  # a lattice cell becomes the matching block
                 if ft.type == "cell":
-                    self.p.geometry[n] = Feature("block", ft.name, ft.op, ft.material, {
+                    self.p.objects[n] = Feature("block", ft.name, ft.op, ft.material, {
                         "center": list(ft.params.get("center", ["0", "0", "0"])),
                         "size": ["a", "a", ft.params.get("height", "1")]}, enabled=ft.enabled)
                     self.win.log(f"Replaced the lattice cell '{ft.name}' with a block")
@@ -139,8 +139,8 @@ class PeriodicityPanel(Panel):
             ph.vectors = [list(v) for v in vecs]
         for ax in ph.periodic_axes():
             clear_face_conditions(self.win, ax)
-        if self.p.solid.study.kpath is not None:  # the old path's points belong to the old lattice
-            self.p.solid.study.kpath = default_kpath(self.p, enabled=self.p.solid.study.kpath.enabled)
+        if self.p.solid.problem.kpath is not None:  # the old path's points belong to the old lattice
+            self.p.solid.problem.kpath = default_kpath(self.p, enabled=self.p.solid.problem.kpath.enabled)
         self.win.physics_changed()
         self.win.rebuild_tree(("periodicity", None))
 
@@ -193,12 +193,12 @@ class PeriodicityPanel(Panel):
         f.addRow(three)
 
     def _cell_hint(self):
-        has_cell = any(ft.type == "cell" and ft.enabled for ft in self.p.geometry)
+        has_cell = any(ft.type == "cell" and ft.enabled for ft in self.p.objects)
         if has_cell:
-            self.outer.addWidget(muted_label("The geometry uses a 'cell' feature: the unit cell spanned by a1, a2."))
+            self.outer.addWidget(muted_label("The geometry uses a 'cell' object: the unit cell spanned by a1, a2."))
             return
         self.outer.addWidget(muted_label(
-            "The geometry must be one unit cell of this lattice. A 'cell' feature (parallelogram spanned by "
+            "The geometry must be one unit cell of this lattice. A 'cell' object (parallelogram spanned by "
             "a1, a2, extruded along z) builds it; holes and pillars go inside."))
         self.button_row(("Use lattice cell as base geometry", lambda: use_lattice_cell(self.win)))
 
@@ -271,15 +271,15 @@ def default_kpath(project, enabled: bool = False) -> KPath:
                  ["G", "X", "M", "G", "R", "X"], 10, enabled=enabled)
 
 
-def study_summary(project) -> dict[str, str]:
-    """Short text per study node (empty string = inactive)."""
-    st = project.solid.study
+def problem_summary(project) -> dict[str, str]:
+    """Short text per problem node (empty string = inactive)."""
+    st = project.solid.problem
     kp = st.active_kpath
-    return {**sweep_summary(project.study), "study_type": STUDY_TITLES.get(st.type, st.type),
-            "solutions": str(st.num_eigs), "kpath": "–".join(pretty_point(p) for p in kp.path) if kp else ""}
+    return {**sweep_summary(project.problem), "problem_type": PROBLEM_TITLES.get(st.type, st.type),
+            "kpath": "–".join(pretty_point(p) for p in kp.path) if kp else ""}
 
 
-STUDY_HELP = {
+PROBLEM_HELP = {
     "eigenfrequency": "For every value of the variable sweep (outer loop), the wavevector sweep (inner loop) is "
                       "computed and at each point the requested eigenfrequencies are found. Geometry and mesh are "
                       "rebuilt only when a variable they depend on changes; a wavevector sweep reuses them. Loads "
@@ -293,11 +293,11 @@ STUDY_HELP = {
                  "result is the complex displacement amplitude (use abs(uz) for an amplitude). A loss factor η "
                  "damps it: for every material (below) and per material (property eta, which may depend on x, y, "
                  "z: graded absorbing regions at the ends of a long structure keep waves from reflecting). Sweep "
-                 "the frequency with a variable (f) in Study → Variable sweep.",
+                 "the frequency with a variable (f) in Problem → Variable sweep.",
 }
 
 
-STUDY_FORMALISM = {
+PROBLEM_FORMALISM = {
     "eigenfrequency": equations(
         ("(K(k) − ω² M(k)) u = 0", "At every point of the wavevector sweep: the assembled stiffness K and mass M, "
          "reduced to the free degrees of freedom by the periodicity, symmetry and fixed constraints "
@@ -319,11 +319,11 @@ STUDY_FORMALISM = {
     ),
     "frequency": equations(
         ("(K + i K<sub>loss</sub> − ω² M) û = f̂", "At the drive frequency ω = 2πf: K and M as in the "
-         "eigenfrequency study, K<sub>loss</sub> = Σ η<sub>e</sub> K<sub>e</sub> with each element's loss factor "
-         "(the study's η plus the material's eta at the element, so it may vary in space). The loads and "
+         "eigenfrequency problem, K<sub>loss</sub> = Σ η<sub>e</sub> K<sub>e</sub> with each element's loss factor "
+         "(the problem's η plus the material's eta at the element, so it may vary in space). The loads and "
          "prescribed displacements are the amplitudes f̂ and ĝ of the drive."),
         ("Tᵀ A T û<sub>r</sub> = Tᵀ (f̂ − A ĝ)", "With A the matrix above and the same constraint "
-         "reduction as a stationary study: one complex sparse direct solve per frequency. Without loss A is "
+         "reduction as a stationary problem: one complex sparse direct solve per frequency. Without loss A is "
          "singular at an eigenfrequency."),
         ("u(t) = Re(û e<sup>iωt</sup>)", "The complex amplitude û is the result: abs(û) the amplitude, "
          "its argument the phase relative to the drive."),
@@ -331,66 +331,84 @@ STUDY_FORMALISM = {
 }
 
 
-class SolidStudyPanel(Panel):
+class SolidProblemPanel(Panel):
     action = ("Run ▶\ufe0e", "compute")
 
     def __init__(self, win):
-        st = win.project.solid.study
-        self.title = f"Study: {STUDY_TITLES.get(st.type, st.type)}"
-        self.help = STUDY_HELP.get(st.type, "")
-        self.formalism = STUDY_FORMALISM.get(st.type, "")
+        st = win.project.solid.problem
+        self.title = f"Problem: {PROBLEM_TITLES.get(st.type, st.type)}"
+        self.help = PROBLEM_HELP.get(st.type, "")
+        self.formalism = PROBLEM_FORMALISM.get(st.type, "")
         super().__init__(win)
 
     def build(self):
-        st = self.p.solid.study
+        st = self.p.solid.problem
         t = self.form()
         typ = QComboBox()
-        for key, title in STUDY_TITLES.items():
+        for key, title in PROBLEM_TITLES.items():
             typ.addItem(title, key)
         typ.setCurrentIndex(max(0, typ.findData(st.type)))
-        typ.currentIndexChanged.connect(lambda i: set_study_type(self.win, typ.itemData(i)))
-        t.addRow("Study type", typ)
+        typ.currentIndexChanged.connect(lambda i: set_problem_type(self.win, typ.itemData(i)))
+        t.addRow("Problem type", typ)
         if st.harmonic:
             freq = ExprEdit(self.win, lambda: st.frequency, lambda x: setattr(st, "frequency", x or "f"))
-            freq.setToolTip("Drive frequency; a variable (f) can be swept: Study → Variable sweep")
+            freq.setToolTip("Drive frequency; a variable (f) can be swept: Problem → Variable sweep")
             t.addRow("Frequency", freq)
             loss = ExprEdit(self.win, lambda: st.loss, lambda x: setattr(st, "loss", x or "0"))
             loss.setToolTip("Loss factor η of every material: stiffness C (1 + iη); materials may add their own "
                             "(property eta)")
             t.addRow("Loss factor η", loss)
+        elif not st.field_problem:
+            n = QSpinBox()
+            n.setRange(1, 1000)
+            n.setValue(st.num_eigs)
+            n.setToolTip("How many eigenfrequencies to compute at each sweep point")
+            n.valueChanged.connect(lambda v: (setattr(st, "num_eigs", v), self.win.mark_dirty()))
+            t.addRow("Number of solutions", n)
+            around = ExprEdit(self.win, lambda: st.search_freq, lambda x: setattr(st, "search_freq", x or "0[GHz]"))
+            around.setToolTip("The frequency the solutions are searched around: 0 finds the lowest modes, a higher "
+                              "value the modes closest to it. Units are allowed, e.g. 5[GHz]")
+            t.addRow("Around", around)
         f = self.form("Configuration")
-        summary = study_summary(self.p)
-        nodes = (("sweep", "Variable sweep"), ("solver", "Solver")) if st.field_study else \
-            (("solutions", "Solutions"), ("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"),
-             ("solver", "Solver"))
+        summary = problem_summary(self.p)
+        nodes = (("sweep", "Variable sweep"),) if st.field_problem else \
+            (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"))
         for key, label in nodes:
             b = QPushButton(f"{label}: {summary[key] or 'off'}")
             b.setStyleSheet("text-align: left; padding: 4px 8px;")
             b.clicked.connect(lambda _=False, k=key: self.win.select_node(k))
             f.addRow(b)
+        self._solver()
 
+    def _solver(self):
+        """Linear solver; for eigenfrequencies also the Lanczos tolerance and iterations."""
+        st = self.p.solid.problem
+        f = solver_box(self)
+        if st.field_problem:
+            return
+        tol = QLineEdit(f"{st.tol:g}")
+        tol.setToolTip("Relative accuracy of the eigenvalues; 0 = machine precision")
 
-class SolutionsPanel(Panel):
-    title = "Solutions"
-    help = ("How many eigenfrequencies to compute at each sweep point, and the frequency they are searched "
-            "around: 0 finds the lowest modes; a higher value finds the modes closest to it. Units are "
-            "allowed, e.g. 5[GHz].")
+        def set_tol():
+            try:
+                st.tol = max(0.0, float(tol.text()))
+                tol.setStyleSheet("")
+                self.win.mark_dirty()
+            except ValueError:
+                tol.setStyleSheet(ERROR_STYLE)
 
-    def build(self):
-        st = self.p.solid.study
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Find"))
-        n = QSpinBox()
-        n.setRange(1, 1000)
-        n.setValue(st.num_eigs)
-        n.valueChanged.connect(lambda v: (setattr(st, "num_eigs", v), self.win.study_changed()))
-        row.addWidget(n)
-        row.addWidget(QLabel("solutions around"))
-        freq = ExprEdit(self.win, lambda: st.search_freq, lambda t: setattr(st, "search_freq", t or "0"),
-                        show_value=False)
-        row.addWidget(freq, 1)
-        row.addWidget(QLabel("Hz"))
-        self.outer.addLayout(row)
+        tol.editingFinished.connect(set_tol)
+        f.addRow("Eigenvalue tolerance", tol)
+        it = QSpinBox()
+        it.setRange(0, 1_000_000)
+        it.setSpecialValueText("default")
+        it.setValue(st.maxiter)
+        it.setToolTip("Maximum Lanczos iterations; default = ARPACK's")
+        it.valueChanged.connect(lambda v: (setattr(st, "maxiter", v), self.win.mark_dirty()))
+        f.addRow("Max. iterations", it)
+        from ...fem import eigen
+        f.addRow(muted_label(f"Eigenvalues are found with shift-invert Lanczos (ARPACK); problems below "
+                             f"{eigen.DENSE_LIMIT} DOFs use a dense eigensolver."))
 
 
 class KPathPanel(SweepPanel):
@@ -401,10 +419,10 @@ class KPathPanel(SweepPanel):
     attr = "kpath"
 
     def holder(self):
-        return self.p.solid.study
+        return self.p.solid.problem
 
     def build(self):
-        st = self.p.solid.study
+        st = self.p.solid.problem
         self._draft = st.kpath or default_kpath(self.p)
         kp = self._draft
         self.enable_box("Enable wavevector sweep", kp)
@@ -524,60 +542,27 @@ class KPathPanel(SweepPanel):
         self.changed()
 
 
-class SolverPanel(Panel):
-    title = "Solver"
-    help = ("Eigenvalues are found with shift-invert Lanczos (ARPACK). Each iteration solves a sparse linear "
-            "system; the direct solver used for it dominates the run time. A stationary study solves one sparse "
-            "system per variable value with the same solver.")
-
-    def build(self):
-        solver_box(self)
-        st = self.p.solid.study
-        f = self.form("Eigenvalues")
-        tol = QLineEdit(f"{st.tol:g}")
-        tol.setToolTip("Relative accuracy of the eigenvalues; 0 = machine precision")
-
-        def set_tol():
-            try:
-                st.tol = max(0.0, float(tol.text()))
-                tol.setStyleSheet("")
-                self.win.mark_dirty()
-            except ValueError:
-                tol.setStyleSheet(ERROR_STYLE)
-
-        tol.editingFinished.connect(set_tol)
-        f.addRow("Eigenvalue tolerance", tol)
-        it = QSpinBox()
-        it.setRange(0, 1_000_000)
-        it.setSpecialValueText("default")
-        it.setValue(st.maxiter)
-        it.valueChanged.connect(lambda v: (setattr(st, "maxiter", v), self.win.mark_dirty()))
-        f.addRow("Max. iterations", it)
-        from ...fem import eigen
-        self.outer.addWidget(muted_label(f"Problems below {eigen.DENSE_LIMIT} DOFs use a dense eigensolver."))
-
-
 class DisplacementPanel(Panel):
     title = "Displacement field"
     help = ("3D mode shape: the structure deformed by the mode's displacement. |u| is the vibration amplitude; "
             "ux, uy, uz are the components at the displayed phase. Animate cycles the phase to show the motion.")
 
     def __init__(self, win):
-        if win.project.solid.study.field_study:
+        if win.project.solid.problem.field_problem:
             self.help = ("The structure deformed by the stationary displacement, coloured by the displacement or "
                          "the von Mises stress. Pick the variable value of a sweep here or click a point in a plot.")
         super().__init__(win)
 
     @property
     def static(self) -> bool:
-        return self.p.solid.study.field_study
+        return self.p.solid.problem.field_problem
 
     def build(self):
         r, sel = self.win.results, self.win.selection
         f = self.form("Dataset")
         if self.static:
             if r is None or not self.win.has_field_results:
-                f.addRow(muted_label("No results yet. Configure the Study and press Run; then pick the variable "
+                f.addRow(muted_label("No results yet. Configure the Problem and press Run; then pick the variable "
                                      "value here (or click a point in a plot)."))
                 return self._settings()
             f.addRow(muted_label(self.win.results_summary()))
@@ -591,7 +576,7 @@ class DisplacementPanel(Panel):
             self.win.show_field()
             return
         if r is None or self.win.has_field_results:
-            f.addRow(muted_label("No results yet. Configure the Study and press Run; then pick the mode here "
+            f.addRow(muted_label("No results yet. Configure the Problem and press Run; then pick the mode here "
                                  "(or click a point in a plot)."))
             return self._settings()
         n_outer, n_inner, n_eigs = r.freqs.shape
@@ -710,8 +695,8 @@ LOAD_TITLES = {"area": "Force per area", "total": "Total force", "pressure": "Pr
 SOLID_HELP = {
     "fixed": "The selected faces are clamped.",
     "displacement": "The selected faces are moved by a given amount; an empty component is left free.",
-    "load": "Force on the selected faces. Stationary and frequency-domain studies only — an eigenfrequency "
-            "study has no loads.",
+    "load": "Force on the selected faces. Stationary and frequency-domain problems only — an eigenfrequency "
+            "problem has no loads.",
 }
 
 SOLID_FORMALISM = {
@@ -724,7 +709,7 @@ SOLID_FORMALISM = {
         ("u<sub>i</sub> = g<sub>i</sub>", "Prescribed displacement, component by component; an empty component "
          "is free (only u<sub>x</sub> given: the face is moved along x and slides freely in y and z). "
          "Implementation: the given components of every node on those faces are held at g. In stationary and "
-         "frequency-domain studies the prescribed values move to the right-hand side; an eigenfrequency study "
+         "frequency-domain problems the prescribed values move to the right-hand side; an eigenfrequency problem "
          "holds them at zero, since a mode shape has no amplitude of its own."),
     ),
     "load": equations(
@@ -780,8 +765,8 @@ class SolidConditionPanel(Panel):
                     def setter(t, i=i):
                         c.load[i] = t or "0"
                     f.addRow(f"F{axis} ({unit})", ExprEdit(self.win, lambda i=i: c.load[i], setter))
-            if not self.p.solid.study.field_study:
-                f.addRow(muted_label("Loads act in stationary studies only (Study → Study type)."))
+            if not self.p.solid.problem.field_problem:
+                f.addRow(muted_label("Loads act in stationary problems only (Problem → Problem type)."))
         self.outer.addWidget(selection_box(self, c))
 
     def _refresh(self):
@@ -804,11 +789,11 @@ def delete_condition(win, index: int):
     win.rebuild_tree(("physics", None))
 
 
-def set_study_type(win, typ: str):
-    """Eigenfrequency / stationary (solid mechanics). Results are cleared; a stationary study gets a
+def set_problem_type(win, typ: str):
+    """Eigenfrequency / stationary (solid mechanics). Results are cleared; a stationary problem gets a
     displacement field plot unless it has one."""
     from ...physics.solid.plots import field_plot
-    st = win.project.solid.study
+    st = win.project.solid.problem
     if typ == st.type:
         return
     st.type = typ
@@ -818,8 +803,8 @@ def set_study_type(win, typ: str):
     if not any(pl.kind == "field" for pl in win.project.plots):
         win.project.plots.append(field_plot())
     win.clear_results()
-    win.study_changed()
-    win.rebuild_tree(("study", None))
+    win.problem_changed()
+    win.rebuild_tree(("problem", None))
 
 
 def clear_face_conditions(win, axis: str):

@@ -293,7 +293,7 @@ def outer_labels(win) -> list[str]:
 
 def no_results(panel) -> bool:
     if panel.win.results is None:
-        panel.outer.addWidget(muted_label("No results yet. Configure the Study and press Run."))
+        panel.outer.addWidget(muted_label("No results yet. Configure the Problem and press Run."))
         return True
     return False
 
@@ -372,9 +372,9 @@ def model_box(project, only: str | None = None) -> tuple[np.ndarray, np.ndarray]
 
 
 def objects(project) -> list[str]:
-    """Objects a condition or a reduction can refer to: geometry features that add material, then
+    """Objects a condition or a reduction can refer to: the objects that add material, then
     materials (all their domains)."""
-    feats = [f.name for f in project.geometry if f.op == "add" and f.enabled]
+    feats = [f.name for f in project.objects if f.op == "add" and f.enabled]
     return feats + [m.name for m in project.materials if m.name not in feats]
 
 
@@ -391,8 +391,8 @@ def selection_box(panel, c) -> QGroupBox:
     if c.on and on.findData(c.on) < 0:
         on.addItem(f"{c.on} (missing)", c.on)
     on.setCurrentIndex(max(0, on.findData(c.on)))
-    on.setToolTip("The outer surface of the whole model, or of one object (a geometry feature or all domains of a "
-                  "material). An object's interfaces with other objects are not part of its outer surface, e.g. "
+    on.setToolTip("The outer surface of the whole model, or of one object (one of the Objects, or all "
+                  "domains of a material). An object's interfaces with other objects are not part of its outer surface, e.g. "
                   "the bottom of a pad bonded to a membrane.")
     on.currentIndexChanged.connect(lambda i: (setattr(c, "on", on.itemData(i)), win.physics_changed(),
                                               panel._refresh()))
@@ -484,7 +484,7 @@ def swatch(color: str | None, size: int = 14):
 
 
 def feature_swatch(project, feature, size: int = 14):
-    """The swatch of a geometry feature: its material's colour, or empty if it adds no material."""
+    """The swatch of an object: its material's colour, or empty if it adds no material."""
     colors = project.material_colors()
     return swatch(colors.get(feature.material) if feature.op == "add" else None, size)
 
@@ -497,7 +497,7 @@ def quantity_menu(project, pick) -> QComboBox:
     box.addItem("Quantities…", None)
     for label, expr in physics.of(project).quantities(project):
         box.addItem(f"{label}:  {expr}" if label != expr else expr, expr)
-    box.setToolTip("Insert a physical quantity of this study")
+    box.setToolTip("Insert a physical quantity of this problem")
 
     def chosen(i):
         expr = box.itemData(i)
@@ -566,7 +566,7 @@ def quantity_builder(panel, editor, run, reduce: bool = True) -> tuple[QHBoxLayo
         place.addItem(o, o)
     op.setToolTip("How a field is reduced to one number (scalars such as time are taken as they are)")
     qty.setToolTip("The quantity; its expression is shown when hovering an item")
-    place.setToolTip("The whole model, or one geometry feature or material")
+    place.setToolTip("The whole model, or one object or material")
 
     def sync():
         field = _uses_field(qty.currentData() or "", spec.field_names)

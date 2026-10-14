@@ -13,7 +13,7 @@ from solidocean.results.field import save_section_table, section_values
 def heated_bar():
     """The heat_bar template without its sweep: T is linear in x, from T_hot at -L/2 to T_cold at L/2."""
     p = templates.create("heat_bar")
-    p.study.sweep = None
+    p.problem.sweep = None
     return p, physics.of(p).solver(p, log=lambda m: None).run([])
 
 
@@ -59,7 +59,7 @@ def test_field_quantities_at_the_nodes():
     q = fields.evaluate_nodal("sqrt(qx^2 + qy^2 + qz^2)", mesh.points, ev.values, nf)
     np.testing.assert_allclose(q, np.abs(qx), rtol=1e-6, atol=1e-6 * np.abs(qx).max())
     c = templates.create("tensile")
-    c.study.sweep = None
+    c.problem.sweep = None
     rs = physics.of(c).solver(c, log=lambda m: None).run([])
     from solidocean.physics.solid.fields import at_nodes as solid_nodes
     m = fields.evaluate_nodal("mises", rs.meshes[0].points, c.evaluator().values, solid_nodes(rs.meshes[0], rs.U[0], rs.cels[0]))

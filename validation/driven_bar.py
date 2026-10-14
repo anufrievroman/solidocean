@@ -14,7 +14,7 @@ $c_L = \sqrt{C_{11}/\rho}$ without dispersion), clamped at $x = 0$ and driven by
 $x = L$, with a loss factor $\eta$ (complex stiffness $C(1 + i\eta)$). Reference: the exact harmonic response
 $$u(L) = \frac{F\,\tan(kL)}{C_{11}(1+i\eta)\,A\,k},\qquad k = \frac{\omega}{c_L\sqrt{1 + i\eta}},$$
 whose resonances (the bar's quarter-wave modes, $f_n = (2n-1)\,c_L/4L$) have the quality factor $1/\eta$.
-Frequency-domain study swept across the first three resonances; quadratic elements.
+Frequency-domain problem swept across the first three resonances; quadratic elements.
 """
 
 E, NU, RHO, ETA = 100e9, 0.25, 2000.0, 0.02
@@ -29,20 +29,20 @@ def exact(f):
 
 
 def project(freqs: str):
-    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidStudy
-    from solidocean.project import Feature, Material, MeshSettings, VariableSweep, Project, Study
+    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidProblem
+    from solidocean.project import Feature, Material, MeshSettings, VariableSweep, Project, Problem
     return Project(
         name="Driven bar", physics_kind="solid", description="Validation: harmonic response of a bar with losses",
         variables={"L": "4[um]", "w": "0.2[um]", "F": "1[uN]", "f": "1[GHz]"},
         materials=[Material("M", {"model": "isotropic", "rho": f"{RHO:g}[kg/m^3]", "E": f"{E / 1e9:g}[GPa]",
                                    "nu": str(NU)})],
-        geometry=[Feature("block", "Bar", material="M", params={"center": ["L/2", "0", "0"], "size": ["L", "w", "w"]})],
+        objects=[Feature("block", "Bar", material="M", params={"center": ["L/2", "0", "0"], "size": ["L", "w", "w"]})],
         mesh=MeshSettings(max_size="w/2"),
         solid=SolidPhysics(symmetry=["ymin", "ymax", "zmin", "zmax"], conditions=[
             SolidCondition("fixed", ["xmin"], name="Clamp"),
             SolidCondition("load", ["xmax"], load_type="total", load=["F", "0", "0"], name="Drive")],
-            study=SolidStudy(type="frequency", frequency="f", loss=str(ETA))),
-        study=Study(sweep=VariableSweep("f", freqs)))
+            problem=SolidProblem(type="frequency", frequency="f", loss=str(ETA))),
+        problem=Problem(sweep=VariableSweep("f", freqs)))
 
 
 def run(quick: bool = False) -> Report:

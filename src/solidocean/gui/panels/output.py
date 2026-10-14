@@ -66,7 +66,7 @@ class OutputPanel(Panel):
         h.addRow(auto)
 
         if self.win.results is None:
-            self.outer.addWidget(muted_label("No results in memory yet. Configure the Study and press Run."))
+            self.outer.addWidget(muted_label("No results in memory yet. Configure the Problem and press Run."))
         else:
             self.button_row(("Save this run", lambda: self.win.save_run()),
                             ("Save to folder…", self.win.export_results))

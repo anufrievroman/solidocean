@@ -4,7 +4,7 @@ import pytest
 
 from solidocean.project import Feature, Material, MeshSettings, Project
 from solidocean.lattice import Lattice
-from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidStudy
+from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidProblem
 from solidocean.physics.solid.solver import Solver
 
 RHO, C11, C44 = 2329.0, 165.7e9, 79.6e9
@@ -17,11 +17,11 @@ def cube(order=2, periodic=None, k=("0", "0", "0"), fixed=None, **solid):
     return Project(
         variables={"a": "1[um]", "kx": "0.1*pi/a"},
         materials=[Material("Si", {"library": "Si"})],
-        geometry=[Feature("block", "cell", material="Si",
+        objects=[Feature("block", "cell", material="Si",
                           params={"center": ["a/2", "a/2", "a/2"], "size": ["a", "a", "a"]})],
         mesh=MeshSettings(max_size="a/3", order=order),
         lattice=Lattice(periodic=dict(periodic or {})),
-        solid=SolidPhysics(conditions=conditions, study=SolidStudy(k=list(k)), **solid),
+        solid=SolidPhysics(conditions=conditions, problem=SolidProblem(k=list(k)), **solid),
     )
 
 
@@ -109,7 +109,7 @@ def test_symmetry_planes_remove_rigid_modes(kind, n_zero):
 def test_half_slab_with_symmetry_reproduces_full_slab():
     def slab(z_center, height, **physics):
         p = cube(periodic={"x": "a", "y": "a"}, k=["kx", "0", "0"], **physics)
-        p.geometry[0].params.update(center=["a/2", "a/2", z_center], size=["a", "a", height])
+        p.objects[0].params.update(center=["a/2", "a/2", z_center], size=["a", "a", height])
         p.mesh.max_size = "a/4"
         return p
 

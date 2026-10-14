@@ -56,7 +56,7 @@ def project(h_frac: float):
         description="Validation: spreading resistance of a uniform-flux disk heater on a half-space",
         variables={"a": "1[um]", "R": f"{R_FRAC:g}*a", "P": f"{P * 1e3:g}[mW]", "T0": "300[K]"},
         materials=[mat("M", f"{K_M:g}[W/(m*K)]"), mat("Sink", f"{K_M * 1e7:g}[W/(m*K)]")],
-        geometry=[
+        objects=[
             Feature("sphere", "Shell", material="Sink", params={"center": ["0", "0", "0"], "radius": "1.2*R"}),
             Feature("sphere", "Body", material="M", params={"center": ["0", "0", "0"], "radius": "R"}),
             Feature("cylinder", "Heater", material="M",

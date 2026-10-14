@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from scipy.optimize import brentq
 
-from solidocean.physics.heat.model import HeatCondition, HeatInterface, HeatStudy
+from solidocean.physics.heat.model import HeatCondition, HeatInterface, HeatProblem
 from solidocean.physics.heat.solver import HeatSolver
 from solidocean.project import Feature, Material, Project
 
@@ -81,7 +81,7 @@ def test_transient_energy_with_a_layer(k):
     equals the heat put in (linear and nonlinear time stepping)."""
     q0, t_end, w = 1e9, 20e-9, 0.2e-6
     p = bar([HeatCondition("flux", ["xmin"], f"{q0}[W/m^2]")], two_materials=True,
-            study=HeatStudy(type="transient", t_end=f"{t_end}[s]", steps=20, tol=1e-10))
+            problem=HeatProblem(type="transient", t_end=f"{t_end}[s]", steps=20, tol=1e-10))
     p.materials.append(layer_material(k=2.0))
     p.materials[-1].props["k"] = k
     p.heat.interfaces = [HeatInterface("layer", ["A", "B"], material="Film", thickness="10[nm]")]
@@ -98,7 +98,7 @@ def test_resistance_depending_on_temperature():
     """R = R0 T / 300 K at the mean temperature of both sides: q R(Tm) = Ta - Tb, solved for q."""
     R0 = 5e-9
     p = bar(hot_cold(), two_materials=True)
-    p.heat.study = HeatStudy(tol=1e-10)
+    p.heat.problem = HeatProblem(tol=1e-10)
     p.heat.interfaces = [HeatInterface("resistance", ["A", "B"], f"{R0}[m^2*K/W] * T / 300[K]")]
     res = run(p, ["mean(qx)"])
 
@@ -119,7 +119,7 @@ def junction(R=None):
            Feature("block", "B", material="B", params={"center": ["0.25[um]", "0", "0.1[um]"], "size": ["0.5[um]", "0.4[um]", "0.2[um]"]})]
     from solidocean.physics.heat.model import HeatPhysics
     from solidocean.project import MeshSettings
-    p = Project(name="j", physics_kind="heat", materials=m, geometry=geo, mesh=MeshSettings(max_size="0.1[um]"),
+    p = Project(name="j", physics_kind="heat", materials=m, objects=geo, mesh=MeshSettings(max_size="0.1[um]"),
                 heat=HeatPhysics(initial="300[K]", conditions=[
                     HeatCondition("temperature", ["xmin"], "400[K]", on="A"),
                     HeatCondition("temperature", ["xmax"], "300[K]")]))
@@ -159,7 +159,7 @@ def test_interface_input_round_trip_and_checks(tmp_path):
         assert text in errors
     q.heat.interfaces = [HeatInterface("resistance", ["A", "A"])]
     assert any("must differ" in e for e in q.validate())
-    p.geometry[1].params["center"] = ["L", "0", "0"]                 # B no longer touches A
+    p.objects[1].params["center"] = ["L", "0", "0"]                 # B no longer touches A
     p.heat.interfaces = p.heat.interfaces[:1]
     with pytest.raises(ValueError, match="share no faces"):
         run(p)

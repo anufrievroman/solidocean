@@ -48,7 +48,7 @@ class ResultsPanel(Panel):
             self.outer.addWidget(muted_label(
                 "Save this run writes quantities.csv, the fields as .npz and the model into the run folder of "
                 "the Output section — the same files the command line writes. Single plots: the Save plot "
-                "button of a plot." if self.win.field_study else
+                "button of a plot." if self.win.field_problem else
                 "Save this run writes dispersion.csv (wavevectors in rad/m, frequencies in the selected "
                 "unit), results.npz (SI) and the model into the run folder of the Output section — the same "
                 "files the command line writes. Single plots: the Save plot button of a plot."))
@@ -108,7 +108,7 @@ class PlotPanel(Panel):
     @property
     def fieldres(self) -> bool:
         """Field results (one field per variable value and time step) rather than modes."""
-        return self.win.field_study
+        return self.win.field_problem
 
     def _dataset_box(self):
         """The computed solutions this plot uses: which sweep is on the x axis and which part of the other
@@ -116,7 +116,7 @@ class PlotPanel(Panel):
         r, pl = self.win.results, self.pl
         d = self.form("Dataset")
         if r is None:
-            d.addRow(muted_label("No results yet. Configure the Study and press Run; the computed sweeps and "
+            d.addRow(muted_label("No results yet. Configure the Problem and press Run; the computed sweeps and "
                                  "time steps can then be chosen here."))
             return
         d.addRow(muted_label(self.win.results_summary()))

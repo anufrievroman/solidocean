@@ -32,10 +32,10 @@ def test_sweep_plot_axis_uses_display_unit():
     from solidocean.physics.solid.solver import Solver
     from solidocean.results.style import outer_axis
     p = _example()
-    p.solid.study.kpath.enabled = False
-    p.study.sweep = VariableSweep("r", "[100[nm], 150[nm]]")
+    p.solid.problem.kpath.enabled = False
+    p.problem.sweep = VariableSweep("r", "[100[nm], 150[nm]]")
     p.mesh.max_size = "a/3"
-    p.solid.study.num_eigs = 4
+    p.solid.problem.num_eigs = 4
     res = Solver(p, log=lambda m: None).run()
     np.testing.assert_allclose(res.outer_values, [1e-7, 1.5e-7])   # stored in SI
     x, label = outer_axis(res, "nm")

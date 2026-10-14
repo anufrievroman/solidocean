@@ -89,22 +89,22 @@ def lamb_frequencies(kt: float, omega_max: float = OMEGA_MAX, nu: float = NU) ->
 
 def project(h_frac: float, order_: int = 2, k_points: int = 0):
     from solidocean.lattice import Lattice
-    from solidocean.physics.solid.model import KPath, SolidPhysics, SolidStudy
+    from solidocean.physics.solid.model import KPath, SolidPhysics, SolidProblem
     from solidocean.project import Feature, Material, MeshSettings, Project
     a_frac = 0.25
-    study = SolidStudy(num_eigs=28, k=["kx", "0", "0"])
+    problem = SolidProblem(num_eigs=28, k=["kx", "0", "0"])
     if k_points:
         reduced = KT_MAX * a_frac / (2 * np.pi)            # k a / (2 pi) at kt = KT_MAX
-        study.kpath = KPath({"G": [0, 0, 0], "K": [reduced, 0, 0]}, ["G", "K"], k_points)
+        problem.kpath = KPath({"G": [0, 0, 0], "K": [reduced, 0, 0]}, ["G", "K"], k_points)
     return Project(
         name="Lamb plate", physics_kind="solid",
         description="Validation: guided waves of a free isotropic plate (Rayleigh-Lamb)",
         variables={"t": "1[um]", "a": f"{a_frac}*t", "kx": "3/t"},
         materials=[Material("M", {"model": "isotropic", "rho": "2700[kg/m^3]", "E": "70[GPa]", "nu": str(NU)})],
-        geometry=[Feature("block", "Plate", material="M", params={"center": ["0", "0", "0"], "size": ["a", "a", "t"]})],
+        objects=[Feature("block", "Plate", material="M", params={"center": ["0", "0", "0"], "size": ["a", "a", "t"]})],
         mesh=MeshSettings(max_size=f"t*{h_frac:g}", order=order_),
         lattice=Lattice(periodic={"x": "a", "y": "a"}),
-        solid=SolidPhysics(study=study))
+        solid=SolidPhysics(problem=problem))
 
 
 def c_t():

@@ -54,7 +54,7 @@ def test_template_expansion(MODEL):
 
 def test_sweep_placeholder(MODEL):
     from solidocean.project import VariableSweep
-    MODEL.study.sweep = VariableSweep("a", "linspace(600[nm], 900[nm], 4)")
+    MODEL.problem.sweep = VariableSweep("a", "linspace(600[nm], 900[nm], 4)")
     assert outputs.expand(MODEL, "{sweep}") == "a_0.6-0.9um"
     MODEL.output.folder = "{a}"                                # swept: no single value in the run
     assert any("swept variable" in e for e in MODEL.validate())
@@ -126,8 +126,8 @@ def test_cli_writes_one_folder_per_run(tmp_path):
     p = templates.create("square")
     p.name = "Slab"
     p.mesh.max_size = "a/3"
-    p.solid.study.kpath.n = 2
-    p.solid.study.num_eigs = 4
+    p.solid.problem.kpath.n = 2
+    p.solid.problem.num_eigs = 4
     p.output.folder = "{name} a={a}"
     p.output.contents = ["tables"]
     path = p.save(tmp_path / "m.toml")

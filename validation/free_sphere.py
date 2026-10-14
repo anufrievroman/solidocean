@@ -79,15 +79,15 @@ def breathing_closed_form(nu: float = NU) -> float:
 
 
 def project(h_frac: float, order_: int = 2):
-    from solidocean.physics.solid.model import SolidPhysics, SolidStudy
+    from solidocean.physics.solid.model import SolidPhysics, SolidProblem
     from solidocean.project import Feature, Material, MeshSettings, Project
     return Project(
         name="Free sphere", physics_kind="solid", description="Validation: vibrations of a free sphere (Lamb 1882)",
         variables={"a": "1[um]"},
         materials=[Material("M", {"model": "isotropic", "rho": "2000[kg/m^3]", "E": "100[GPa]", "nu": str(NU)})],
-        geometry=[Feature("sphere", "Sphere", material="M", params={"center": ["0", "0", "0"], "radius": "a"})],
+        objects=[Feature("sphere", "Sphere", material="M", params={"center": ["0", "0", "0"], "radius": "a"})],
         mesh=MeshSettings(max_size=f"a*{h_frac:g}", order=order_),
-        solid=SolidPhysics(study=SolidStudy(num_eigs=60)))
+        solid=SolidPhysics(problem=SolidProblem(num_eigs=60)))
 
 
 def c_t():

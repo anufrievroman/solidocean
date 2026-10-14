@@ -1,4 +1,4 @@
-"""Stationary and frequency-domain studies of solid mechanics: displacement, strain and stress under loads and
+"""Stationary and frequency-domain problems of solid mechanics: displacement, strain and stress under loads and
 prescribed displacements (constant, or their harmonic amplitudes: complex fields), one solution per
 variable-sweep value. Plotted like any field results (results/field.py); quantities are expressions of the
 displacement, strains and stresses (physics/solid/fields.py)."""
@@ -51,18 +51,18 @@ class StaticResults(FieldResults):
 
 
 def run(solver, quantities=()) -> StaticResults:
-    """Stationary study (with an optional variable sweep) for solver.project."""
+    """Stationary problem (with an optional variable sweep) for solver.project."""
     p = solver.project
     errors = p.validate()
     if errors:
         raise ValueError("invalid project:\n  " + "\n  ".join(errors))
     base = p.evaluator()
     t_start = time.perf_counter()
-    sw = p.study.active_sweep
+    sw = p.problem.active_sweep
     outer_name, outer_values = (sw.variable, base.array(sw.values)) if sw else ("", np.array([np.nan]))
     quantities = [q.strip() for q in quantities if q.strip()]
     res = StaticResults(outer_name=outer_name, outer_values=outer_values,
-                        kind="frequency" if p.solid.study.harmonic else "stationary")
+                        kind="frequency" if p.solid.problem.harmonic else "stationary")
     qvals = {q: np.full((len(outer_values), 1), np.nan) for q in quantities}
     quads = {}
     for i, val in enumerate(outer_values):
@@ -71,7 +71,7 @@ def run(solver, quantities=()) -> StaticResults:
         ev = base.with_overrides({outer_name: val}) if outer_name else base
         if outer_name:
             solver.log(f"{outer_name} = {val:.6g}")
-        u = solver.solve_harmonic(ev) if p.solid.study.harmonic else solver.solve_static(ev)
+        u = solver.solve_harmonic(ev) if p.solid.problem.harmonic else solver.solve_static(ev)
         m = solver._model
         res.U.append(u)
         res.meshes[i], res.cels[i] = m.mesh, m.cel

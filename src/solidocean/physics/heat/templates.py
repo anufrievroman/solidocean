@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from ...project import Feature, MeshRegion, MeshSettings, VariableSweep, Project, Study
+from ...project import Feature, MeshRegion, MeshSettings, VariableSweep, Project, Problem
 from ...plots import PlotStyle, ResultPlot
 from ...templates import Template, library_material
-from .model import HeatCondition, HeatInterface, HeatPhysics, HeatSource, HeatStudy, Profile, Pulse
+from .model import HeatCondition, HeatInterface, HeatPhysics, HeatSource, HeatProblem, Profile, Pulse
 from .plots import field_plot, time_plot
 
 
@@ -21,7 +21,7 @@ def _lib(name: str, **overrides):
 def heat_empty() -> Project:
     return Project(
         name="Untitled", physics_kind="heat", variables={"a": "1[um]", "T0": "293.15[K]"}, materials=[_si()],
-        geometry=[Feature("block", "Block", material="Si", params={"center": ["0", "0", "0"], "size": ["a", "a", "a"]})],
+        objects=[Feature("block", "Block", material="Si", params={"center": ["0", "0", "0"], "size": ["a", "a", "a"]})],
         mesh=MeshSettings(max_size="a/5"),
         heat=HeatPhysics(initial="T0", conditions=[
             HeatCondition("temperature", ["zmin"], "T0", name="Heat sink"),
@@ -34,12 +34,12 @@ def heat_bar() -> Project:
         description="Steady heat conduction along a Si bar between a hot and a cold end; the sides are insulated",
         variables={"L": "2[um]", "w": "0.5[um]", "t": "220[nm]", "T_hot": "310[K]", "T_cold": "300[K]"},
         materials=[_si()],
-        geometry=[Feature("block", "Bar", material="Si", params={"center": ["0", "0", "0"], "size": ["L", "w", "t"]})],
+        objects=[Feature("block", "Bar", material="Si", params={"center": ["0", "0", "0"], "size": ["L", "w", "t"]})],
         mesh=MeshSettings(max_size="t/2"),
         heat=HeatPhysics(initial="T_cold", conditions=[
             HeatCondition("temperature", ["xmin"], "T_hot", name="Hot end"),
             HeatCondition("temperature", ["xmax"], "T_cold", name="Cold end")]),
-        study=Study(sweep=VariableSweep("T_hot", "range(305, 5, 330) * 1[K]")),
+        problem=Problem(sweep=VariableSweep("T_hot", "range(305, 5, 330) * 1[K]")),
         plots=[field_plot(),
                ResultPlot("Temperature along the bar", "T", kind="line", start=["-L/2", "0", "0"],
                           end=["L/2", "0", "0"], style=PlotStyle(markers=False)),
@@ -59,7 +59,7 @@ def heat_convection() -> Project:
         variables={"L": "10[mm]", "t": "0.5[mm]", "D": "2[mm]", "P": "100[mW]", "h": "20[W/(m^2*K)]",
                     "T_ext": "293.15[K]", "A": "2*L^2 + 4*L*t"},
         materials=[_si()],
-        geometry=[Feature("block", "Plate", material="Si", params={"center": ["0", "0", "0"],
+        objects=[Feature("block", "Plate", material="Si", params={"center": ["0", "0", "0"],
                                                                   "size": ["L", "L", "t"]}),
                   Feature("block", "Heater", material="Si", params={"center": ["0", "0", "t/2 - t/10"],
                                                                    "size": ["D", "D", "t/5"]})],
@@ -67,7 +67,7 @@ def heat_convection() -> Project:
         heat=HeatPhysics(initial="T_ext", conditions=[
             HeatCondition("convection", ["all"], name="Convection", h="h", T_ext="T_ext"),
             HeatCondition("flux", ["zmax"], "P / D^2", name="Heating", on="Heater")]),
-        study=Study(sweep=VariableSweep("h", "[5, 10, 20, 50, 100, 200] * 1[W/(m^2*K)]")),
+        problem=Problem(sweep=VariableSweep("h", "[5, 10, 20, 50, 100, 200] * 1[W/(m^2*K)]")),
         plots=[field_plot(),
                ResultPlot("Temperature rise", "mean(T) - T_ext", kind="quantity", y_label="Mean temperature rise (K)"),
                ResultPlot("Ratio to lumped estimate", "(mean(T) - T_ext) / (P / (h*A))", kind="quantity",
@@ -89,7 +89,7 @@ def heat_pad() -> Project:
                     "P": "1[mW]", "w": "3[um]", "x0": "0[um]", "q0": "4*log(2)*P/(pi*w^2)",
                     "t_pulse": "200[ns]", "k_si": "148[W/(m*K)]", "S": "15[um]", "t_sio2": "1[um]"},
         materials=[_si(k="k_si"), _lib("Au"), _lib("SiO2")],
-        geometry=[block("Ribbon", "Si", ["0", "0", "0"], ["L", "W", "t"]),
+        objects=[block("Ribbon", "Si", ["0", "0", "0"], ["L", "W", "t"]),
                   # heat sinks: wide Si pads at both ends of the ribbon, on a SiO2 layer
                   block("Sink1", "Si", ["L/2+S/2", "0", "0"], ["S", "S*2", "t"]),
                   block("Sink2", "Si", ["-L/2-S/2", "0", "0"], ["S", "S*2", "t"]),
@@ -107,8 +107,8 @@ def heat_pad() -> Project:
                           pulse=Pulse("rect", duration="t_pulse"), profile=Profile("gauss", ["x0", "0"], "w")),
             HeatCondition("flux", ["zmax"], "q0", name="Laser on ribbon", on="Ribbon",
                           pulse=Pulse("rect", duration="t_pulse"), profile=Profile("gauss", ["x0", "0"], "w"))],
-            study=HeatStudy("transient", t_start="0[ns]", t_end="10[us]", steps=310)),
-        study=Study(sweep=VariableSweep("k_si", "[30, 60, 100, 148] * 1[W/(m*K)]")),
+            problem=HeatProblem("transient", t_start="0[ns]", t_end="10[us]", steps=310)),
+        problem=Problem(sweep=VariableSweep("k_si", "[30, 60, 100, 148] * 1[W/(m*K)]")),
         plots=[field_plot(),
                time_plot("Pad temperature", 'mean(T, "Pad")', "Average pad temperature (K)"),
                time_plot("Peak temperature", "max(T)", "Maximum temperature (K)"),
@@ -126,12 +126,12 @@ def heat_radiation() -> Project:
                     "~ rho cp r / (12 eps sigma T^3), a few seconds at 1000 K)",
         variables={"r": "0.5[mm]", "T_hot": "1000[K]", "T_amb": "293.15[K]", "eps": "0.6"},
         materials=[_si()],
-        geometry=[Feature("sphere", "Sphere", material="Si", params={"center": ["0", "0", "0"], "radius": "r"})],
+        objects=[Feature("sphere", "Sphere", material="Si", params={"center": ["0", "0", "0"], "radius": "r"})],
         mesh=MeshSettings(max_size="r/3"),
         heat=HeatPhysics(initial="T_hot", conditions=[
             HeatCondition("radiation", ["all"], name="Radiation", emissivity="eps", T_ext="T_amb")],
-            study=HeatStudy("transient", t_end="60[s]", steps=240)),
-        study=Study(sweep=VariableSweep("eps", "[0.2, 0.5, 0.9]")),
+            problem=HeatProblem("transient", t_end="60[s]", steps=240)),
+        problem=Problem(sweep=VariableSweep("eps", "[0.2, 0.5, 0.9]")),
         plots=[field_plot(),
                time_plot("Mean temperature", "mean(T)", "Mean temperature (K)"),
                time_plot("Temperature spread inside", "max(T) - min(T)", "max(T) − min(T) (K)")])
@@ -150,7 +150,7 @@ def heat_diode() -> Project:
         variables={"T0": "300[K]", "dT": "300[K]", "L_si": "3[um]", "L_ox": "L_si/3", "w": "1[um]",
                     "T_left": "T0 + if(dT > 0, dT, 0)", "T_right": "T0 + if(dT < 0, -dT, 0)"},
         materials=[_si(k="148[W/(m*K)]*(T0/T)^1.3"), _lib("SiO2", k="1.38[W/(m*K)]*(T/T0)^0.45")],
-        geometry=[Feature("block", "Si", material="Si", params={"center": ["-L_si/2", "0", "0"],
+        objects=[Feature("block", "Si", material="Si", params={"center": ["-L_si/2", "0", "0"],
                                                                "size": ["L_si", "w", "w"]}),
                   Feature("block", "SiO2", material="SiO2", params={"center": ["L_ox/2", "0", "0"],
                                                                    "size": ["L_ox", "w", "w"]})],
@@ -158,7 +158,7 @@ def heat_diode() -> Project:
         heat=HeatPhysics(initial="T0", conditions=[
             HeatCondition("temperature", ["xmin"], "T_left", name="Si end"),
             HeatCondition("temperature", ["xmax"], "T_right", name="SiO2 end")]),
-        study=Study(sweep=VariableSweep(
+        problem=Problem(sweep=VariableSweep(
             "dT", "[-400, -300, -200, -100, -50, 50, 100, 200, 300, 400] * 1[K]")),
         plots=[field_plot(),
                ResultPlot("Heat flow", "abs(integral(qx)) / (L_si + L_ox) / 1e-6[W]", kind="quantity",
@@ -181,7 +181,7 @@ def heat_contact() -> Project:
         variables={"a": "1[um]", "h": "200[nm]", "S": "4[um]", "H": "2[um]", "T0": "300[K]", "P": "100[uW]",
                     "R": "1e-8[m^2*K/W]"},
         materials=[_si(), _lib("Au"), _lib("Cr")],
-        geometry=[Feature("block", "Substrate", material="Si", params={"center": ["0", "0", "-H/2"],
+        objects=[Feature("block", "Substrate", material="Si", params={"center": ["0", "0", "-H/2"],
                                                                        "size": ["S", "S", "H"]}),
                   Feature("block", "Pad", material="Au", params={"center": ["0", "0", "h/2"], "size": ["a", "a", "h"]})],
         mesh=MeshSettings(max_size="S/6", regions=[MeshRegion(on="Pad", max_size="h/2")]),   # fine in the thin pad
@@ -189,7 +189,7 @@ def heat_contact() -> Project:
             HeatCondition("temperature", ["zmin"], "T0", name="Heat sink")],
             sources=[HeatSource("Au", "P / (a^2 * h)", name="Heater")],
             interfaces=[HeatInterface("resistance", ["Pad", "Substrate"], "R", name="Au | Si")]),
-        study=Study(sweep=VariableSweep("R", "[0.1, 0.3, 1, 3, 10, 30, 100] * 1e-9[m^2*K/W]")),
+        problem=Problem(sweep=VariableSweep("R", "[0.1, 0.3, 1, 3, 10, 30, 100] * 1e-9[m^2*K/W]")),
         plots=[field_plot(),
                ResultPlot("Pad temperature rise", 'mean(T, "Pad") - T0', kind="quantity",
                           y_label="Pad temperature rise (K)", x_label="Boundary resistance R (m²K/W)",
@@ -215,7 +215,7 @@ def heat_3omega() -> Project:
         variables={"b": "1[um]", "h": "100[nm]", "D": "20[um]", "Lx": "0.5[um]", "P": "1[W/m]",
                     "T0": "300[K]", "f": "10[kHz]"},
         materials=[_lib("SiO2"), _lib("Au")],
-        geometry=[Feature("block", "Substrate", material="SiO2", params={"center": ["0", "D/2", "-D/2"],
+        objects=[Feature("block", "Substrate", material="SiO2", params={"center": ["0", "D/2", "-D/2"],
                                                                          "size": ["Lx", "D", "D"]}),
                   Feature("block", "Heater", material="Au", params={"center": ["0", "b/2", "h/2"],
                                                                     "size": ["Lx", "b", "h"]})],
@@ -223,8 +223,8 @@ def heat_3omega() -> Project:
         heat=HeatPhysics(initial="T0", conditions=[
             HeatCondition("temperature", ["ymax", "zmin"], "T0", name="Far field")],
             sources=[HeatSource("Au", "P / (2*b*h)", name="Joule heating (2ω)")],
-            study=HeatStudy(type="frequency", frequency="f")),
-        study=Study(sweep=VariableSweep("f", "logspace(4, 6, 9) * 1[Hz]")),
+            problem=HeatProblem(type="frequency", frequency="f")),
+        problem=Problem(sweep=VariableSweep("f", "logspace(4, 6, 9) * 1[Hz]")),
         plots=[field_plot("Temperature amplitude", "Tamp"),
                heater(("In-phase temperature", 'mean(Tre, "Heater")', "In-phase heater temperature (K)")),
                heater(("Out-of-phase temperature", 'mean(Tim, "Heater")', "Out-of-phase heater temperature (K)")),
@@ -245,7 +245,7 @@ def heat_fdtr() -> Project:
         variables={"w": "2[um]", "d": "100[nm]", "R": "10[um]", "P": "1[mW]", "G": "150[MW/(m^2*K)]",
                     "T0": "300[K]", "f": "1[MHz]", "q0": "4*log(2)*P/(pi*w^2)"},
         materials=[_si(), _lib("Au")],
-        geometry=[Feature("block", "Substrate", material="Si", params={"center": ["R/2", "R/2", "-R/2"],
+        objects=[Feature("block", "Substrate", material="Si", params={"center": ["R/2", "R/2", "-R/2"],
                                                                        "size": ["R", "R", "R"]}),
                   Feature("block", "Film", material="Au", params={"center": ["R/2", "R/2", "d/2"],
                                                                   "size": ["R", "R", "d"]})],
@@ -254,8 +254,8 @@ def heat_fdtr() -> Project:
             HeatCondition("flux", ["zmax"], "q0", name="Pump", profile=Profile("gauss", ["0", "0"], "w")),
             HeatCondition("temperature", ["xmax", "ymax", "zmin"], "T0", name="Far field")],
             interfaces=[HeatInterface("resistance", ["Film", "Substrate"], "1/G", name="Au | Si")],
-            study=HeatStudy(type="frequency", frequency="f")),
-        study=Study(sweep=VariableSweep("f", "logspace(6, 7.3, 9) * 1[Hz]")),
+            problem=HeatProblem(type="frequency", frequency="f")),
+        problem=Problem(sweep=VariableSweep("f", "logspace(6, 7.3, 9) * 1[Hz]")),
         plots=[field_plot("Temperature amplitude", "Tamp"),
                ResultPlot("Probe phase", f"atan2({weighted}) * 180/pi", kind="quantity",
                           y_label="Phase of the probed temperature (°)",

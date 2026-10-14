@@ -9,7 +9,7 @@ def slab(*extra):
     return Project(
         variables={"a": "1[um]"},
         materials=[Material("Si", {"library": "Si"})],
-        geometry=[Feature("block", "slab", material="Si", params={"center": ["0", "0", "0"], "size": ["a", "a", "a"]}),
+        objects=[Feature("block", "slab", material="Si", params={"center": ["0", "0", "0"], "size": ["a", "a", "a"]}),
                   *extra],
     )
 
@@ -27,14 +27,14 @@ def test_bypassed_feature_is_ignored_and_roundtrips(tmp_path):
     from solidocean.fields import Quadrature
     a = p.evaluator()("a")
     m1 = meshing.generate(p, p.evaluator())
-    p.geometry[1].enabled = True
+    p.objects[1].enabled = True
     m2 = meshing.generate(p, p.evaluator())
     v1, v2 = Quadrature.of(m1).volume, Quadrature.of(m2).volume     # the bypassed hole removes nothing
     assert v1 == pytest.approx(a ** 3, rel=1e-9)
     assert v1 - v2 == pytest.approx(np.pi * (0.3 * a) ** 2 * a, rel=0.03)    # the hole goes through
-    p.geometry[1].enabled = False
+    p.objects[1].enabled = False
     q = Project.load(p.save(tmp_path / "m.toml"))
-    assert q.geometry[1].enabled is False and q.geometry[0].enabled is True
+    assert q.objects[1].enabled is False and q.objects[0].enabled is True
 
 
 def test_tiny_feature_is_rejected_not_hung():
@@ -70,7 +70,7 @@ def test_triangular_block():
     tri = Feature("triangle", "Triangle", material="Si",
                   params={"center": ["0", "0", "0"], "base": "2*a", "height": "a", "thickness": "a/2"})
     p = slab()
-    p.geometry = [tri]
+    p.objects = [tri]
     v, lo, hi = _volume_box(p)
     assert v == pytest.approx(0.5 * 2e-6 * 1e-6 * 0.5e-6, rel=1e-9)
     np.testing.assert_allclose(np.r_[lo, hi], [-1e-6, -0.5e-6, -0.25e-6, 1e-6, 0.5e-6, 0.25e-6], atol=1e-15)
@@ -82,17 +82,17 @@ def test_rotation_of_features(tmp_path):
     blk = Feature("block", "Block", material="Si",
                   params={"center": ["0", "0", "0"], "size": ["2*a", "a", "a"], "rotation": ["0", "0", "90"]})
     p = slab()
-    p.geometry = [blk]
+    p.objects = [blk]
     v, lo, hi = _volume_box(p)
     assert v == pytest.approx(2e-18, rel=1e-9)
     np.testing.assert_allclose(hi - lo, [1e-6, 2e-6, 1e-6], rtol=1e-9)
     cyl = Feature("cylinder", "Rod", material="Si", params={"center": ["0", "0", "0"], "axis": ["0", "0", "1"],
                                                           "radius": "0.2*a", "height": "a", "rotation": ["90", "0", "0"]})
-    p.geometry = [cyl]
+    p.objects = [cyl]
     _, lo, hi = _volume_box(p)
     np.testing.assert_allclose(np.r_[lo[1], hi[1]], [-1e-6, 0.0], atol=1e-12)
     q = Project.load(p.save(tmp_path / "m.toml"))
-    assert q.geometry[0].params["rotation"] == ["90", "0", "0"]
+    assert q.objects[0].params["rotation"] == ["90", "0", "0"]
     assert "rotation" not in Feature("block", "B", material="Si").to_dict()
     assert "rotation" not in Feature("cell", "C", material="Si").params     # the lattice cell is never rotated
 
@@ -118,7 +118,7 @@ def test_array_of_features(tmp_path):
     assert m.region("Pillars").sum() > 0
     np.testing.assert_allclose(m.bounds()[1], [a / 2, a / 2, 3 * a / 4], rtol=1e-9)
     r = Project.load(p.save(tmp_path / "m.toml"))
-    assert r.geometry[1].params["array"] == ["4", "1", "1"] and r.geometry[1].array_label == "4×1×1"
-    assert "array" not in r.geometry[0].to_dict() and "spacing" not in r.geometry[0].to_dict()
-    r.geometry[1].params["array"] = ["2.5", "1", "1"]
+    assert r.objects[1].params["array"] == ["4", "1", "1"] and r.objects[1].array_label == "4×1×1"
+    assert "array" not in r.objects[0].to_dict() and "spacing" not in r.objects[0].to_dict()
+    r.objects[1].params["array"] = ["2.5", "1", "1"]
     assert any("whole numbers" in e for e in r.validate_geometry())

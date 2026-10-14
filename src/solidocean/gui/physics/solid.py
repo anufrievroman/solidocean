@@ -11,7 +11,7 @@ from .base import PhysicsUI
 from .common import condition_highlights
 
 STATIONARY_PLOT_HELP = {
-    "quantity": "Any quantity of the displacement, strain and stress fields against the swept variable (Study → "
+    "quantity": "Any quantity of the displacement, strain and stress fields against the swept variable (Problem → "
                 "Variable sweep). Click a point to see the field.",
     "line": "A cross-section: the quantity along a straight line from a start to an end point. Gaps mark holes or "
             "points outside the structure.",
@@ -21,10 +21,9 @@ STATIONARY_PLOT_HELP = {
 class SolidUI(PhysicsUI):
     kind = "solid"
     physics_panel = sp.SolidPanel
-    study_panel = sp.SolidStudyPanel
+    problem_panel = sp.SolidProblemPanel
     field_panel = sp.DisplacementPanel
-    node_panels = {"periodicity": sp.PeriodicityPanel, "symmetry": sp.SymmetryPanel, "solutions": sp.SolutionsPanel,
-                   "kpath": sp.KPathPanel, "solver": sp.SolverPanel}
+    node_panels = {"periodicity": sp.PeriodicityPanel, "symmetry": sp.SymmetryPanel, "kpath": sp.KPathPanel}
     indexed_panels = {"solid_cond": sp.SolidConditionPanel}
     highlight_nodes = ("periodicity", "symmetry", "solid_cond")
 
@@ -36,14 +35,13 @@ class SolidUI(PhysicsUI):
         return nodes + [(sp.solid_condition_label(c), ("solid_cond", i), False)
                         for i, c in enumerate(project.solid.conditions)]
 
-    def study_label(self, project):
-        return f"Study: {sp.study_summary(project)['study_type']}"
+    def problem_label(self, project):
+        return f"Problem: {sp.problem_summary(project)['problem_type']}"
 
-    def study_nodes(self, project):
-        summary = sp.study_summary(project)
-        keys = (("sweep", "Variable sweep"), ("solver", "Solver")) if project.solid.study.field_study else \
-            (("solutions", "Solutions"), ("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"),
-             ("solver", "Solver"))
+    def problem_nodes(self, project):
+        summary = sp.problem_summary(project)
+        keys = (("sweep", "Variable sweep"),) if project.solid.problem.field_problem else \
+            (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"))
         return [(f"{label} ({summary[key]})" if summary[key] else label, (key, None), not summary[key])
                 for key, label in keys]
 
@@ -54,12 +52,12 @@ class SolidUI(PhysicsUI):
         elif kind == "solid_cond":
             menu.addAction("Delete", lambda: sp.delete_condition(win, index))
         elif kind == "kpath":
-            kp = win.project.solid.study.kpath
+            kp = win.project.solid.problem.kpath
             menu.addAction("Disable" if kp is not None and kp.enabled else "Enable", lambda: self.toggle_kpath(win))
 
     @staticmethod
     def toggle_kpath(win):
-        st = win.project.study
+        st = win.project.problem
         if st.kpath is None:
             st.kpath = sp.default_kpath(win.project)
         st.kpath.enabled = not st.kpath.enabled
@@ -77,10 +75,10 @@ class SolidUI(PhysicsUI):
 
     # ---- results ---------------------------------------------------------------------
     def run_label(self, project):
-        st = project.solid.study
+        st = project.solid.problem
         if st.harmonic:
             return "Solving the harmonic response…"
-        return "Solving stationary solid mechanics…" if st.field_study else "Computing eigenfrequencies…"
+        return "Solving stationary solid mechanics…" if st.field_problem else "Computing eigenfrequencies…"
 
     def show_field(self, win):
         """The stationary displacement of the selected variable value, on the deformed structure coloured by
@@ -129,13 +127,13 @@ class SolidUI(PhysicsUI):
         return "; ".join(parts) + "."
 
     def quantity_placeholder(self, project):
-        if project.solid.study.harmonic:
+        if project.solid.problem.harmonic:
             return "max(abs(uz))"
-        return "max(mises)" if project.solid.study.field_study else "mean(abs(uz)^2)"
+        return "max(mises)" if project.solid.problem.field_problem else "mean(abs(uz)^2)"
 
     def line_help(self, project):
         return ("Evaluated point by point along the line: ux, uy, uz, strains exx..exy, stresses sxx..sxy, mises, "
                 "x, y, z, e.g. sqrt(ux^2+uy^2+uz^2) for the displacement magnitude.")
 
     def plot_help(self, project, kind):
-        return STATIONARY_PLOT_HELP.get(kind, "") if project.solid.study.field_study else ""
+        return STATIONARY_PLOT_HELP.get(kind, "") if project.solid.problem.field_problem else ""

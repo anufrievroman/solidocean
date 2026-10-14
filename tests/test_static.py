@@ -7,7 +7,7 @@ from solidocean.physics.solid import fields as solid_fields
 from solidocean.project import Feature, Material, MeshSettings, VariableSweep, Project
 from solidocean.physics.heat.model import HeatCondition, HeatPhysics
 from solidocean.lattice import Lattice
-from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidStudy
+from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidProblem
 from solidocean.physics.solid.solver import Solver
 
 E, NU = 100e9, 0.25
@@ -21,10 +21,10 @@ def bar(conditions, symmetry=("xmin", "ymin", "zmin"), material=None, size=("L",
     return Project(
         variables={"L": "2[um]", "w": "0.5[um]"},
         materials=[Material("M", dict(material or ISO))],
-        geometry=[Feature("block", "Bar", material="M",
+        objects=[Feature("block", "Bar", material="M",
                           params={"center": [f"{s}/2" for s in size], "size": list(size)})],
         mesh=MeshSettings(max_size=max_size), lattice=Lattice(periodic=dict(periodic or {})),
-        solid=SolidPhysics(symmetry=list(symmetry), conditions=conditions, study=SolidStudy(type="stationary")))
+        solid=SolidPhysics(symmetry=list(symmetry), conditions=conditions, problem=SolidProblem(type="stationary")))
 
 
 def solve(p, quantities=()):
@@ -80,10 +80,10 @@ def test_periodic_slab_under_pressure_is_in_uniaxial_strain():
 def test_cantilever_matches_euler_bernoulli():
     L, w, t, F = 8e-6, 0.4e-6, 0.4e-6, 1e-9
     p = Project(variables={"L": "8[um]", "t": "0.4[um]", "F": "1[nN]"}, materials=[Material("M", ISO)],
-                geometry=[Feature("block", "Beam", material="M",
+                objects=[Feature("block", "Beam", material="M",
                                   params={"center": ["L/2", "0", "0"], "size": ["L", "t", "t"]})],
                 mesh=MeshSettings(max_size="t/2"),
-                solid=SolidPhysics(study=SolidStudy(type="stationary"), conditions=[
+                solid=SolidPhysics(problem=SolidProblem(type="stationary"), conditions=[
                     SolidCondition("fixed", ["xmin"]),
                     SolidCondition("load", ["xmax"], load_type="total", load=["0", "0", "-F"])]))
     tip = -solve(p, ["min(uz)"]).quantities["min(uz)"][0, 0]
@@ -109,7 +109,7 @@ def test_selection_of_an_object_and_all_faces():
     """'all' faces of a pad on a slab: the pad's outer surface without its bonded bottom."""
     p = Project(variables={"w": "2[um]", "t": "0.2[um]", "a": "0.5[um]"},
                 materials=[Material("A", ISO), Material("B", ISO)],
-                geometry=[Feature("block", "Slab", material="A", params={"center": ["0", "0", "0"],
+                objects=[Feature("block", "Slab", material="A", params={"center": ["0", "0", "0"],
                                                                          "size": ["w", "w", "t"]}),
                           Feature("block", "Pad", material="B", params={"center": ["0", "0", "t/2 + a/2"],
                                                                         "size": ["a", "a", "a"]})],
@@ -140,11 +140,11 @@ def test_free_body_is_rejected():
         solve(p)
 
 
-def test_constraint_on_an_object_in_an_eigenfrequency_study():
+def test_constraint_on_an_object_in_an_eigenfrequency_problem():
     """Clamping the bottom face of the whole model or of the only object is the same constraint."""
     def freqs(cond):
         p = bar([cond], symmetry=())
-        p.solid.study = SolidStudy(num_eigs=3)
+        p.solid.problem = SolidProblem(num_eigs=3)
         return Solver(p, log=lambda m: None).solve_point(p.evaluator(), np.zeros(3))
     a = freqs(SolidCondition("fixed", ["xmin"]))
     b = freqs(SolidCondition("fixed", ["xmin"], on="Bar"))
@@ -156,7 +156,7 @@ def test_constraint_on_an_object_in_an_eigenfrequency_study():
 
 def test_mode_stresses_are_available():
     p = bar([SolidCondition("fixed", ["xmin"])], symmetry=())
-    p.solid.study = SolidStudy(num_eigs=2)
+    p.solid.problem = SolidProblem(num_eigs=2)
     r = Solver(p, log=lambda m: None).run(["max(mises)", "mean(abs(sxx))"])
     assert np.all(np.isfinite(r.quantities["max(mises)"])) and np.all(r.quantities["max(mises)"] > 0)
 
@@ -176,7 +176,7 @@ def test_condition_validation():
 def test_stationary_sweep_reuses_the_mesh_for_load_values():
     p = bar([SolidCondition("load", ["xmax"], load_type="total", load=["F", "0", "0"])])
     p.variables["F"] = "1[uN]"
-    p.study.sweep = VariableSweep("F", "[1, 2, 3] * 1[uN]")
+    p.problem.sweep = VariableSweep("F", "[1, 2, 3] * 1[uN]")
     s = Solver(p, log=lambda m: None)
     r = s.run(["mean(sxx)"])
     assert len({id(m) for m in r.meshes.values()}) == 1
@@ -189,7 +189,7 @@ def test_heat_flux_into_a_box_selection():
     from solidocean.physics.heat.solver import HeatSolver
     p = Project(physics_kind="heat", variables={"w": "1[um]", "t": "0.2[um]"},
                 materials=[Material("M", {**ISO, "k": "100[W/(m*K)]", "cp": "700[J/(kg*K)]"})],
-                geometry=[Feature("block", "Slab", material="M", params={"center": ["0", "0", "0"],
+                objects=[Feature("block", "Slab", material="M", params={"center": ["0", "0", "0"],
                                                                          "size": ["w", "w", "t"]})],
                 mesh=MeshSettings(max_size="0.1[um]"),
                 heat=HeatPhysics(conditions=[

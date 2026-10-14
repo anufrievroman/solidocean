@@ -77,7 +77,7 @@ SWEEP_AXES = ("auto", "kpath", "variable")
 
 # dispersion: frequency vs sweep; quantity: any expression vs sweep (heat: vs the swept variable);
 # colored: frequency vs sweep with every point coloured by an expression; field: 3D view of the solution
-# (displacement / temperature); time: heat, any expression vs time (transient studies); line: heat, an
+# (displacement / temperature); time: heat, any expression vs time (transient problems); line: heat, an
 # expression evaluated point by point along a straight line (a cross-section profile)
 PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section")
 # the type of each kind, shown with plot names: 3D views of the structure, 2D maps (cross-sections), XY plots, and

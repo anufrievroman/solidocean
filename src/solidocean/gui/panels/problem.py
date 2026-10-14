@@ -1,4 +1,4 @@
-"""Study panels shared by every physics: variable sweep."""
+"""Problem panels shared by every physics: variable sweep."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ class SweepPanel(Panel):
     attr = ""
 
     def holder(self):
-        """The settings object holding the sweep (shared study; a physics' own study for its sweeps)."""
-        return self.p.study
+        """The settings object holding the sweep (shared problem; a physics' own problem for its sweeps)."""
+        return self.p.problem
 
     def sweep(self):
         st = self.holder()
@@ -25,7 +25,7 @@ class SweepPanel(Panel):
 
     def changed(self):
         self.sweep()  # store the draft on first edit
-        self.win.study_changed()
+        self.win.problem_changed()
 
     def enable_box(self, label: str, obj):
         cb = QCheckBox(label)
@@ -36,7 +36,7 @@ class SweepPanel(Panel):
 
 class VariableSweepPanel(SweepPanel):
     title = "Variable sweep"
-    help = ("Outer loop: the whole study is repeated for each value of one variable, for example a hole "
+    help = ("Outer loop: the whole problem is repeated for each value of one variable, for example a hole "
             "radius, a thickness, or a wavevector component used in Periodicity. The geometry and mesh are "
             "rebuilt when they depend on the variable.\n\n"
             "Example:   r  in  range(0.1*a, 0.05*a, 0.4*a)   → r = 0.1a, 0.15a, … 0.4a\n\n"
@@ -45,7 +45,7 @@ class VariableSweepPanel(SweepPanel):
     attr = "sweep"
 
     def build(self):
-        st = self.p.study
+        st = self.p.problem
         self._draft = st.sweep or VariableSweep(next(iter(self.p.variables), ""), "", enabled=False)
         par = self._draft
         self.enable_box("Enable variable sweep", par)
@@ -94,24 +94,18 @@ class VariableSweepPanel(SweepPanel):
 
 
 def sweep_summary(st) -> dict[str, str]:
-    """Short text of the study nodes every physics has (empty string = inactive)."""
-    from ...fem import eigen
+    """Short text of the problem nodes every physics has (empty string = inactive)."""
     sw = st.active_sweep
-    try:
-        solver = eigen.backend(st.solver)
-    except Exception:
-        solver = st.solver
-    return {"sweep": sw.variable if sw else "",
-            "solver": ("auto: " if st.solver == "auto" else "") + solver}
+    return {"sweep": sw.variable if sw else ""}
 
 
 def solver_box(panel):
-    """The sparse direct solver every study uses (study.solver)."""
+    """The Solver box of a Problem panel: the sparse direct solver every problem uses (problem.solver)."""
     import os
     from ...fem import eigen
-    st = panel.p.study
+    st = panel.p.problem
     avail = eigen.available_backends()
-    f = panel.form()
+    f = panel.form("Solver")
     combo = QComboBox()
     for key, label in [("auto", f"Auto (fastest available: {avail[0]})"), ("mumps", "MUMPS"),
                        ("superlu", "SuperLU (scipy)")]:
@@ -119,9 +113,9 @@ def solver_box(panel):
         if key != "auto" and key not in avail:
             combo.model().item(combo.count() - 1).setEnabled(False)
     combo.setCurrentIndex(max(0, combo.findData(st.solver)))
-    combo.currentIndexChanged.connect(lambda i: (setattr(st, "solver", combo.itemData(i)), panel.win.study_changed()))
+    combo.currentIndexChanged.connect(lambda i: (setattr(st, "solver", combo.itemData(i)), panel.win.mark_dirty()))
     f.addRow("Linear solver", combo)
-    panel.outer.addWidget(muted_label(
+    f.addRow(muted_label(
         f"Installed linear solvers: {', '.join(avail)}.  CPU cores: {os.cpu_count()}.  MUMPS (conda-forge "
         "python-mumps) is typically 10-20x faster than SuperLU for 3D models."))
     return f

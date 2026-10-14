@@ -5,7 +5,7 @@ import pytest
 from solidocean.fem import heat, surface
 from solidocean.physics.heat.solver import HeatSolver
 from solidocean.project import Feature, Material, MeshSettings, Project
-from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatSource, HeatStudy
+from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatSource, HeatProblem
 from solidocean.plots import ResultPlot
 
 K1, K2, RHO, CP = 100.0, 25.0, 2000.0, 500.0
@@ -16,7 +16,7 @@ def mat(name, k):
                            "k": f"{k}[W/(m*K)]", "cp": f"{CP}[J/(kg*K)]"})
 
 
-def bar(conditions, two_materials=False, sources=(), study=None, order=2):
+def bar(conditions, two_materials=False, sources=(), problem=None, order=2):
     """Bar of length L = 1 um along x (cross-section 0.2 x 0.2 um), insulated sides."""
     geo = [Feature("block", "A", material="A",
                    params={"center": ["0", "0", "0"], "size": ["L", "w", "w"]})]
@@ -25,9 +25,9 @@ def bar(conditions, two_materials=False, sources=(), study=None, order=2):
                Feature("block", "B", material="B", params={"center": ["L/4", "0", "0"], "size": ["L/2", "w", "w"]})]
     return Project(
         name="bar", physics_kind="heat", variables={"L": "1[um]", "w": "0.2[um]"},
-        materials=[mat("A", K1), mat("B", K2)], geometry=geo, mesh=MeshSettings(max_size="L/8", order=order),
+        materials=[mat("A", K1), mat("B", K2)], objects=geo, mesh=MeshSettings(max_size="L/8", order=order),
         heat=HeatPhysics(initial="300[K]", conditions=list(conditions), sources=list(sources),
-                         study=study or HeatStudy()),
+                         problem=problem or HeatProblem()),
         plots=[ResultPlot("mean T", "mean(T)")],
     )
 
@@ -94,7 +94,7 @@ def test_transient_decay_of_sine_mode():
     alpha = K1 / (RHO * CP)
     tau = L ** 2 / (np.pi ** 2 * alpha)
     p = bar([HeatCondition("temperature", ["xmin", "xmax"], "300[K]")],
-            study=HeatStudy("transient", t_end=f"{tau}[s]", steps=400, theta=0.5, save_every=40))
+            problem=HeatProblem("transient", t_end=f"{tau}[s]", steps=400, theta=0.5, save_every=40))
     p.heat.initial = "300[K] + 10*sin(pi*(x + L/2)/L)"
     res = HeatSolver(p, log=lambda s: None).run(["max(T) - 300"])
     amp = res.quantities["max(T) - 300"][0]
@@ -104,7 +104,7 @@ def test_transient_decay_of_sine_mode():
 
 def test_heat_model_file_roundtrip(tmp_path):
     p = bar(hot_cold(), sources=[HeatSource("A", "1e10[W/m^3]", "src")],
-            study=HeatStudy("transient", t_end="2[ns]", steps=10))
+            problem=HeatProblem("transient", t_end="2[ns]", steps=10))
     q = Project.load(p.save(tmp_path / "heat.toml"))
     assert q.physics_kind == "heat" and q.heat == p.heat and q.validate() == []
 
@@ -114,23 +114,23 @@ def test_convection_template_matches_lumped_estimate():
     from solidocean import templates
     p = templates.create("heat_convection")
     assert p.validate() == []
-    p.study.sweep.values = "[10, 100] * 1[W/(m^2*K)]"
+    p.problem.sweep.values = "[10, 100] * 1[W/(m^2*K)]"
     p.mesh.max_size = "L/10"
     res = HeatSolver(p, log=lambda s: None).run(["(mean(T) - T_ext) / (P / (h*A))"])
     ratio = res.quantities["(mean(T) - T_ext) / (P / (h*A))"][:, 0]
     np.testing.assert_allclose(ratio, 1, atol=0.01)
 
 
-def slab_with_pad(conditions, study, sources=()):
+def slab_with_pad(conditions, problem, sources=()):
     """Slab 2 x 2 x 0.2 um (material A) with a cylindrical pad (material B, r = 0.5 um, h = 0.1 um) on top."""
     return Project(
         name="pad", physics_kind="heat", variables={"w": "2[um]", "t": "0.2[um]", "R": "0.5[um]", "h": "0.1[um]"},
         materials=[mat("A", K1), mat("B", K2)],
-        geometry=[Feature("block", "slab", material="A", params={"center": ["0", "0", "0"], "size": ["w", "w", "t"]}),
+        objects=[Feature("block", "slab", material="A", params={"center": ["0", "0", "0"], "size": ["w", "w", "t"]}),
                   Feature("cylinder", "pad", material="B",
                           params={"center": ["0", "0", "t/2"], "axis": ["0", "0", "1"], "radius": "R", "height": "h"})],
         mesh=MeshSettings(max_size="w/6"),
-        heat=HeatPhysics(initial="300[K]", conditions=list(conditions), sources=list(sources), study=study))
+        heat=HeatPhysics(initial="300[K]", conditions=list(conditions), sources=list(sources), problem=problem))
 
 
 def deposited_energy(p, results):
@@ -148,7 +148,7 @@ def test_pulse_on_object_face_conserves_energy(shape, factor):
     q, dur = 1e9, 3e-9
     cond = HeatCondition("flux", ["zmax"], f"{q}[W/m^2]", name="laser", on="pad",
                          pulse=Pulse(shape, "4[ns]", f"{dur}[s]"))
-    p = slab_with_pad([cond], HeatStudy("transient", t_end="20[ns]", steps=7))
+    p = slab_with_pad([cond], HeatProblem("transient", t_end="20[ns]", steps=7))
     assert p.validate() == []
     r = HeatSolver(p, log=lambda m: None).run()
     E = deposited_energy(p, r)
@@ -162,7 +162,7 @@ def test_repeated_pulse_and_object_mean():
     from solidocean.physics.heat.solver import compute_quantity as compute_heat_quantity
     from solidocean.physics.heat.model import Pulse
     cond = HeatCondition("flux", ["zmax"], "1e9[W/m^2]", on="pad", pulse=Pulse("rect", "0[s]", "1[ns]", "5[ns]"))
-    p = slab_with_pad([cond], HeatStudy("transient", t_end="12[ns]", steps=24))
+    p = slab_with_pad([cond], HeatProblem("transient", t_end="12[ns]", steps=24))
     r = HeatSolver(p, log=lambda m: None).run(["mean(T, \"pad\")", "mean(T, \"A\")", "mean(T)"])
     E = deposited_energy(p, r)
     assert E[-1] == pytest.approx(1e9 * np.pi * 0.5e-6 ** 2 * 3e-9, rel=1e-3)   # pulses at 0, 5, 10 ns
@@ -184,7 +184,7 @@ def test_oscillating_source_stores_its_energy(theta, steps):
     Q0, Q1, P, t0 = 1e15, 2e15, 4e-9, 1e-9
     src = HeatSource("A", f"{Q0:g}[W/m^3]", pulse=Pulse("sine", start=f"{t0:g}[s]", period=f"{P:g}[s]",
                                                      amplitude=f"{Q1:g}[W/m^3]"))
-    p = bar([], sources=[src], study=HeatStudy("transient", t_end="10[ns]", steps=steps, theta=theta))
+    p = bar([], sources=[src], problem=HeatProblem("transient", t_end="10[ns]", steps=steps, theta=theta))
     assert p.validate() == []
     r = HeatSolver(p, log=lambda m: None).run(["mean(T)"])
     t = r.times
@@ -197,7 +197,7 @@ def test_oscillation_input_and_checks(tmp_path):
     from solidocean.physics.heat.model import Pulse
     flux = HeatCondition("flux", ["xmin"], "1e6[W/m^2]",
                          pulse=Pulse("sine", period="1/(10[MHz])", amplitude="5e5[W/m^2]"))
-    p = bar([flux], study=HeatStudy("transient", t_end="1[us]"))
+    p = bar([flux], problem=HeatProblem("transient", t_end="1[us]"))
     q = Project.load(p.save(tmp_path / "m.toml"))
     pl = q.heat.conditions[0].pulse
     assert (pl.shape, pl.period, pl.amplitude, pl.duration) == ("sine", "1/(10[MHz])", "5e5[W/m^2]", "10[ns]")
@@ -206,21 +206,21 @@ def test_oscillation_input_and_checks(tmp_path):
     pl.amplitude, pl.period = "", "-1[s]"
     errors = " ".join(q.validate())
     assert "period and an amplitude" in errors and "period must be positive" in errors
-    q.heat.study.type = "stationary"
-    assert any("oscillation needs a transient or frequency-domain study" in e for e in q.validate())
+    q.heat.problem.type = "stationary"
+    assert any("oscillation needs a transient or frequency-domain problem" in e for e in q.validate())
 
 
 def test_time_dependent_boundary_temperature():
     """T(xmin) ramps linearly in time; with a large diffusivity the bar follows quasi-statically."""
     p = bar([HeatCondition("temperature", ["xmin"], "300[K] + 1e9[K/s]*time"),
              HeatCondition("temperature", ["xmax"], "300[K]")],
-            study=HeatStudy("transient", t_end="10[ns]", steps=10))
+            problem=HeatProblem("transient", t_end="10[ns]", steps=10))
     assert p.validate() == []
     r = HeatSolver(p, log=lambda m: None).run()
     np.testing.assert_allclose(r.T[0].max(axis=1), 300 + 1e9 * r.times, rtol=1e-12)   # the hot end, nodal
 
 
-def test_pulse_needs_transient_study():
+def test_pulse_needs_transient_problem():
     from solidocean.physics.heat.model import Pulse
     p = bar(hot_cold() + [HeatCondition("flux", ["ymax"], "1[W/m^2]", pulse=Pulse("rect"))])
     assert any("transient" in e for e in p.validate())
@@ -241,17 +241,17 @@ def test_conductivity_sweep_reuses_mesh():
     """Sweeping a variable used in a material property: same mesh for every value, and each value gives
     the same result as a separate run."""
     from solidocean.project import VariableSweep
-    p = bar(hot_cold(), study=HeatStudy())
+    p = bar(hot_cold(), problem=HeatProblem())
     p.variables["kA"] = "100[W/(m*K)]"
     p.materials[0].props["k"] = "kA"
     p.heat.sources = [HeatSource("A", "1e15[W/m^3]")]
-    p.study.sweep = VariableSweep("kA", "[50, 100] * 1[W/(m*K)]")
+    p.problem.sweep = VariableSweep("kA", "[50, 100] * 1[W/(m*K)]")
     logs = []
     r = HeatSolver(p, log=logs.append).run(["max(T)"])
     assert sum(m.startswith("Mesh:") for m in logs) == 1
     assert r.meshes[0] is r.meshes[1]
     single = HeatSolver(p, log=lambda m: None)
-    p.study.sweep.enabled = False
+    p.problem.sweep.enabled = False
     p.variables["kA"] = "50[W/(m*K)]"
     assert single.run(["max(T)"]).values("max(T)")[0, 0] == pytest.approx(r.values("max(T)")[0, 0], rel=1e-3)
 
@@ -261,20 +261,20 @@ def test_negative_start_time():
     pulse, and the full pulse energy is deposited."""
     from solidocean.physics.heat.model import Pulse
     cond = HeatCondition("flux", ["zmax"], "1e9[W/m^2]", on="pad", pulse=Pulse("rect", "0[s]", "2[ns]"))
-    p = slab_with_pad([cond], HeatStudy("transient", t_start="-10[ns]", t_end="10[ns]", steps=20))
+    p = slab_with_pad([cond], HeatProblem("transient", t_start="-10[ns]", t_end="10[ns]", steps=20))
     assert p.validate() == []
     r = HeatSolver(p, log=lambda m: None).run()
     np.testing.assert_allclose(r.times[[0, 10, -1]], [-10e-9, 0.0, 10e-9], atol=1e-18)
     E = deposited_energy(p, r)
     assert np.all(np.abs(E[:11]) < 1e-9 * E[-1])
     assert E[-1] == pytest.approx(1e9 * np.pi * 0.5e-6 ** 2 * 2e-9, rel=1e-3)
-    p.heat.study.t_end = "-20[ns]"
+    p.heat.problem.t_end = "-20[ns]"
     assert any("later than t_start" in e for e in p.validate())
 
 
 def test_geometry_builds_without_heat_conditions():
     """Building the geometry/mesh needs no physics: a heat model without any condition is fine for that."""
-    p = bar([], study=HeatStudy())
+    p = bar([], problem=HeatProblem())
     p.heat.conditions = [HeatCondition("flux", ["nowhere"], "1[W/m^2]")]   # a broken condition
     assert p.validate_geometry() == []
     assert any("bad face" in e for e in p.validate())
@@ -284,7 +284,7 @@ def test_stationary_without_heat_sink_conserves_energy():
     """All faces insulated: the steady state keeps the initial heat content (capacity-weighted mean of the
     initial temperature); with equal heat in and out the profile is linear around that level; a net input
     has no steady state."""
-    p = bar([], study=HeatStudy(), two_materials=True)
+    p = bar([], problem=HeatProblem(), two_materials=True)
     p.heat.initial = "350[K] + 100[K]*x/L"               # 300 K .. 400 K along the bar, mean 350 K
     assert p.validate() == []
     T = HeatSolver(p, log=lambda m: None).run().T[0][0]

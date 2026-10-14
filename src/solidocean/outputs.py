@@ -78,7 +78,7 @@ def variable_text(project, name: str, ev) -> str:
 
 def sweep_text(project, ev) -> str:
     """The variable sweep as a file-name part: 'a_0.6-0.9um' (empty if nothing is swept)."""
-    sw = project.study.active_sweep
+    sw = project.problem.active_sweep
     if not sw:
         return ""
     try:
@@ -129,7 +129,7 @@ def problems(project) -> list[str]:
         errors.append(f"output.on_exists must be one of {', '.join(ON_EXISTS)}")
     if Path(out.dir).is_absolute():
         errors.append("output.dir must be relative to the model file")
-    swept = project.study.active_sweep.variable if project.study.active_sweep else None
+    swept = project.problem.active_sweep.variable if project.problem.active_sweep else None
     for key in placeholders(out.folder):
         if key == swept:
             errors.append(f"output.folder: '{{{key}}}' is the swept variable, which has no single value in a "

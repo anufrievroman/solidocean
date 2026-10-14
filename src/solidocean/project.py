@@ -55,10 +55,10 @@ def array_counts(values, name: str) -> list[int]:
     """Copies along x, y, z from evaluated `array` values: whole numbers >= 1 (raises ValueError otherwise)."""
     counts = [float(n) for n in values]
     if len(counts) != 3 or any(n < 1 or abs(n - round(n)) > 1e-9 for n in counts):
-        raise ValueError(f"geometry '{name}': array needs 3 whole numbers >= 1 (copies along x, y, z)")
+        raise ValueError(f"object '{name}': array needs 3 whole numbers >= 1 (copies along x, y, z)")
     counts = [int(round(n)) for n in counts]
     if counts[0] * counts[1] * counts[2] > MAX_ARRAY:
-        raise ValueError(f"geometry '{name}': array of more than {MAX_ARRAY} copies")
+        raise ValueError(f"object '{name}': array of more than {MAX_ARRAY} copies")
     return counts
 OPS = ("add", "subtract")
 AXES = ("x", "y", "z")
@@ -90,7 +90,7 @@ class Feature:
 
     def __post_init__(self):
         if self.type not in FEATURE_TYPES:
-            raise ValueError(f"unknown geometry type '{self.type}'")
+            raise ValueError(f"unknown object type '{self.type}'")
         for k, v in FEATURE_TYPES[self.type].items():
             self.params.setdefault(k, copy.deepcopy(v))
         if self.type != "cell":
@@ -135,7 +135,7 @@ class Feature:
 
 @dataclass
 class MeshRegion:
-    """A different maximum element size for one object (a geometry feature, or all domains of a material).
+    """A different maximum element size for one object (one of the objects, or all domains of a material).
     Regions apply in order (a later one wins where they overlap); the rest of the model keeps the mesh's
     max_size. The mesh stays conforming across interfaces: their elements are graded."""
     on: str = ""
@@ -189,9 +189,9 @@ SOLVER_BACKENDS = ("auto", "mumps", "superlu")
 
 
 @dataclass
-class Study:
-    """What every physics' study shares ([study]): the variable sweep (outer loop) and the sparse direct
-    solver. The study type and its own settings belong to the physics ([solid.study], [heat.study])."""
+class Problem:
+    """What every physics' problem shares ([problem]): the variable sweep (outer loop) and the sparse direct
+    solver. The problem type and its own settings belong to the physics ([solid.problem], [heat.problem])."""
     sweep: VariableSweep | None = None
     solver: str = "auto"            # sparse direct solver: auto, mumps or superlu
 
@@ -246,10 +246,10 @@ class Project:
     physics_kind: str = "solid"  # the physics solved, a key of physics.REGISTRY
     variables: dict[str, Expr] = field(default_factory=dict)
     materials: list[Material] = field(default_factory=list)
-    geometry: list[Feature] = field(default_factory=list)
+    objects: list[Feature] = field(default_factory=list)    # [[objects]]: the geometry, built in order
     mesh: MeshSettings = field(default_factory=MeshSettings)
     lattice: Lattice = field(default_factory=Lattice)
-    study: Study = field(default_factory=Study)
+    problem: Problem = field(default_factory=Problem)
     output: Output = field(default_factory=Output)
     plots: list[ResultPlot] | None = None     # None: the default plots of the physics
     # settings of each physics: attribute = PhysicsSpec.section = TOML table = the physics' kind. Only the
@@ -258,7 +258,7 @@ class Project:
     heat: HeatPhysics = field(default_factory=HeatPhysics)
     path: Path | None = None  # file this project was loaded from / saved to
 
-    SECTIONS = ("project", "variables", "materials", "geometry", "lattice", "mesh", "study", "output", "plots")
+    SECTIONS = ("project", "variables", "materials", "objects", "lattice", "mesh", "problem", "output", "plots")
 
     def __post_init__(self):
         if self.plots is None:
@@ -272,13 +272,13 @@ class Project:
                         "physics": self.physics_kind},
             "variables": dict(self.variables),
             "materials": [m.to_dict() for m in self.materials],
-            "geometry": [f.to_dict() for f in self.geometry],
+            "objects": [f.to_dict() for f in self.objects],
         }
         if self.lattice.is_periodic:
             d["lattice"] = self.lattice.to_dict()
         d["mesh"] = self.mesh.to_dict()
-        if self.study.to_dict():
-            d["study"] = self.study.to_dict()
+        if self.problem.to_dict():
+            d["problem"] = self.problem.to_dict()
         if self.physics_kind in physics.REGISTRY:
             spec = physics.of(self)
             d[spec.section] = spec.settings(self).to_dict()
@@ -290,6 +290,13 @@ class Project:
     @classmethod
     def from_dict(cls, d: dict) -> "Project":
         sections = {spec.section: spec for spec in physics.REGISTRY.values()}
+        renamed = [(old, new) for old, new in (("[[geometry]]", "[[objects]]"), ("[study]", "[problem]"))
+                   if old.strip("[]") in d]
+        renamed += [(f"[{name}.study]", f"[{name}.problem]") for name in sections
+                    if isinstance(d.get(name), dict) and "study" in d[name]]
+        if renamed:
+            raise ValueError("renamed section(s): " + ", ".join(f"{old} is now {new}" for old, new in renamed)
+                             + "; rename them in the model file")
         unknown = set(d) - set(cls.SECTIONS) - set(sections)
         if unknown:
             raise ValueError(f"unknown section(s): {', '.join(sorted(unknown))}")
@@ -311,10 +318,10 @@ class Project:
             physics_kind=physics_kind,
             variables=dict(d.get("variables", {})),
             materials=[Material.from_dict(m) for m in d.get("materials", [])],
-            geometry=[Feature.from_dict(f) for f in d.get("geometry", [])],
+            objects=[Feature.from_dict(f) for f in d.get("objects", [])],
             lattice=Lattice.from_dict(d.get("lattice", {})),
             mesh=MeshSettings(**d.get("mesh", {})),
-            study=Study(**d.get("study", {})),
+            problem=Problem(**d.get("problem", {})),
             output=Output.from_dict(d.get("output", {})),
             plots=plots or None,       # none in the file: the physics' defaults
             **{name: s.settings_from_dict(d.get(name, {})) for name, s in sections.items()},
@@ -374,7 +381,7 @@ class Project:
 
     def validate_geometry(self) -> list[str]:
         """Problems that prevent building the geometry or the mesh (variables, features, lattice, mesh).
-        Physics, boundary conditions, studies and plots are not needed for that."""
+        Physics, boundary conditions, problems and plots are not needed for that."""
         errors: list[str] = []
         try:
             ev = self.evaluator()
@@ -387,20 +394,20 @@ class Project:
         for m in self.materials:
             if m.color and not is_color(m.color):
                 errors.append(f"material '{m.name}': color must be #rrggbb (or empty for automatic)")
-        active = [f for f in self.geometry if f.enabled]
+        active = [f for f in self.objects if f.enabled]
         if not any(f.op == "add" for f in active):
-            errors.append("geometry: no enabled solid ('add') features")
+            errors.append("objects: no enabled solid ('add') objects")
         for f in active:
             if f.op not in OPS:
-                errors.append(f"geometry '{f.name}': op must be one of {OPS}")
+                errors.append(f"object '{f.name}': op must be one of {OPS}")
             if f.op == "add" and f.material not in names:
-                errors.append(f"geometry '{f.name}': material '{f.material}' not defined")
+                errors.append(f"object '{f.name}': material '{f.material}' not defined")
             if f.arrayed:
                 try:
                     array_counts(ev.vector(f.params[ARRAY_KEY]), f.name)
                     ev.vector(f.params.get(SPACING_KEY, NO_SPACING))
                 except Exception as exc:
-                    errors.append(str(exc) if str(exc).startswith("geometry") else f"geometry '{f.name}': array: {exc}")
+                    errors.append(str(exc) if str(exc).startswith("object") else f"object '{f.name}': array: {exc}")
         lt = self.lattice
         for ax in lt.periodic:
             if ax not in AXES:
@@ -418,14 +425,14 @@ class Project:
                         errors.append(f"lattice.vectors: {msg}")
                 except Exception as exc:
                     errors.append(f"lattice.vectors: {exc}")
-        if any(f.type == "cell" and f.enabled for f in self.geometry):
+        if any(f.type == "cell" and f.enabled for f in self.objects):
             from . import lattice as lat
             try:
                 inplane = [v for v in lat.slots(self.lattice, ev) if v is not None and abs(v[2]) == 0]
             except Exception:
                 inplane = []
             if len(inplane) < 2:
-                errors.append("geometry: a 'Lattice cell' needs a lattice periodic in two in-plane directions "
+                errors.append("objects: a 'Lattice cell' needs a lattice periodic in two in-plane directions "
                               "(e.g. periodic in x and y, or a hexagonal lattice)")
         if self.mesh.order not in (1, 2):
             errors.append("mesh.order must be 1 or 2")
@@ -433,11 +440,11 @@ class Project:
             ev(self.mesh.max_size), ev(self.mesh.min_size)
         except Exception as exc:
             errors.append(f"mesh size: {exc}")
-        objects = {f.name for f in self.geometry} | {m.name for m in self.materials}
+        objects = {f.name for f in self.objects} | {m.name for m in self.materials}
         for r in self.mesh.regions:
             where = f"mesh region '{r.name or r.on}'"
             if r.on not in objects:
-                errors.append(f"{where}: unknown object '{r.on}' (a geometry feature or material name)")
+                errors.append(f"{where}: unknown object '{r.on}' (an object or material name)")
             try:
                 if ev(r.max_size) <= 0:
                     errors.append(f"{where}: max_size must be positive")
@@ -446,7 +453,7 @@ class Project:
         return errors
 
     def validate(self) -> list[str]:
-        """Return a list of human-readable problems (empty if OK): everything needed to run the study."""
+        """Return a list of human-readable problems (empty if OK): everything needed to run the problem."""
         errors = self.validate_geometry()
         from .units import FREQUENCY_UNITS, LENGTH_UNITS, TIME_UNITS
         for key, allowed in (("length_unit", LENGTH_UNITS), ("frequency_unit", FREQUENCY_UNITS),
@@ -461,14 +468,14 @@ class Project:
             return errors + [f"project.physics must be one of {', '.join(physics.REGISTRY)}"]
         spec = physics.of(self)
         errors += spec.validate(self, ev)
-        sw = self.study.active_sweep
+        sw = self.problem.active_sweep
         if sw:
             if sw.variable not in self.variables:
-                errors.append(f"study.sweep: unknown variable '{sw.variable}'")
+                errors.append(f"problem.sweep: unknown variable '{sw.variable}'")
             try:
                 ev.array(sw.values)
             except Exception as exc:
-                errors.append(f"study.sweep.values: {exc}")
+                errors.append(f"problem.sweep.values: {exc}")
         errors += outputs.problems(self)
         from . import fields
         names = [pl.name for pl in self.plots]
@@ -539,6 +546,6 @@ class Project:
                         ev(getattr(ps, key))
                     except Exception as exc:
                         errors.append(f"{where}: {key}: {exc}")
-        if self.study.solver not in SOLVER_BACKENDS:
-            errors.append(f"study.solver must be one of {', '.join(SOLVER_BACKENDS)}")
+        if self.problem.solver not in SOLVER_BACKENDS:
+            errors.append(f"problem.solver must be one of {', '.join(SOLVER_BACKENDS)}")
         return errors

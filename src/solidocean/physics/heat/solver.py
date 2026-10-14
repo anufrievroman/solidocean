@@ -6,7 +6,7 @@ heat flux, physics/heat/fields.py) are evaluated for every saved time step.
 
 Nonlinear models (radiating boundaries, temperature-dependent properties) are solved by iteration: the
 properties are taken at the previous iterate (Picard) and the radiation is linearised about it (Newton),
-until the temperature change is below the study's `tol`; in a transient study at every time step.
+until the temperature change is below the problem's `tol`; in a transient problem at every time step.
 """
 
 from __future__ import annotations
@@ -200,7 +200,7 @@ class HeatSolver:
         pulsed = transient and pulse is not None and bool(pulse.shape)
         if not transient or not (timed or pulsed):
             return ev.with_overrides({"time": 0.0})(expr) if timed else ev(expr)
-        st = self.project.heat.study
+        st = self.project.heat.problem
         theta = st.theta
         const = None if timed else ev(expr)
         sine = pulsed and pulse.shape == "sine"
@@ -308,8 +308,8 @@ class HeatSolver:
         """(times (n_t,), T (n_t, N)) for the current variable values."""
         p = self.project
         m = self.model(ev)
-        st = p.heat.study
-        backend = p.study.solver
+        st = p.heat.problem
+        backend = p.problem.solver
         if st.type == "frequency":
             A_bc, b, fixed, _, radiation = self.system(ev, m, harmonic=True)
             return np.zeros(1), self._harmonic(ev, m, A_bc, b, fixed, radiation, backend)[None]
@@ -339,21 +339,21 @@ class HeatSolver:
         return t_start + saved * dt, snaps
 
     def _converged(self, T_new, T, it: int, where: str = "") -> bool:
-        st = self.project.heat.study
+        st = self.project.heat.problem
         change = float(np.max(np.abs(T_new - T)))
         if change <= st.tol * float(np.max(np.abs(T_new))):
             return True
         if it + 1 >= st.max_iter:
             raise ValueError(f"nonlinear heat transfer{where}: no convergence in {st.max_iter} iterations (last "
                              f"temperature change {change:.3g} K). Use smaller time steps, a better initial "
-                             "temperature, or a larger heat.study.max_iter")
+                             "temperature, or a larger heat.problem.max_iter")
         return False
 
     def _stationary_nonlinear(self, ev, m: HeatModel, A_bc, b, fixed, T_fixed, radiation, backend):
         """Fixed-point iteration from the initial values: properties at the previous iterate, radiation
         linearised about it."""
         T = fields.evaluate_nodal(self.project.heat.initial, m.mesh.points, {**ev.values, "time": 0.0})
-        for it in range(self.project.heat.study.max_iter):
+        for it in range(self.project.heat.problem.max_iter):
             if self.cancel.is_set():
                 raise Cancelled()
             K, _ = self.matrices(m, T, capacity=False)
@@ -369,7 +369,7 @@ class HeatSolver:
     def _transient_nonlinear(self, m: HeatModel, A_bc, b, fixed, T_fixed, radiation, T0, t_start, dt, backend):
         """theta scheme with the properties and the radiation of the end of each step, iterated to convergence
         within the step: C*(T1 - T0)/dt + theta R(T1) + (1 - theta) R(T0) = load, R(T) = K(T) T + A_bc T - q_rad(T)."""
-        st = self.project.heat.study
+        st = self.project.heat.problem
         theta = st.theta
         load = b if callable(b) else (lambda t0, t1: b)
         T_at = T_fixed if callable(T_fixed) else (lambda t: T_fixed)
@@ -413,7 +413,7 @@ class HeatSolver:
         T0 = self._T0(ev, m)
         K, C = self.matrices(m, T0)
         Mr, _ = self.radiation_terms(m, radiation, T0)
-        omega = 2 * np.pi * ev(self.project.heat.study.frequency)
+        omega = 2 * np.pi * ev(self.project.heat.problem.frequency)
         A = (K + A_bc + Mr).astype(complex) + 1j * omega * C
         return heat.stationary(A, b.astype(complex), fixed, np.zeros(len(fixed), complex), backend)
 
@@ -421,7 +421,7 @@ class HeatSolver:
         return fields.evaluate_nodal(self.project.heat.initial, m.mesh.points, {**ev.values, "time": 0.0})
 
     def _insulated_steady_state(self, ev: Evaluator, m: HeatModel, A, b, backend):
-        """Stationary study without a heat sink (no fixed temperature, no convection): the temperature level
+        """Stationary problem without a heat sink (no fixed temperature, no convection): the temperature level
         is set by energy conservation, i.e. the heat content stays that of the initial values. A steady state
         exists only if the net heat input is zero."""
         net, scale = float(b.sum()), float(np.abs(b).sum())   # sum of the load vector = total heat input (W)
@@ -429,7 +429,7 @@ class HeatSolver:
             raise ValueError(
                 f"no steady state: the model has no heat sink (fixed temperature or convection) but a net heat "
                 f"input of {net:.4g} W, so its temperature keeps {'rising' if net > 0 else 'falling'}. Add a heat "
-                "sink, or use a transient study.")
+                "sink, or use a transient problem.")
         n = m.mesh.n_nodes
         T = heat.stationary(A, b - net / n, np.array([0]), np.array([0.0]), backend)  # level fixed below
         T0 = fields.evaluate_nodal(self.project.heat.initial, m.mesh.points, {**ev.values, "time": 0.0})
@@ -448,7 +448,7 @@ class HeatSolver:
             raise ValueError("invalid project:\n  " + "\n  ".join(errors))
         base = p.evaluator()
         t_start = time.perf_counter()
-        sw = p.study.active_sweep
+        sw = p.problem.active_sweep
         outer_name, outer_values = (sw.variable, base.array(sw.values)) if sw else ("", np.array([np.nan]))
         quantities = [q.strip() for q in quantities if q.strip()]
         self._total = len(outer_values)
@@ -477,7 +477,7 @@ class HeatSolver:
                 self.log(f"  temperature amplitude: up to {np.abs(T[-1]).max():.6g} K")
             else:
                 self.log(f"  T: {T[-1].min():.6g} .. {T[-1].max():.6g} K")
-            if p.heat.study.type == "stationary":
+            if p.heat.problem.type == "stationary":
                 self.progress(i + 1, len(outer_values))
         info = {"project": p.name, "elapsed_s": round(time.perf_counter() - t_start, 2),
                 "n_dofs": int(self._model.mesh.n_nodes) if self._model else 0}
@@ -485,7 +485,7 @@ class HeatSolver:
         outer_dim = dimension(p.variables[outer_name], base) if outer_name else None
         info["outer_dim"] = list(outer_dim) if outer_dim else None
         self.log(f"Done in {info['elapsed_s']} s")
-        return HeatResults(kind=p.heat.study.type, times=times, T=temps, outer_name=outer_name,
+        return HeatResults(kind=p.heat.problem.type, times=times, T=temps, outer_name=outer_name,
                            outer_values=outer_values, quantities={q: np.array(v) for q, v in qvals.items()},
                            info=info, meshes=meshes, kels=kels)
 

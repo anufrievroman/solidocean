@@ -5,7 +5,7 @@ import pytest
 from scipy.integrate import solve_ivp
 from scipy.optimize import brentq
 
-from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatStudy
+from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatProblem
 from solidocean.physics.heat.solver import SIGMA, HeatSolver
 from solidocean.project import Feature, Material, MeshSettings, Project
 
@@ -13,14 +13,14 @@ L, W = 1e-6, 0.2e-6
 RHOC = 1e6          # rho*cp, J/(m^3 K)
 
 
-def bar(k: str, conditions, cp: str = "500[J/(kg*K)]", study=None, initial="300[K]"):
+def bar(k: str, conditions, cp: str = "500[J/(kg*K)]", problem=None, initial="300[K]"):
     """Bar of length L along x (cross-section W x W); rho = 2000 kg/m^3."""
     m = Material("A", {"model": "isotropic", "rho": "2000[kg/m^3]", "E": "100[GPa]", "nu": "0.3", "k": k, "cp": cp})
     return Project(
         name="bar", physics_kind="heat", variables={"L": "1[um]", "w": "0.2[um]"}, materials=[m],
-        geometry=[Feature("block", "A", material="A", params={"center": ["L/2", "0", "0"], "size": ["L", "w", "w"]})],
+        objects=[Feature("block", "A", material="A", params={"center": ["L/2", "0", "0"], "size": ["L", "w", "w"]})],
         mesh=MeshSettings(max_size="L/8"),
-        heat=HeatPhysics(initial=initial, conditions=list(conditions), study=study or HeatStudy(tol=1e-9)))
+        heat=HeatPhysics(initial=initial, conditions=list(conditions), problem=problem or HeatProblem(tol=1e-9)))
 
 
 def run(p, quantities=()):
@@ -57,9 +57,9 @@ def test_conductivity_linear_in_temperature():
 def test_radiative_cooling_of_a_lumped_bar():
     """A well-conducting bar radiating from every face cools as rho cp V dT/dt = -eps sigma A (T^4 - Ta^4)."""
     eps, Ta, t_end = 0.5, 300.0, 4e-3
-    st = HeatStudy(type="transient", t_end=f"{t_end}[s]", steps=100, theta=0.5, tol=1e-8)
+    st = HeatProblem(type="transient", t_end=f"{t_end}[s]", steps=100, theta=0.5, tol=1e-8)
     p = bar("100[W/(m*K)]", [HeatCondition("radiation", ["all"], emissivity=str(eps), T_ext=f"{Ta}[K]")],
-            study=st, initial="1000[K]")
+            problem=st, initial="1000[K]")
     res = run(p, ["mean(T)"])
     A_over_V = (2 * W * W + 4 * L * W) / (L * W * W)
     ode = solve_ivp(lambda t, T: -eps * SIGMA * A_over_V / RHOC * (T ** 4 - Ta ** 4), (0, t_end), [1000.0],
@@ -71,9 +71,9 @@ def test_radiative_cooling_of_a_lumped_bar():
 def test_heat_capacity_depending_on_temperature_conserves_energy():
     """Heating at x = 0 with cp = c0 (1 + g (T - 300 K)): the stored energy rho int cp dT equals the heat put in."""
     c0, g, q0, t_end = 500.0, 0.002, 1e8, 1e-6
-    st = HeatStudy(type="transient", t_end=f"{t_end}[s]", steps=100, tol=1e-8)
+    st = HeatProblem(type="transient", t_end=f"{t_end}[s]", steps=100, tol=1e-8)
     p = bar("100[W/(m*K)]", [HeatCondition("flux", ["xmin"], f"{q0}[W/m^2]")],
-            cp=f"{c0}[J/(kg*K)] * (1 + {g}*(T/1[K] - 300))", study=st)
+            cp=f"{c0}[J/(kg*K)] * (1 + {g}*(T/1[K] - 300))", problem=st)
     stored = f"integral(2000*{c0}*((T - 300) + {g}/2*(T - 300)^2))"
     res = run(p, [stored, "mean(T)"])
     E = res.quantities[stored][0]
@@ -84,11 +84,11 @@ def test_heat_capacity_depending_on_temperature_conserves_energy():
 def test_nonlinear_settings_round_trip_and_validation(tmp_path):
     p = bar("100[W/(m*K)] * 300[K] / T", [HeatCondition("radiation", ["xmax"], emissivity="0.3"),
                                           HeatCondition("temperature", ["xmin"], "400[K]")],
-            study=HeatStudy(tol=1e-8, max_iter=20))
+            problem=HeatProblem(tol=1e-8, max_iter=20))
     q = Project.load(p.save(tmp_path / "m.toml"))
     c = q.heat.conditions[0]
     assert (c.type, c.emissivity, c.T_ext) == ("radiation", "0.3", "293.15[K]")
-    assert (q.heat.study.tol, q.heat.study.max_iter) == (1e-8, 20)
+    assert (q.heat.problem.tol, q.heat.problem.max_iter) == (1e-8, 20)
     assert not q.validate()
     q.heat.conditions[0].emissivity = "1.5"
     assert any("emissivity" in e for e in q.validate())

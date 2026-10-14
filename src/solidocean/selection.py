@@ -1,7 +1,7 @@
 """Boundary selections of conditions (heat transfer, solid mechanics, any physics): the selection
 fields of a condition (`on`, `faces`, `box`) and their resolution on a mesh.
 
-A selection is the outer surface of the whole model or of one object (`on`: a geometry feature or all
+A selection is the outer surface of the whole model or of one object (`on`: one of the objects, or all
 domains of a material), restricted to faces of that object's bounding box (`faces`, or "all" for the whole
 surface) and optionally to the faces lying inside a box (`box`). An object's outer
 surface excludes its interfaces with other objects (e.g. the bottom of a pad bonded to a membrane).
@@ -45,7 +45,7 @@ def check_selection(where: str, c, ev, objects) -> list[str]:
     """Problems with a condition's selection: object, faces, box."""
     errors = []
     if c.on and c.on not in objects:
-        errors.append(f"{where}: unknown object '{c.on}' (a geometry feature or material name)")
+        errors.append(f"{where}: unknown object '{c.on}' (an object or material name)")
     if not c.faces:
         errors.append(f"{where}: no faces selected (use bounding-box faces or \"all\")")
     for face in c.faces:

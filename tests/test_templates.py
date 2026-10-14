@@ -14,14 +14,14 @@ def test_template_is_valid_and_solves(name, tmp_path):
     assert p.validate() == []
     if p.physics_kind == "heat":
         from solidocean.physics.heat.solver import HeatSolver
-        p.study.sweep = None
-        if p.heat.study.type == "transient":
-            p.heat.study.steps = 4
+        p.problem.sweep = None
+        if p.heat.problem.type == "transient":
+            p.heat.problem.steps = 4
         res = HeatSolver(p, log=lambda m: None).run([q for pl in p.plots for q in pl.expressions()])
         assert all(np.all(np.isfinite(v)) for v in res.quantities.values())
         return
-    if p.solid.study.field_study:
-        p.study.sweep = None
+    if p.solid.problem.field_problem:
+        p.problem.sweep = None
         res = Solver(p, log=lambda m: None).run([q for pl in p.plots for q in pl.expressions()])
         assert np.all(np.isfinite(res.U[0])) and np.abs(res.U[0]).max() > 0
         assert all(np.all(np.isfinite(v)) for v in res.quantities.values())

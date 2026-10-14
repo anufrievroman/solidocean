@@ -1,6 +1,6 @@
 """Ready-made, consistent starting models (templates), collected from every physics.
 
-Each template is a complete project: variables, materials, geometry, physics settings, study and plots
+Each template is a complete project: variables, materials, geometry, physics settings, problem and plots
 that fit together; users then edit the variables. Every physics lists its own in
 physics/<name>/templates.py. Available in the GUI (New) and the CLI (--template NAME FILE).
 """

@@ -6,14 +6,14 @@ import numpy as np
 
 from ... import units
 from ..panels import heat as hp
-from ..panels.study import sweep_summary
+from ..panels.problem import sweep_summary
 from .base import PhysicsUI
 from .common import condition_highlights
 
 PLOT_HELP = {
-    "time": "Any quantity of the temperature field against time (transient studies), one curve per variable "
+    "time": "Any quantity of the temperature field against time (transient problems), one curve per variable "
             "value. Click a point to see the temperature field at that time.",
-    "quantity": "Any quantity of the temperature field against the swept variable (Study → Variable sweep), at "
+    "quantity": "Any quantity of the temperature field against the swept variable (Problem → Variable sweep), at "
                 "the final or a chosen time. Click a point to see the field.",
     "line": "A cross-section: the quantity along a straight line from a start to an end point, at one time step. "
             "Gaps mark holes or points outside the structure.",
@@ -23,9 +23,9 @@ PLOT_HELP = {
 class HeatUI(PhysicsUI):
     kind = "heat"
     physics_panel = hp.HeatPanel
-    study_panel = hp.HeatStudyPanel
+    problem_panel = hp.HeatProblemPanel
     field_panel = hp.TemperaturePanel
-    node_panels = {"heat_initial": hp.HeatInitialPanel, "heat_study": hp.HeatStudyPanel, "solver": hp.HeatSolverPanel}
+    node_panels = {"heat_initial": hp.HeatInitialPanel}
     indexed_panels = {"heat_cond": hp.HeatConditionPanel, "heat_src": hp.HeatSourcePanel,
                       "heat_iface": hp.HeatInterfacePanel}
     highlight_nodes = ("heat_initial", "heat_cond", "heat_src")
@@ -39,11 +39,14 @@ class HeatUI(PhysicsUI):
                  for i, q in enumerate(h.sources)] +
                 [(hp.interface_label(c), ("heat_iface", i), False) for i, c in enumerate(h.interfaces)])
 
-    def study_nodes(self, project):
-        summary = {**sweep_summary(project.study), "heat_study": project.heat.study.type}
-        return [(f"{label} ({summary[key]})" if summary[key] else label, (key, None), not summary[key])
-                for key, label in (("heat_study", "Study type"), ("sweep", "Variable sweep"),
-                                   ("solver", "Solver"))]
+    def problem_label(self, project):
+        typ = project.heat.problem.type
+        return f"Problem: {hp.HEAT_PROBLEM_TITLES.get(typ, typ)}"
+
+    def problem_nodes(self, project):
+        summary = sweep_summary(project.problem)
+        return [(f"Variable sweep ({summary['sweep']})" if summary["sweep"] else "Variable sweep", ("sweep", None),
+                 not summary["sweep"])]
 
     def context_menu(self, win, kind, index, menu):
         if kind == "physics":
@@ -68,7 +71,7 @@ class HeatUI(PhysicsUI):
     # ---- results ---------------------------------------------------------------------
     def run_label(self, project):
         return {"transient": "Solving heat transfer (transient)…",
-                "frequency": "Solving heat transfer (frequency domain)…"}.get(project.heat.study.type,
+                "frequency": "Solving heat transfer (frequency domain)…"}.get(project.heat.problem.type,
                                                                               "Solving heat transfer…")
 
     def show_field(self, win):

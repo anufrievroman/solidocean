@@ -12,7 +12,7 @@ from the command line, making it ideal for scripting and working with agents.
 
 **Documentation: [anufrievroman.gitbook.io/solidocean](https://anufrievroman.gitbook.io/solidocean)**
 
-![SolidOcean: the mesh of a silicon unit cell with an aluminium pillar](https://raw.githubusercontent.com/anufrievroman/solidocean-docs/main/docs/.gitbook/assets/screenshot.jpeg)
+![SolidOcean: the mesh of a silicon unit cell with an aluminium pillar and the wavevector sweep of its phonon dispersion](https://raw.githubusercontent.com/anufrievroman/solidocean-docs/main/docs/.gitbook/assets/screenshot.jpg)
 
 ## What it can do
 
@@ -21,7 +21,7 @@ from the command line, making it ideal for scripting and working with agents.
   selected Brillouin zones.
 - **Stationary** displacement calculation with strain, stress and von Mises stress under fixed or prescribed
   displacements and boundary loads.
-- **Frequency domain** studies with the driven response to oscillating loads or displacements, with loss
+- **Frequency domain** problems with the driven response to oscillating loads or displacements, with loss
   factors and absorbing regions.
 
 **Heat transfer problems**

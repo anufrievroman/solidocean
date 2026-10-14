@@ -1,5 +1,5 @@
 """Heat transfer settings ([heat] in the model file): initial values, boundary conditions on selections,
-volume sources with optional pulses, thermal contact at interfaces, and the study (stationary or transient)."""
+volume sources with optional pulses, thermal contact at interfaces, and the problem (stationary or transient)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ Expr = str | float | int
 
 HEAT_CONDITION_TYPES = ("temperature", "flux", "convection", "radiation")
 ADDITIVE = ("flux", "radiation")       # may share a face with another condition: their heat flows add
-HEAT_STUDY_TYPES = ("stationary", "transient", "frequency")
+HEAT_PROBLEM_TYPES = ("stationary", "transient", "frequency")
 INTERFACE_TYPES = ("resistance", "layer")
 PULSE_SHAPES = ("", "rect", "gauss", "sine")   # "" = constant in time
 PROFILE_SHAPES = ("", "gauss", "expr")         # "" = uniform in space
@@ -81,7 +81,7 @@ class Profile:
 
 @dataclass
 class HeatCondition:
-    """Boundary condition on bounding-box faces of the model, or of one object (`on`: a geometry feature
+    """Boundary condition on bounding-box faces of the model, or of one object (`on`: one of the objects
     or a material; e.g. the top face of a pad). Faces without a condition are insulated."""
     type: str = "temperature"          # temperature | flux | convection | radiation
     faces: list[str] = field(default_factory=list)
@@ -91,7 +91,7 @@ class HeatCondition:
     emissivity: Expr = "1"             # radiation: q = emissivity sigma (T_ext^4 - T^4)
     name: str = ""
     on: str = ""                       # "" = the whole model, else a feature or material name
-    pulse: Pulse = field(default_factory=Pulse)   # flux: time profile (transient studies)
+    pulse: Pulse = field(default_factory=Pulse)   # flux: time profile (transient problems)
     box: dict = field(default_factory=dict)       # optional {"min": [x, y, z], "max": [...]}: faces inside it
     profile: Profile = field(default_factory=Profile)   # flux: spatial profile
 
@@ -143,7 +143,7 @@ class HeatSource:
 
 @dataclass
 class HeatInterface:
-    """Thermal contact at the interfaces between two objects (geometry features or materials): the temperature
+    """Thermal contact at the interfaces between two objects (objects or materials): the temperature
     jumps across them, q = (T1 - T2) / R. `between` = [a, b]: the faces a and b share; [a]: a's interfaces with
     any other object; []: every interface between different materials.
 
@@ -168,7 +168,7 @@ class HeatInterface:
 
 
 @dataclass
-class HeatStudy:
+class HeatProblem:
     type: str = "stationary"           # stationary | transient | frequency (small-signal harmonic response)
     t_end: Expr = "1[us]"
     t_start: Expr = "0[s]"             # may be negative, e.g. to settle before a pulse at t = 0
@@ -176,7 +176,7 @@ class HeatStudy:
     theta: float = 1.0                 # 1 = backward Euler (robust), 0.5 = Crank-Nicolson
     save_every: int = 1
     # nonlinear models (radiation, temperature-dependent properties): iterate until the largest temperature
-    # change is below tol times the largest temperature (every time step of a transient study)
+    # change is below tol times the largest temperature (every time step of a transient problem)
     tol: float = 1e-6
     max_iter: int = 50
     # frequency domain: every flux and source oscillates at this frequency (sweep it with a variable)
@@ -195,7 +195,7 @@ class HeatPhysics:
     initial: Expr = "293.15[K]"        # initial temperature; may use x, y, z (m)
     conditions: list[HeatCondition] = field(default_factory=list)
     sources: list[HeatSource] = field(default_factory=list)
-    study: HeatStudy = field(default_factory=HeatStudy)
+    problem: HeatProblem = field(default_factory=HeatProblem)
     interfaces: list[HeatInterface] = field(default_factory=list)
 
     def to_dict(self):
@@ -204,7 +204,7 @@ class HeatPhysics:
             d["sources"] = [q.to_dict() for q in self.sources]
         if self.interfaces:
             d["interfaces"] = [c.to_dict() for c in self.interfaces]
-        d["study"] = self.study.to_dict()
+        d["problem"] = self.problem.to_dict()
         return d
 
     @classmethod
@@ -213,7 +213,7 @@ class HeatPhysics:
         return cls(initial=d.get("initial", "293.15[K]"),
                    conditions=[HeatCondition(**c) for c in d.get("conditions", [])],
                    sources=[HeatSource(**q) for q in d.get("sources", [])],
-                   study=HeatStudy(**d.get("study", {})),
+                   problem=HeatProblem(**d.get("problem", {})),
                    interfaces=[HeatInterface(**c) for c in d.get("interfaces", [])])
 
     def face_conditions(self) -> dict[str, str]:
@@ -228,20 +228,20 @@ class HeatPhysics:
 
 
 def validate_settings(project, ev, material_names) -> list[str]:
-    """Problems with the heat-transfer settings: conditions, sources, study, initial values."""
+    """Problems with the heat-transfer settings: conditions, sources, problem, initial values."""
     errors, seen = [], {}
     h = project.heat
     evt = ev.with_overrides({"time": 0.0})      # values may depend on time
-    objects = {f.name for f in project.geometry} | set(material_names)
-    transient = h.study.type == "transient"
-    harmonic = h.study.type == "frequency"     # time profiles: a sine gives its amplitude, pulses are ignored
+    objects = {f.name for f in project.objects} | set(material_names)
+    transient = h.problem.type == "transient"
+    harmonic = h.problem.type == "frequency"     # time profiles: a sine gives its amplitude, pulses are ignored
 
     def check_pulse(where, pulse):
         if pulse.shape not in PULSE_SHAPES:
             errors.append(f"{where}: pulse shape must be 'rect', 'gauss' or 'sine'")
         elif pulse.shape == "sine":
             if not (transient or harmonic):
-                errors.append(f"{where}: an oscillation needs a transient or frequency-domain study")
+                errors.append(f"{where}: an oscillation needs a transient or frequency-domain problem")
             if not str(pulse.amplitude).strip() or (transient and not str(pulse.period).strip()):
                 errors.append(f"{where}: an oscillation needs a period and an amplitude")
             for key in ("start", "period", "amplitude"):
@@ -255,7 +255,7 @@ def validate_settings(project, ev, material_names) -> list[str]:
                     errors.append(f"{where}: oscillation {key}: {exc}")
         elif pulse.shape and not harmonic:
             if not transient:
-                errors.append(f"{where}: a pulse needs a transient study")
+                errors.append(f"{where}: a pulse needs a transient problem")
             for key in ("start", "duration") + (("period",) if pulse.period else ()):
                 try:
                     v = ev(getattr(pulse, key))
@@ -321,27 +321,27 @@ def validate_settings(project, ev, material_names) -> list[str]:
         check_profile(f"heat source '{q.name or q.material}'", q.profile)
     for c in h.interfaces:
         errors += _check_interface(c, ev, objects, project)
-    st = h.study
-    if st.type not in HEAT_STUDY_TYPES:
-        errors.append(f"heat.study.type must be one of {', '.join(HEAT_STUDY_TYPES)}")
+    st = h.problem
+    if st.type not in HEAT_PROBLEM_TYPES:
+        errors.append(f"heat.problem.type must be one of {', '.join(HEAT_PROBLEM_TYPES)}")
     if st.type == "frequency":
         try:
             if ev(st.frequency) <= 0:
-                errors.append("heat.study.frequency must be positive")
+                errors.append("heat.problem.frequency must be positive")
         except Exception as exc:
-            errors.append(f"heat.study.frequency: {exc}")
+            errors.append(f"heat.problem.frequency: {exc}")
     if st.type == "transient":
         try:
             if ev(st.t_end) <= ev(st.t_start):
-                errors.append("heat.study: t_end must be later than t_start")
+                errors.append("heat.problem: t_end must be later than t_start")
         except Exception as exc:
-            errors.append(f"heat.study.t_start / t_end: {exc}")
+            errors.append(f"heat.problem.t_start / t_end: {exc}")
         if st.steps < 1 or st.save_every < 1:
-            errors.append("heat.study: steps and save_every must be >= 1")
+            errors.append("heat.problem: steps and save_every must be >= 1")
         if not 0.5 <= st.theta <= 1:
-            errors.append("heat.study.theta must be between 0.5 and 1")
+            errors.append("heat.problem.theta must be between 0.5 and 1")
     if not 0 < st.tol < 1 or st.max_iter < 1:
-        errors.append("heat.study: tol must be between 0 and 1, max_iter >= 1")
+        errors.append("heat.problem: tol must be between 0 and 1, max_iter >= 1")
     try:
         from ... import fields
         fields.check(h.initial, ev.values, fields=(), scalars=("time",))     # may use x, y, z
@@ -369,7 +369,7 @@ def _check_interface(c, ev, objects, project) -> list[str]:
         errors.append(f"{where}: the two objects must differ")
     for obj in c.between:
         if obj not in objects:
-            errors.append(f"{where}: unknown object '{obj}' (a geometry feature or material name)")
+            errors.append(f"{where}: unknown object '{obj}' (an object or material name)")
     if c.type == "resistance":
         try:
             evr = ev.with_overrides({TEMPERATURE: REFERENCE_T}) if depends_on_T(c.R) else ev

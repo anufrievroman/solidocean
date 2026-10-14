@@ -3,7 +3,7 @@ import numpy as np
 
 from solidocean.project import Feature, Material, MeshSettings, Project
 from solidocean.lattice import Lattice
-from solidocean.physics.solid.model import SolidPhysics, SolidStudy
+from solidocean.physics.solid.model import SolidPhysics, SolidProblem
 from solidocean.physics.solid.solver import Solver
 
 A = {"model": "isotropic", "rho": "2000[kg/m^3]", "E": "100[GPa]", "nu": "0.3"}
@@ -19,13 +19,13 @@ def laminate():
     return Project(
         variables={"a": "1[um]", "kx": "0.02*2*pi/a"},
         materials=[Material("A", dict(A)), Material("B", dict(B))],
-        geometry=[Feature("block", "layerA", material="A",
+        objects=[Feature("block", "layerA", material="A",
                           params={"center": ["-a/4", "0", "0"], "size": ["a/2", "a", "a"]}),
                   Feature("block", "layerB", material="B",
                           params={"center": ["a/4", "0", "0"], "size": ["a/2", "a", "a"]})],
         mesh=MeshSettings(max_size="a/4"),
         lattice=Lattice(periodic={"x": "a", "y": "a", "z": "a"}),
-        solid=SolidPhysics(study=SolidStudy(k=["kx", "0", "0"])),
+        solid=SolidPhysics(problem=SolidProblem(k=["kx", "0", "0"])),
     )
 
 
@@ -95,7 +95,7 @@ def test_material_sweep_reuses_mesh():
     p = laminate()
     p.variables["EA"] = "100[GPa]"
     p.materials = [Material("A", {**A, "E": "EA"}), Material("B", {**A, "E": "EA"})]
-    p.study.sweep = VariableSweep("EA", "[100, 400] * 1[GPa]")
+    p.problem.sweep = VariableSweep("EA", "[100, 400] * 1[GPa]")
     logs = []
     r = Solver(p, log=logs.append).run()
     assert sum(m.startswith("Mesh:") for m in logs) == 1

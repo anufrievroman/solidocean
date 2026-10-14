@@ -1,4 +1,4 @@
-"""Results side of the main window: running the study, results plots, the selected solution and its 3D field,
+"""Results side of the main window: running the problem, results plots, the selected solution and its 3D field,
 exports. Physics-neutral: there are two families of results, field results (results/field.FieldResults: one
 field per variable value and time step, shown by the physics' GUI adapter) and modal results (modes per
 sweep point, shown as deformed, animated mode shapes)."""
@@ -41,8 +41,8 @@ class ResultsMixin:
         self.viewer.stop_animation()
 
     @property
-    def field_study(self) -> bool:
-        """The model's study gives field results (rather than modes)."""
+    def field_problem(self) -> bool:
+        """The model's problem gives field results (rather than modes)."""
         return self.spec.field_results(self.project)
 
     @property
@@ -60,7 +60,7 @@ class ResultsMixin:
 
         def work(sig):
             solver.log, solver.progress, solver.cancel = sig.log.emit, sig.progress.emit, self.cancel
-            if self.field_study:
+            if self.field_problem:
                 return solver.run(quantities)
             return solver.run(quantities, store_modes=True)
 
@@ -83,7 +83,7 @@ class ResultsMixin:
     def results_summary(self) -> str:
         r = self.results
         if r is None:
-            return "No results yet. Configure the Study and press Run."
+            return "No results yet. Configure the Problem and press Run."
         if isinstance(r, FieldResults):
             return self.ui.results_summary(self, r)
         n_outer, n_inner, n_eigs = r.freqs.shape
@@ -209,7 +209,7 @@ class ResultsMixin:
 
         self.run_task(f"Evaluating {q}…", work, done, cancellable=True)
     def plot_unavailable(self, pl) -> str:
-        """Why a plot cannot be shown with the current study ("" if it can)."""
+        """Why a plot cannot be shown with the current problem ("" if it can)."""
         return self.spec.plot_unavailable(self.project, pl)
 
     def add_plot_kind(self, kind: str):

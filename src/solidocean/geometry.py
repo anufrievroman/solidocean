@@ -47,7 +47,7 @@ class EvaluatedFeature:
 
 def evaluate_features(project: Project, ev: Evaluator) -> list[EvaluatedFeature]:
     out = []
-    for f in project.geometry:
+    for f in project.objects:
         if not f.enabled:
             continue
         vals = {}
@@ -60,7 +60,7 @@ def evaluate_features(project: Project, ev: Evaluator) -> list[EvaluatedFeature]
                 else:
                     vals[k] = ev(v)
             except Exception as exc:
-                raise ValueError(f"geometry '{f.name}', {k}: {exc}") from exc
+                raise ValueError(f"object '{f.name}', {k}: {exc}") from exc
         out.append(EvaluatedFeature(f, vals))
     return out
 
@@ -94,7 +94,7 @@ def check_sizes(features: list[EvaluatedFeature], periods: dict[str, float]) -> 
                 for v in np.abs(np.atleast_1d(ef.values[key])):
                     if 0 < v < limit:
                         raise ValueError(
-                            f"geometry '{ef.feature.name}': {key} = {v:.3g} m is too small compared to the "
+                            f"object '{ef.feature.name}': {key} = {v:.3g} m is too small compared to the "
                             f"model size ({max(sizes):.3g} m) — check its units")
 
 
@@ -114,7 +114,7 @@ def array_shifts(ef: EvaluatedFeature) -> np.ndarray:
     counts = array_counts(v["array"], ef.feature.name)
     spacing = np.asarray(v.get("spacing", np.zeros(3)), dtype=float)
     if spacing.shape != (3,):
-        raise ValueError(f"geometry '{ef.feature.name}': spacing needs 3 components (along x, y, z)")
+        raise ValueError(f"object '{ef.feature.name}': spacing needs 3 components (along x, y, z)")
     idx = np.stack(np.meshgrid(*[np.arange(n) for n in counts], indexing="ij"), axis=-1).reshape(-1, 3)
     return idx * spacing
 
@@ -153,7 +153,7 @@ def _make_volume(ef: EvaluatedFeature, s: float, lattice_vectors=()) -> list[tup
     try:
         out, _ = occ.fuse(copies[:1], copies[1:])
     except Exception as exc:
-        raise ValueError(f"geometry '{ef.feature.name}': joining the array copies failed in OpenCASCADE ({exc}). "
+        raise ValueError(f"object '{ef.feature.name}': joining the array copies failed in OpenCASCADE ({exc}). "
                          "Usually caused by nearly coincident faces.") from exc
     return [dt for dt in out if dt[0] == 3]
 
@@ -164,7 +164,7 @@ def _make_rotated(ef: EvaluatedFeature, s: float, lattice_vectors=()) -> list[tu
     angles = np.radians(np.asarray(ef.values.get("rotation", np.zeros(3)), dtype=float))
     if vol and np.any(angles != 0):
         if angles.shape != (3,):
-            raise ValueError(f"geometry '{ef.feature.name}': rotation needs 3 angles (about x, y, z)")
+            raise ValueError(f"object '{ef.feature.name}': rotation needs 3 angles (about x, y, z)")
         p = rotation_pivot(ef) * s
         for axis, angle in zip(np.eye(3), angles):  # about global x, then y, then z
             if angle != 0:
@@ -183,7 +183,7 @@ def _make_shape(ef: EvaluatedFeature, s: float, lattice_vectors=()) -> list[tupl
             return []
         inplane = [np.asarray(x) * s for x in lattice_vectors if abs(np.asarray(x)[2]) == 0]
         if len(inplane) < 2:
-            raise ValueError(f"geometry '{ef.feature.name}': a lattice cell needs two lattice directions in the "
+            raise ValueError(f"object '{ef.feature.name}': a lattice cell needs two lattice directions in the "
                              "x-y plane (periodic in x and y, or a hexagonal/custom lattice)")
         a1, a2 = inplane[:2]
         corners = cell_corners([a1, a2], v["center"] * s)
@@ -203,7 +203,7 @@ def _make_shape(ef: EvaluatedFeature, s: float, lattice_vectors=()) -> list[tupl
         axis = v["axis"]
         n = np.linalg.norm(axis)
         if n == 0:
-            raise ValueError(f"geometry '{ef.feature.name}': zero axis vector")
+            raise ValueError(f"object '{ef.feature.name}': zero axis vector")
         d = axis / n * v["height"] * s
         if v["height"] == 0:
             return []
@@ -242,17 +242,17 @@ def _make_shape(ef: EvaluatedFeature, s: float, lattice_vectors=()) -> list[tupl
         ext = occ.extrude([(2, surf)], 0, 0, h)
         return [dt for dt in ext if dt[0] == 3]
     else:
-        raise ValueError(f"unknown geometry type '{t}'")
+        raise ValueError(f"unknown object type '{t}'")
     return [(3, tag)]
 
 
-FEATURE_TAG = 10001   # physical-group tags of geometry features (materials use 1, 2, ...)
+FEATURE_TAG = 10001   # physical-group tags of objects (materials use 1, 2, ...)
 
 
 def build(project: Project, ev: Evaluator) -> tuple[float, list[str]]:
     """Build the geometry in the current gmsh session.
 
-    Creates one physical volume group per material (tag = index + 1) and one per geometry feature
+    Creates one physical volume group per material (tag = index + 1) and one per object
     (tag = FEATURE_TAG + index, name "feature:<name>"; what is left of the feature after later ones).
     Returns (L0, material names in physical-group order).
     """
@@ -279,7 +279,7 @@ def build(project: Project, ev: Evaluator) -> tuple[float, list[str]]:
                     out, _ = occ.cut(tags, vol, removeObject=True, removeTool=False)
                 except Exception as exc:
                     raise ValueError(
-                        f"geometry '{ef.feature.name}': {ef.feature.op} failed in OpenCASCADE ({exc}). "
+                        f"object '{ef.feature.name}': {ef.feature.op} failed in OpenCASCADE ({exc}). "
                         "Usually caused by nearly coincident faces or wrong units.") from exc
                 tags = [dt for dt in out if dt[0] == 3]
             if tags:
@@ -338,7 +338,7 @@ def _set_periodic(periods: dict[str, float], s: float) -> None:
             raise ValueError(
                 f"periodic along {ax}: the geometry is {(hi[i] - lo[i]) / s * 1e6:.4g} µm long in {ax} but the "
                 f"period is {period * 1e6:.4g} µm. Make the block size along {ax} equal to the period, or use a "
-                f"'Lattice cell' feature, which always matches the lattice.")
+                f"'Lattice cell' object, which always matches the lattice.")
         shift = np.zeros(3)
         shift[i] = L
         box_lo, box_hi = lo - eps, hi + eps

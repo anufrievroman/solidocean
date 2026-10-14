@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatSource, HeatStudy, Profile, Pulse
+from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatSource, HeatProblem, Profile, Pulse
 from solidocean.physics.heat.solver import HeatSolver
 from solidocean.project import Feature, Material, MeshSettings, Project
 
@@ -16,11 +16,11 @@ def slab(conditions=(), sources=(), steps=1):
     m = Material("A", {"model": "isotropic", "rho": "2000[kg/m^3]", "E": "100[GPa]", "nu": "0.3",
                        "k": "100[W/(m*K)]", "cp": "500[J/(kg*K)]"})
     return Project(name="slab", physics_kind="heat", variables={"w": "3[um]", "t": "0.5[um]", "x0": "1[um]"},
-                   materials=[m], geometry=[Feature("block", "Slab", material="A", params={
+                   materials=[m], objects=[Feature("block", "Slab", material="A", params={
                        "center": ["0", "0", "-t/2"], "size": ["14[um]", "14[um]", "t"]})],
                    mesh=MeshSettings(max_size="0.5[um]"),
                    heat=HeatPhysics(initial="300[K]", conditions=list(conditions), sources=list(sources),
-                                    study=HeatStudy("transient", t_end="1[ns]", steps=steps)))
+                                    problem=HeatProblem("transient", t_end="1[ns]", steps=steps)))
 
 
 def stored(p):

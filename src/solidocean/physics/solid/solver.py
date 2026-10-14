@@ -15,7 +15,7 @@ from ... import meshing, selection
 from ...expressions import Evaluator
 from ...fem import assembly, bloch, eigen, surface
 from ...geometry import evaluate_features
-from ..base import Cancelled, LogFn, ProgressFn  # noqa: F401  (Cancelled: raised by the studies)
+from ..base import Cancelled, LogFn, ProgressFn  # noqa: F401  (Cancelled: raised by the problems)
 
 
 @dataclass
@@ -31,7 +31,7 @@ class Model:
 
 
 class Solver:
-    """Runs studies for a project, caching the discretised model between steps."""
+    """Runs problems for a project, caching the discretised model between steps."""
 
     def __init__(self, project, log: LogFn = print,
                  progress: ProgressFn | None = None, cancel: threading.Event | None = None):
@@ -61,16 +61,16 @@ class Solver:
         return repr((tuple(ph.symmetry), tuple(ph.antisymmetry), held))
 
     def _material_key(self, ev: Evaluator):
-        st = self.project.solid.study
+        st = self.project.solid.problem
         loss = (ev(st.loss), tuple(mat.loss_factor(m.props) for m in self.project.materials)) if st.harmonic else ()
         return repr((tuple((m.name, mat.evaluate(m.props, ev)[0].tobytes(), mat.evaluate(m.props, ev)[1])
                            for m in self.project.materials), loss))
 
     def _loss_weights(self, mesh, ev: Evaluator) -> np.ndarray:
-        """Loss factor of every element (at its centroid): the study's plus its material's eta."""
+        """Loss factor of every element (at its centroid): the problem's plus its material's eta."""
         from ... import fields
         p = self.project
-        eta = np.full(len(mesh.cells), ev(p.solid.study.loss))
+        eta = np.full(len(mesh.cells), ev(p.solid.problem.loss))
         centroids = mesh.points[mesh.cells[:, :4]].mean(axis=1)
         for d, name in enumerate(mesh.material_names):
             expr = mat.loss_factor(p.material(name).props)
@@ -110,7 +110,7 @@ class Solver:
             K, M = assembly.assemble(mesh.points, mesh.cells, mesh.cell_domain, C_list, rho_list, mesh.order)
             cel = np.array(C_list)[mesh.cell_domain]
             K_loss = None
-            if p.solid.study.harmonic:
+            if p.solid.problem.harmonic:
                 eta = self._loss_weights(mesh, ev)
                 if np.any(eta != 0):
                     K_loss = assembly.assemble_weighted(mesh.points, mesh.cells, mesh.cell_domain, C_list, eta,
@@ -191,7 +191,7 @@ class Solver:
             raise ValueError("the model is not held in place: add a fixed constraint, prescribed displacement or "
                              "symmetry plane (a free body under load has no stationary solution)")
         try:
-            ur = eigen._factorize(Kr, self.project.study.solver)(rhs)
+            ur = eigen._factorize(Kr, self.project.problem.solver)(rhs)
         except Exception as exc:
             raise ValueError(f"stationary solve failed ({exc}): is the model held against rigid-body motion?") \
                 from None
@@ -203,7 +203,7 @@ class Solver:
         return (T @ ur + g).reshape(n, 3)
 
     def solve_harmonic(self, ev: Evaluator) -> np.ndarray:
-        """Complex displacement amplitude (N, 3) in m of the harmonic response at the study's frequency:
+        """Complex displacement amplitude (N, 3) in m of the harmonic response at the problem's frequency:
         (K (1 + i eta) - omega^2 M) u = f, the loads and prescribed displacements being the amplitudes of the
         drive (u(t) = Re(u exp(i omega t)))."""
         m = self.model(ev)
@@ -214,7 +214,7 @@ class Solver:
         root_vals[cons.root[rows], comps] = vals[rows, comps]
         g = np.where(cons.dof_index[cons.root] < 0, root_vals[cons.root], 0.0).ravel()
         f = self.load_vector(m, ev).ravel()
-        omega = 2 * np.pi * ev(self.project.solid.study.frequency)
+        omega = 2 * np.pi * ev(self.project.solid.problem.frequency)
         A = m.K.astype(complex) - omega ** 2 * m.M
         if m.K_loss is not None:
             A = A + 1j * m.K_loss
@@ -223,15 +223,15 @@ class Solver:
         T = cons.T().real.tocsr()
         Ar = (T.T @ A @ T).tocsc()
         rhs = T.T @ (f - A @ g)
-        ur = eigen._factorize(Ar, self.project.study.solver)(rhs)
+        ur = eigen._factorize(Ar, self.project.problem.solver)(rhs)
         if not np.all(np.isfinite(ur)):
             raise ValueError("harmonic solve failed: the drive frequency is (numerically) an eigenfrequency of a "
-                             "lossless model; add a loss factor (solid.study.loss or a material's eta)")
+                             "lossless model; add a loss factor (solid.problem.loss or a material's eta)")
         return (T @ ur + g).reshape(n, 3)
 
     # ---- solving ---------------------------------------------------------
     def _sigma(self, ev: Evaluator):
-        f = ev(self.project.solid.study.search_freq)
+        f = ev(self.project.solid.problem.search_freq)
         return (2 * np.pi * f) ** 2 if f > 0 else None
 
     def solve_point(self, ev: Evaluator, k: np.ndarray, n: int | None = None, modes: bool = False):
@@ -240,8 +240,8 @@ class Solver:
         T = m.constraints.T(k)
         TH = T.conj().T
         Kr, Mr = (TH @ m.K @ T).tocsr(), (TH @ m.M @ T).tocsr()
-        st = self.project.solid.study
-        lam, vec = eigen.solve(Kr, Mr, n or st.num_eigs, self._sigma(ev), backend_name=self.project.study.solver,
+        st = self.project.solid.problem
+        lam, vec = eigen.solve(Kr, Mr, n or st.num_eigs, self._sigma(ev), backend_name=self.project.problem.solver,
                                tol=st.tol, maxiter=st.maxiter)
         freqs = eigen.frequencies(lam)
         if not modes:
@@ -250,12 +250,12 @@ class Solver:
         return freqs, u
 
     def k_of(self, ev: Evaluator) -> np.ndarray:
-        return ev.vector(self.project.solid.study.k)
+        return ev.vector(self.project.solid.problem.k)
 
     def run(self, quantities=(), store_modes: bool = False):
-        """Run the project's study: eigenfrequency (modal.ModalResults; quantities are evaluated for every mode,
+        """Run the project's problem: eigenfrequency (modal.ModalResults; quantities are evaluated for every mode,
         store_modes keeps mode shapes in memory for later evaluation) or stationary (static.StaticResults)."""
-        if self.project.solid.study.field_study:
+        if self.project.solid.problem.field_problem:
             from . import static
             return static.run(self, quantities)
         from . import modal

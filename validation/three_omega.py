@@ -22,7 +22,7 @@ while the out-of-phase part stays near $-P/4k$. The model is a slice of the subs
 cut faces insulated: an infinite line), half of it by symmetry, with the heat flux on the strip (a thin block of
 the substrate's material under the surface, so the mesh follows the strip's edge) and the far faces held at the
 ambient temperature, more than five thermal penetration depths $\sqrt{\alpha/\omega}$ away at the lowest
-frequency. Frequency-domain study, swept over the frequency; quadratic elements.
+frequency. Frequency-domain problem, swept over the frequency; quadratic elements.
 """
 
 K, RHOC = 1.4, 1.63e6                # SiO2-like substrate
@@ -47,8 +47,8 @@ def cahill(f: float, periods: int = 400) -> complex:
 
 
 def project(freqs: str, h: str = "0.25[um]"):
-    from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatStudy
-    from solidocean.project import Feature, Material, MeshSettings, VariableSweep, Project, Study
+    from solidocean.physics.heat.model import HeatCondition, HeatPhysics, HeatProblem
+    from solidocean.project import Feature, Material, MeshSettings, VariableSweep, Project, Problem
 
     def mat(name):
         return Material(name, {"model": "isotropic", "rho": "2200[kg/m^3]", "E": "70[GPa]", "nu": "0.17",
@@ -58,7 +58,7 @@ def project(freqs: str, h: str = "0.25[um]"):
         description="Validation: heater strip on a semi-infinite substrate, frequency domain (Cahill 1990)",
         variables={"b": "1[um]", "D": "20[um]", "Lx": "0.25[um]", "P": f"{P:g}[W/m]", "f": "10[kHz]"},
         materials=[mat("Substrate")],
-        geometry=[Feature("block", "Substrate", material="Substrate",
+        objects=[Feature("block", "Substrate", material="Substrate",
                           params={"center": ["0", "D/2", "-D/2"], "size": ["Lx", "D", "D"]}),
                   Feature("block", "Strip", material="Substrate",
                           params={"center": ["0", "b/2", "-b/8"], "size": ["Lx", "b", "b/4"]})],
@@ -66,8 +66,8 @@ def project(freqs: str, h: str = "0.25[um]"):
         heat=HeatPhysics(initial="300[K]", conditions=[
             HeatCondition("flux", ["zmax"], "P / (2*b)", name="Heater", on="Strip"),
             HeatCondition("temperature", ["ymax", "zmin"], "300[K]", name="Far field")],
-            study=HeatStudy(type="frequency", frequency="f")),
-        study=Study(sweep=VariableSweep("f", freqs)))
+            problem=HeatProblem(type="frequency", frequency="f")),
+        problem=Problem(sweep=VariableSweep("f", freqs)))
 
 
 def strip_mean(mesh, T) -> complex:
@@ -85,7 +85,7 @@ def run(quick: bool = False) -> Report:
     r = Report("three_omega", TITLE, ABOUT)
     with Timer() as tm:
         p = project("logspace(4, 6, 5)" if quick else "logspace(4, 6, 9)")
-        p.study.sweep.values += " * 1[Hz]"
+        p.problem.sweep.values += " * 1[Hz]"
         common.save_model(p, "three_omega")
         res = HeatSolver(p, log=quiet).run()
         fs = res.outer_values

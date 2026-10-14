@@ -7,10 +7,10 @@ import copy
 
 from ... import lattice as lat
 from ...lattice import Lattice
-from ...project import Feature, MeshSettings, VariableSweep, Project, Study
+from ...project import Feature, MeshSettings, VariableSweep, Project, Problem
 from ...plots import PlotStyle, ResultPlot
 from ...templates import Template, library_material
-from .model import KPath, SolidCondition, SolidPhysics, SolidStudy
+from .model import KPath, SolidCondition, SolidPhysics, SolidProblem
 from .plots import colored_plot, field_plot
 
 
@@ -46,7 +46,7 @@ def _plots(colored: bool = True) -> list[ResultPlot]:
 # ---- solid mechanics -------------------------------------------------------------
 def empty() -> Project:
     return Project(name="Untitled", variables={"a": "1[um]"}, materials=[_si()],
-                   geometry=[Feature("block", "Block", material="Si",
+                   objects=[Feature("block", "Block", material="Si",
                                      params={"center": ["0", "0", "0"], "size": ["a", "a", "a"]})],
                    mesh=MeshSettings(max_size="a/5"))
 
@@ -55,10 +55,10 @@ def bulk() -> Project:
     return Project(
         name="Bulk crystal", description="Bulk Si: cubic cell periodic in x, y and z",
         variables={"a": "100[nm]"}, materials=[_si()],
-        geometry=[Feature("block", "Cell", material="Si",
+        objects=[Feature("block", "Cell", material="Si",
                           params={"center": ["0", "0", "0"], "size": ["a", "a", "a"]})],
         mesh=MeshSettings(max_size="a/3"), lattice=Lattice(periodic={"x": "a", "y": "a", "z": "a"}),
-        solid=SolidPhysics(study=SolidStudy(num_eigs=12, kpath=_kpath("cubic", 10))), plots=_plots(False))
+        solid=SolidPhysics(problem=SolidProblem(num_eigs=12, kpath=_kpath("cubic", 10))), plots=_plots(False))
 
 
 def membrane() -> Project:
@@ -66,10 +66,10 @@ def membrane() -> Project:
         name="Membrane (plate)", description="Free-standing Si plate (Lamb waves); the in-plane period is a short "
                                              "auxiliary length, keep it well below the shortest wavelength of interest",
         variables={"t": "220[nm]", "a": "50[nm]"}, materials=[_si()],
-        geometry=[Feature("block", "Membrane", material="Si",
+        objects=[Feature("block", "Membrane", material="Si",
                           params={"center": ["0", "0", "0"], "size": ["a", "a", "t"]})],
         mesh=MeshSettings(max_size="a/2"), lattice=Lattice(periodic={"x": "a", "y": "a"}),
-        solid=SolidPhysics(study=SolidStudy(num_eigs=12, kpath=KPath({"G": [0, 0, 0], "K": [0.1, 0, 0]}, ["G", "K"], 20))),
+        solid=SolidPhysics(problem=SolidProblem(num_eigs=12, kpath=KPath({"G": [0, 0, 0], "K": [0.1, 0, 0]}, ["G", "K"], 20))),
         plots=_plots())
 
 
@@ -78,10 +78,10 @@ def beam() -> Project:
         name="Beam (waveguide)", description="Suspended Si beam (waveguide) along x; the period a is a short "
                                              "auxiliary length",
         variables={"w": "300[nm]", "t": "220[nm]", "a": "50[nm]"}, materials=[_si()],
-        geometry=[Feature("block", "Beam", material="Si",
+        objects=[Feature("block", "Beam", material="Si",
                           params={"center": ["0", "0", "0"], "size": ["a", "w", "t"]})],
         mesh=MeshSettings(max_size="a/2"), lattice=Lattice(periodic={"x": "a"}),
-        solid=SolidPhysics(study=SolidStudy(num_eigs=16, kpath=KPath({"G": [0, 0, 0], "K": [0.1, 0, 0]}, ["G", "K"], 20))),
+        solid=SolidPhysics(problem=SolidProblem(num_eigs=16, kpath=KPath({"G": [0, 0, 0], "K": [0.1, 0, 0]}, ["G", "K"], 20))),
         plots=_plots())
 
 
@@ -90,9 +90,9 @@ def square_crystal() -> Project:
         name="Square-lattice hole-based phononic crystal",
         description="Square lattice of holes (radius r, period a) in a Si membrane of thickness t",
         variables={"a": "400[nm]", "t": "200[nm]", "r": "0.43*a"}, materials=[_si()],
-        geometry=[_cell(), _hole("Hole", "0", "0")],
+        objects=[_cell(), _hole("Hole", "0", "0")],
         mesh=MeshSettings(max_size="a/8", min_size="a/40"), lattice=Lattice(periodic={"x": "a", "y": "a"}),
-        solid=SolidPhysics(study=SolidStudy(num_eigs=16, kpath=_kpath("square"))), plots=_plots())
+        solid=SolidPhysics(problem=SolidProblem(num_eigs=16, kpath=_kpath("square"))), plots=_plots())
 
 
 def hexagonal_crystal() -> Project:
@@ -103,10 +103,10 @@ def hexagonal_crystal() -> Project:
                     "holes and any radius up to touching holes (r < a/2) gives the right structure",
         variables={"a": "400[nm]", "t": "200[nm]", "r": "0.43*a"}, materials=[_si()],
         # corners of the cell spanned by a1 = a(1, 0), a2 = a(1/2, sqrt(3)/2), centred on the origin
-        geometry=[_cell(), _hole("Hole 1", "3*a/4", "sqrt(3)*a/4"), _hole("Hole 2", "-3*a/4", "-sqrt(3)*a/4"),
+        objects=[_cell(), _hole("Hole 1", "3*a/4", "sqrt(3)*a/4"), _hole("Hole 2", "-3*a/4", "-sqrt(3)*a/4"),
                   _hole("Hole 3", "a/4", "-sqrt(3)*a/4"), _hole("Hole 4", "-a/4", "sqrt(3)*a/4")],
         mesh=MeshSettings(max_size="a/8", min_size="a/40"), lattice=Lattice(vectors=copy.deepcopy(HEX)),
-        solid=SolidPhysics(study=SolidStudy(num_eigs=16, kpath=_kpath("hexagonal"))), plots=_plots())
+        solid=SolidPhysics(problem=SolidProblem(num_eigs=16, kpath=_kpath("hexagonal"))), plots=_plots())
 
 
 def honeycomb_crystal() -> Project:
@@ -114,9 +114,9 @@ def honeycomb_crystal() -> Project:
         name="Honeycomb hole-based phononic crystal",
         description="Honeycomb lattice: hexagonal lattice with two holes per cell in a Si membrane",
         variables={"a": "400[nm]", "t": "200[nm]", "r": "0.17*a"}, materials=[_si()],
-        geometry=[_cell(), _hole("Hole 1", "a/4", "sqrt(3)*a/12"), _hole("Hole 2", "-a/4", "-sqrt(3)*a/12")],
+        objects=[_cell(), _hole("Hole 1", "a/4", "sqrt(3)*a/12"), _hole("Hole 2", "-a/4", "-sqrt(3)*a/12")],
         mesh=MeshSettings(max_size="a/8", min_size="a/40"), lattice=Lattice(vectors=copy.deepcopy(HEX)),
-        solid=SolidPhysics(study=SolidStudy(num_eigs=16, kpath=_kpath("hexagonal"))), plots=_plots())
+        solid=SolidPhysics(problem=SolidProblem(num_eigs=16, kpath=_kpath("hexagonal"))), plots=_plots())
 
 
 def pillar_crystal() -> Project:
@@ -126,12 +126,12 @@ def pillar_crystal() -> Project:
                     "bonded to the membrane",
         variables={"a": "400[nm]", "t": "200[nm]", "r": "0.43*a", "h": "200[nm]"},
         materials=[_si(), _lib("Al")],
-        geometry=[_cell(),
+        objects=[_cell(),
                   Feature("cylinder", "Pillar", material="Al",
                           params={"center": ["0", "0", "t/2"], "axis": ["0", "0", "1"], "radius": "r",
                                   "height": "h"})],
         mesh=MeshSettings(max_size="a/8", min_size="a/40"), lattice=Lattice(periodic={"x": "a", "y": "a"}),
-        solid=SolidPhysics(study=SolidStudy(num_eigs=16, kpath=_kpath("square"))), plots=_plots())
+        solid=SolidPhysics(problem=SolidProblem(num_eigs=16, kpath=_kpath("square"))), plots=_plots())
 
 
 # ---- solid mechanics: stationary ---------------------------------------------------
@@ -144,14 +144,14 @@ def cantilever() -> Project:
         variables={"L": "10[um]", "w": "1[um]", "t": "220[nm]", "F": "1[nN]", "lp": "0.5[um]",
                     "E_x": "130.1[GPa]", "a_F": "L - lp/2"},
         materials=[_si()],
-        geometry=[Feature("block", "Beam", material="Si", params={"center": ["L/2", "0", "0"],
+        objects=[Feature("block", "Beam", material="Si", params={"center": ["L/2", "0", "0"],
                                                                  "size": ["L", "w", "t"]})],
         mesh=MeshSettings(max_size="t/2"),
-        solid=SolidPhysics(study=SolidStudy(type="stationary"), conditions=[
+        solid=SolidPhysics(problem=SolidProblem(type="stationary"), conditions=[
             SolidCondition("fixed", ["xmin"], name="Clamp"),
             SolidCondition("load", ["zmax"], name="Probe force", load_type="total", load=["0", "0", "-F"],
                            box={"min": ["L - lp", "-w/2", "0"], "max": ["L", "w/2", "t/2"]})]),
-        study=Study(sweep=VariableSweep("L", "range(5, 2.5, 15) * 1[um]")),
+        problem=Problem(sweep=VariableSweep("L", "range(5, 2.5, 15) * 1[um]")),
         plots=[field_plot(),
                ResultPlot("Deflection along the beam", "uz / 1[nm]", kind="line", start=["0", "0", "0"],
                           end=["L", "0", "0"], y_label="uz (nm)", style=PlotStyle(markers=False)),
@@ -170,12 +170,12 @@ def tensile() -> Project:
                     "rotated crystal couples to tension (E within 0.5 %)",
         variables={"L": "2[um]", "w": "0.5[um]", "e0": "1e-3", "theta": "0"},
         materials=[_si(rotation_deg=["0", "0", "theta"])],
-        geometry=[Feature("block", "Bar", material="Si", params={"center": ["L/2", "w/2", "w/2"],
+        objects=[Feature("block", "Bar", material="Si", params={"center": ["L/2", "w/2", "w/2"],
                                                                 "size": ["L", "w", "w"]})],
         mesh=MeshSettings(max_size="w/2"),
-        solid=SolidPhysics(study=SolidStudy(type="stationary"), symmetry=["xmin", "ymin", "zmin"], conditions=[
+        solid=SolidPhysics(problem=SolidProblem(type="stationary"), symmetry=["xmin", "ymin", "zmin"], conditions=[
             SolidCondition("displacement", ["xmax"], name="Pull", displacement=["e0*L", "", ""])]),
-        study=Study(sweep=VariableSweep("theta", "range(0, 7.5, 90)")),
+        problem=Problem(sweep=VariableSweep("theta", "range(0, 7.5, 90)")),
         plots=[field_plot(),
                ResultPlot("Young's modulus along x", "mean(sxx) / mean(exx) / 1[GPa]", kind="quantity",
                           y_label="E (GPa)", x_label="Crystal rotation about z (deg)"),
@@ -201,7 +201,7 @@ def driven_beam() -> Project:
                     "Lc": "3[um]", "Ltot": "2*La + 2*Lc + N*a", "x1": "La + Lc", "u0": "1[nm]", "eta_max": "1",
                     "f": "2[GHz]"},
         materials=[_si(eta=eta)],
-        geometry=[block("Beam", "0", "Ltot"),
+        objects=[block("Beam", "0", "Ltot"),
                   block("Input", "La + Lc/4", "Lc/2"),
                   block("Output", "x1 + N*a + Lc/4", "Lc/2"),
                   Feature("cylinder", "Holes", op="subtract",
@@ -210,8 +210,8 @@ def driven_beam() -> Project:
         mesh=MeshSettings(max_size="t/2"),
         solid=SolidPhysics(symmetry=["ymin", "zmin"], conditions=[
             SolidCondition("displacement", ["xmin"], displacement=["u0", "", ""], name="Drive")],
-            study=SolidStudy(type="frequency", frequency="f")),
-        study=Study(sweep=VariableSweep("f", "linspace(1, 4.5, 36) * 1[GHz]")),
+            problem=SolidProblem(type="frequency", frequency="f")),
+        problem=Problem(sweep=VariableSweep("f", "linspace(1, 4.5, 36) * 1[GHz]")),
         plots=[field_plot("Displacement amplitude"),
                ResultPlot("Transmission", 'mean(abs(ux), "Output") / u0', kind="quantity",
                           y_label="Output amplitude / drive amplitude", style=PlotStyle(y_log=True)),

@@ -5,7 +5,7 @@ A physics is a subpackage of `solidocean.physics` (solid mechanics, heat transfe
 - its settings: a dataclass stored on the Project under `section` (also the TOML table name), with
   `to_dict()` and a `from_dict()` classmethod;
 - validation of those settings, and of the materials it needs;
-- its studies: a solver whose `run(quantities)` returns results (results/field.FieldResults for one field per
+- its problems: a solver whose `run(quantities)` returns results (results/field.FieldResults for one field per
   variable value and time step, or a physics' own results type such as the modal results of solid
   mechanics);
 - the field and scalar names its quantities may use, and how the fields of a solution are evaluated;
@@ -47,31 +47,31 @@ class PhysicsSpec:
     def settings_from_dict(self, d: dict):
         return self.settings_class.from_dict(d)
 
-    def study_type(self, project) -> str:
-        """The physics' current study type, e.g. 'stationary'."""
+    def problem_type(self, project) -> str:
+        """The physics' current problem type, e.g. 'stationary'."""
         return ""
 
     def field_results(self, project) -> bool:
-        """True if the current study gives field results (results/field.FieldResults: one field per variable
+        """True if the current problem gives field results (results/field.FieldResults: one field per variable
         value and time step), False for a physics' own results (e.g. modes)."""
         return True
 
     def validate(self, project, ev) -> list[str]:
-        """Problems with the physics settings, its materials and its study (empty if none)."""
+        """Problems with the physics settings, its materials and its problem (empty if none)."""
         return []
 
     # ---- solving -----------------------------------------------------------------
     def solver(self, project, log: LogFn = print, progress: ProgressFn | None = None, cancel=None):
-        """An object with run(quantities) -> results for the project's study."""
+        """An object with run(quantities) -> results for the project's problem."""
         raise NotImplementedError
 
     # ---- quantities and plots ----------------------------------------------------
     def quantity_help(self, project) -> dict[str, str]:
-        """Reference of the quantities available in the current study (GUI)."""
+        """Reference of the quantities available in the current problem (GUI)."""
         return {}
 
     def quantities(self, project) -> list[tuple[str, str]]:
-        """Named physical quantities of the current study, (label, expression), e.g. ("Heat flux x (W/m²)",
+        """Named physical quantities of the current problem, (label, expression), e.g. ("Heat flux x (W/m²)",
         "qx"): offered in a menu under every expression editor."""
         return []
 
@@ -110,7 +110,7 @@ class PhysicsSpec:
                           style=PlotStyle(colormap=colormap))
 
     def plot_unavailable(self, project, plot) -> str:
-        """Why a plot cannot be shown with the current study ("" if it can)."""
+        """Why a plot cannot be shown with the current problem ("" if it can)."""
         return ""
 
 

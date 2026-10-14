@@ -1,4 +1,4 @@
-"""Eigenfrequency study of solid mechanics: modes at every point of a k-path and/or a variable sweep, the
+"""Eigenfrequency problem of solid mechanics: modes at every point of a k-path and/or a variable sweep, the
 modal results (frequencies, quantities per mode, mode shapes kept in memory) and quantities evaluated on them.
 Plots: results/modal.py."""
 
@@ -176,7 +176,7 @@ def _scalars(ev: Evaluator, f: float, k: np.ndarray, b: int) -> dict:
 def kpath_vectors(project, ev: Evaluator):
     """k vectors (n, 3), cumulative path length (n,), ticks for the configured path."""
     from ... import lattice as lat
-    kp = project.solid.study.active_kpath
+    kp = project.solid.problem.active_kpath
     recip = lat.reciprocal(lat.slots(project.lattice, ev))
 
     def k_of(reduced):
@@ -197,7 +197,7 @@ def kpath_vectors(project, ev: Evaluator):
 
 
 def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
-    """Eigenfrequency study: for every variable-sweep value, the k-path (or the single k) is solved; quantities
+    """Eigenfrequency problem: for every variable-sweep value, the k-path (or the single k) is solved; quantities
     are expressions evaluated for every mode; store_modes keeps mode shapes in memory (within MODE_BUDGET bytes)
     for later evaluation."""
     p = solver.project
@@ -209,14 +209,14 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
     base = p.evaluator()
     t_start = time.perf_counter()
 
-    sw = p.study.active_sweep
+    sw = p.problem.active_sweep
     if sw:
         outer_name, outer_values = sw.variable, base.array(sw.values)
     else:
         outer_name, outer_values = "", np.array([np.nan])
 
-    n_eigs = p.solid.study.num_eigs
-    n_inner = len(kpath_vectors(p, base)[0]) if p.solid.study.active_kpath else 1
+    n_eigs = p.solid.problem.num_eigs
+    n_inner = len(kpath_vectors(p, base)[0]) if p.solid.problem.active_kpath else 1
     total = len(outer_values) * n_inner
     freqs = np.full((len(outer_values), n_inner, n_eigs), np.nan)
     kvecs = np.zeros((len(outer_values), n_inner, 3))
@@ -229,7 +229,7 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
         ev = base.with_overrides({outer_name: val}) if outer_name else base
         if outer_name:
             solver.log(f"{outer_name} = {val:.6g}")
-        if p.solid.study.active_kpath:
+        if p.solid.problem.active_kpath:
             ks, x, ticks = kpath_vectors(p, ev)
             x_label = "k path [rad/m]"
         else:

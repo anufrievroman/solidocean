@@ -12,7 +12,7 @@ def two_blocks(regions=(), max_size="0.5[um]"):
     m = {n: Material(n, {"model": "isotropic", "rho": "2000[kg/m^3]", "E": "100[GPa]", "nu": "0.3",
                          "k": f"{k}[W/(m*K)]", "cp": "500[J/(kg*K)]"}) for n, k in (("MA", 100), ("MB", 20))}
     return Project(materials=list(m.values()), variables={"h": "0.5[um]"},
-                   geometry=[Feature("block", "A", material="MA", params={"center": ["-1[um]", "0", "0"],
+                   objects=[Feature("block", "A", material="MA", params={"center": ["-1[um]", "0", "0"],
                                                                           "size": ["2[um]", "1[um]", "1[um]"]}),
                              Feature("block", "B", material="MB", params={"center": ["1[um]", "0", "0"],
                                                                           "size": ["2[um]", "1[um]", "1[um]"]})],

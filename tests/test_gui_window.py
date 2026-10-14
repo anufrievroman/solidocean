@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 def test_panel_swap_with_focus_inside_the_old_panel():
     """Selecting another node while a widget of the current panel has the keyboard focus (e.g. after
-    pressing Run in the Study panel, a run ends by opening a plot) used to segfault in Qt."""
+    pressing Run in the Problem panel, a run ends by opening a plot) used to segfault in Qt."""
     from PySide6.QtWidgets import QApplication, QPushButton
     app = QApplication.instance() or QApplication([])
     from solidocean import templates
@@ -15,7 +15,7 @@ def test_panel_swap_with_focus_inside_the_old_panel():
     w = MainWindow()
     w.show()
     w.set_project(templates.create("square"))
-    w.select_node("study")
+    w.select_node("problem")
     run = next(b for b in w.settings.widget().findChildren(QPushButton) if b.text().startswith("Run"))
     run.setFocus()
     app.processEvents()
@@ -27,6 +27,83 @@ def test_panel_swap_with_focus_inside_the_old_panel():
     w.dirty = False
     w.close()
 
+
+
+def test_eigenfrequency_solutions_in_the_problem_panel():
+    """The number of solutions and the frequency they are searched around are rows of the Problem panel (like
+    the drive frequency of a frequency-domain problem), not a node of their own."""
+    from PySide6.QtWidgets import QApplication, QFormLayout, QLabel, QSpinBox
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    from solidocean.gui.panels.common import ExprEdit
+    w = MainWindow()
+    w.show()
+    w.set_project(templates.create("square"))
+    assert "solutions" not in [k for _, (k, _i), _off in w.ui.problem_nodes(w.project)]
+    w.select_node("problem")
+    panel = w.settings.widget()
+    labels = [lab.text() for lab in panel.findChildren(QLabel)]
+    assert "Number of solutions" in labels and "Around" in labels
+    n = next(b for b in panel.findChildren(QSpinBox) if b.value() == w.project.solid.problem.num_eigs)
+    n.setValue(7)
+    assert w.project.solid.problem.num_eigs == 7
+    around = panel.findChildren(ExprEdit)[0]
+    around.line.setText("5[GHz]")
+    around._commit()
+    assert w.project.solid.problem.search_freq == "5[GHz]"
+    app.processEvents()
+    w.cancel.set()
+    w.dirty = False
+    w.close()
+
+
+def test_solver_box_in_the_problem_panel():
+    """The linear solver (and, for eigenfrequencies, the Lanczos settings) is a Solver box of the Problem panel
+    of every physics, not a node of its own."""
+    from PySide6.QtWidgets import QApplication, QComboBox, QGroupBox, QLabel
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    w = MainWindow()
+    w.show()
+    for name, eigen in (("square", True), ("heat_bar", False)):
+        w.set_project(templates.create(name))
+        assert "solver" not in [k for _, (k, _i), _off in w.ui.problem_nodes(w.project)]
+        w.select_node("problem")
+        box = next(b for b in w.settings.widget().findChildren(QGroupBox) if b.title() == "Solver")
+        labels = [lab.text() for lab in box.findChildren(QLabel)]
+        assert "Linear solver" in labels and ("Eigenvalue tolerance" in labels) == eigen
+        combo = box.findChildren(QComboBox)[0]
+        combo.setCurrentIndex(combo.findData("superlu"))
+        assert w.project.problem.solver == "superlu"
+    app.processEvents()
+    w.cancel.set()
+    w.dirty = False
+    w.close()
+
+
+def test_heat_problem_type_is_shown_on_the_problem_node():
+    """Changing the heat problem type relabels the Problem node (like solid mechanics) and keeps it selected;
+    there is no separate Problem type node repeating the panel."""
+    from PySide6.QtWidgets import QApplication, QComboBox
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    w = MainWindow()
+    w.show()
+    w.set_project(templates.create("heat_bar"))
+    w.select_node("problem")
+    typ = w.settings.widget().findChildren(QComboBox)[0]
+    typ.setCurrentIndex(typ.findData("transient"))
+    app.processEvents()
+    assert w.project.heat.problem.type == "transient"
+    assert w._current_node() == ("problem", None)
+    assert [k for _, (k, _i), _off in w.ui.problem_nodes(w.project)] == ["sweep"]
+    assert w.ui.problem_label(w.project) == "Problem: Transient"
+    w.cancel.set()
+    w.dirty = False
+    w.close()
 
 
 def test_log_collapsed_and_progress_in_the_toolbar():
@@ -141,20 +218,20 @@ def test_plots_added_after_the_run_are_saved(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication, QFileDialog
     app = QApplication.instance() or QApplication([])
     from solidocean.gui.main_window import MainWindow
-    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidStudy
+    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidProblem
     from solidocean.physics.solid.solver import Solver
     from solidocean.plots import ResultPlot
-    from solidocean.project import Feature, Material, MeshSettings, Project, Study, VariableSweep
+    from solidocean.project import Feature, Material, MeshSettings, Project, Problem, VariableSweep
     props = {"model": "isotropic", "rho": "2000[kg/m^3]", "E": "100[GPa]", "nu": "0.25", "eta": "0.05"}
     p = Project(name="bar", variables={"L": "2[um]", "w": "0.2[um]", "f": "1[GHz]"},
                 materials=[Material("M", props)],
-                geometry=[Feature("block", "Bar", material="M",
+                objects=[Feature("block", "Bar", material="M",
                                   params={"center": ["L/2", "0", "0"], "size": ["L", "w", "w"]})],
                 mesh=MeshSettings(max_size="w/2"),
                 solid=SolidPhysics(symmetry=["ymin", "ymax", "zmin", "zmax"], conditions=[
                     SolidCondition("displacement", ["xmin"], displacement=["1[nm]", "", ""])],
-                    study=SolidStudy(type="frequency", frequency="f")),
-                study=Study(sweep=VariableSweep("f", "[1, 2] * 1[GHz]")))
+                    problem=SolidProblem(type="frequency", frequency="f")),
+                problem=Problem(sweep=VariableSweep("f", "[1, 2] * 1[GHz]")))
     p.save(tmp_path / "m.toml")
     w = MainWindow()
     w.set_project(p)

@@ -1,4 +1,4 @@
-"""Heat transfer panels: physics overview, initial values, conditions, sources with pulses, study,
+"""Heat transfer panels: physics overview, initial values, conditions, sources with pulses, problem,
 solver and the temperature field."""
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from ...physics.heat.model import HeatCondition, HeatInterface, HeatSource, interface_title
 from ...physics.heat.properties import nonlinear
 from ...selection import ALL_FACES, FACES, selection_text
-from .study import solver_box
+from .problem import solver_box
 from .common import (
     ERROR_STYLE, ExprEdit, Panel, equations, field_quantity_rows, muted_label, objects, outer_labels,
     selection_box,
@@ -47,7 +47,7 @@ PULSE_TITLES = {"": "Constant", "rect": "Rectangular pulse", "gauss": "Gaussian 
 def pulse_box(panel, pulse, refresh, value=None) -> QGroupBox:
     """Time profile of a flux or source: constant, a (repeated) rectangular / Gaussian pulse, or a sinusoidal
     oscillation about the value; value() gives the current value (the default amplitude)."""
-    box = QGroupBox("Time profile (transient studies)")
+    box = QGroupBox("Time profile (transient problems)")
     f = QFormLayout(box)
     shape = QComboBox()
     for key, title in PULSE_TITLES.items():
@@ -158,11 +158,11 @@ class HeatPanel(Panel):
     title = "Heat Transfer"
     help = ("Conduction in the meshed structure. Conditions act on faces of the model's bounding box or of one "
             "object (e.g. the top of a pad); heat sources fill all domains of a material, and fluxes and "
-            "sources can be pulsed in transient studies. Interfaces between objects are perfect contacts "
+            "sources can be pulsed in transient problems. Interfaces between objects are perfect contacts "
             "unless given a contact resistance or a thin layer.")
     formalism = equations(
         ("ρ c<sub>p</sub> ∂T/∂t = ∇·(k ∇T) + Q", "Heat conduction (Fourier's law), with the heat sources Q "
-         "(W/m³). A stationary study drops the time term and solves ∇·(k ∇T) + Q = 0."),
+         "(W/m³). A stationary problem drops the time term and solves ∇·(k ∇T) + Q = 0."),
         ("n·(k ∇T) = 0", "On every face without a condition: insulated — the same as a mirror-symmetry plane."),
         ("C Ṫ + K T = f", "The assembled system (quadratic tetrahedra). Stationary: K T = f, one sparse solve. "
          "Transient: θ-scheme time steps (backward Euler or Crank–Nicolson), the matrix factorised once if the "
@@ -206,11 +206,11 @@ class HeatPanel(Panel):
 
 class HeatInitialPanel(Panel):
     title = "Initial values"
-    help = ("The temperature a transient study starts from. May depend on position, e.g. "
+    help = ("The temperature a transient problem starts from. May depend on position, e.g. "
             "300[K] + 10[K]*exp(-(x^2+y^2)/(100[nm])^2).")
     formalism = equations(
-        ("T(r, 0) = T₀(r)", "The initial condition of a transient study, evaluated at the nodes of the mesh. "
-         "In stationary and frequency-domain studies it is only the starting guess of the nonlinear "
+        ("T(r, 0) = T₀(r)", "The initial condition of a transient problem, evaluated at the nodes of the mesh. "
+         "In stationary and frequency-domain problems it is only the starting guess of the nonlinear "
          "iteration (a linear model ignores it)."),
     )
 
@@ -317,7 +317,7 @@ class HeatConditionPanel(Panel):
 
 class HeatSourcePanel(Panel):
     title = "Heat source"
-    help = ("Heat generated inside the structure, e.g. Joule heating or absorption. In transient studies it "
+    help = ("Heat generated inside the structure, e.g. Joule heating or absorption. In transient problems it "
             "may be pulsed or oscillate about its value.")
     formalism = equations(
         ("Q(r, t)  [W/m³]", "The source term of the heat equation, filling every domain made of the selected "
@@ -370,7 +370,7 @@ INTERFACE_FORMALISM = {
     ),
     "layer": equations(
         ("R = d / k", "The resistance of a layer of thickness d, with k taken across the layer; heat does not "
-         "flow along it. In transient studies the layer also carries its heat capacity ρ c<sub>p</sub> d, "
+         "flow along it. In transient problems the layer also carries its heat capacity ρ c<sub>p</sub> d, "
          "split between the two sides. Its properties may depend on T."),
         INTERFACE_SIDES,
     ),
@@ -400,7 +400,7 @@ class HeatInterfacePanel(Panel):
             typ.addItem(title, key)
         typ.setCurrentIndex(max(0, typ.findData(c.type)))
         typ.currentIndexChanged.connect(lambda i: self._change(type=typ.itemData(i)))
-        f.addRow("Type", typ)
+        f.addRow("Problem type", typ)
         if c.type == "layer":
             mat = QComboBox()
             names = [m.name for m in p.materials]
@@ -438,7 +438,7 @@ class HeatInterfacePanel(Panel):
 
         first.currentIndexChanged.connect(set_between)
         second.currentIndexChanged.connect(set_between)
-        first.setToolTip("An object (geometry feature, or all domains of a material) whose interfaces get the "
+        first.setToolTip("An object (one of the Objects, or all domains of a material) whose interfaces get the "
                          "contact; or every interface between two different materials")
         g.addRow("Between", first)
         g.addRow("and", second)
@@ -454,7 +454,7 @@ class HeatInterfacePanel(Panel):
         self.win.mark_dirty()
 
 
-HEAT_STUDY_FORMALISM = {
+HEAT_PROBLEM_FORMALISM = {
     "stationary": equations(
         ("(K + A<sub>bc</sub>) T = b", "K: conduction, A<sub>bc</sub>: convection and contact terms, b: heat "
          "sources and fluxes. Fixed temperatures are eliminated from the system; one sparse direct solve."),
@@ -488,31 +488,34 @@ HEAT_STUDY_FORMALISM = {
 }
 
 
-class HeatStudyPanel(Panel):
-    title = "Study: Heat transfer"
+HEAT_PROBLEM_TITLES = {"stationary": "Stationary", "transient": "Transient", "frequency": "Frequency domain"}
+
+
+class HeatProblemPanel(Panel):
     help = ("Stationary: the steady temperature field. Transient: the temperature evolution from the initial "
             "values at the start time, implicit time stepping. Frequency domain: the amplitude and phase of the "
-            "temperature oscillation driven by sources at one frequency (3ω, FDTR). A variable sweep (Study → "
+            "temperature oscillation driven by sources at one frequency (3ω, FDTR). A variable sweep (Problem → "
             "Variable sweep) repeats any of them, e.g. over the frequency.")
     action = ("Run ▶︎", "compute")
 
     def __init__(self, win):
-        self.formalism = HEAT_STUDY_FORMALISM.get(win.project.heat.study.type, "")
+        typ = win.project.heat.problem.type
+        self.title = f"Problem: {HEAT_PROBLEM_TITLES.get(typ, typ)}"
+        self.formalism = HEAT_PROBLEM_FORMALISM.get(typ, "")
         super().__init__(win)
 
     def build(self):
-        st = self.p.heat.study
+        st = self.p.heat.problem
         f = self.form()
         typ = QComboBox()
-        typ.addItem("Stationary", "stationary")
-        typ.addItem("Transient", "transient")
-        typ.addItem("Frequency domain", "frequency")
+        for key, title in HEAT_PROBLEM_TITLES.items():
+            typ.addItem(title, key)
         typ.setCurrentIndex(max(0, typ.findData(st.type)))
-        typ.currentIndexChanged.connect(lambda i: set_study_type(self.win, typ.itemData(i)))
-        f.addRow("Type", typ)
+        typ.currentIndexChanged.connect(lambda i: set_problem_type(self.win, typ.itemData(i)))
+        f.addRow("Problem type", typ)
         if st.type == "frequency":
             freq = ExprEdit(self.win, lambda: st.frequency, lambda t: setattr(st, "frequency", t or "f"))
-            freq.setToolTip("Frequency of the oscillation; a variable (f) can be swept: Study → Variable sweep, "
+            freq.setToolTip("Frequency of the oscillation; a variable (f) can be swept: Problem → Variable sweep, "
                             "e.g. logspace(3, 6, 16) * 1[Hz]")
             f.addRow("Frequency", freq)
             f.addRow(muted_label("Small-signal response: every heat flux and source oscillates at this frequency "
@@ -544,6 +547,7 @@ class HeatStudyPanel(Panel):
             scheme.currentIndexChanged.connect(lambda i: (setattr(st, "theta", scheme.itemData(i)),
                                                           self.win.mark_dirty()))
             f.addRow("Scheme", scheme)
+        solver_box(self)
         if nonlinear(self.p):
             self._nonlinear_box(st)
 
@@ -579,17 +583,6 @@ class HeatStudyPanel(Panel):
         g.addRow("Maximum iterations", it)
 
 
-class HeatSolverPanel(Panel):
-    title = "Solver"
-    help = ("A linear model (constant properties, no radiation): a stationary study solves one sparse system; a "
-            "transient study factorises its matrix once (constant time step) and then needs only one cheap "
-            "solve per step. A nonlinear model solves and factorises once per iteration (a few per time "
-            "step).")
-
-    def build(self):
-        solver_box(self)
-
-
 class TemperaturePanel(Panel):
     title = "Field"
     help = "A quantity of the solution on the structure. Pick the time step (transient) and the variable value (sweep)."
@@ -598,7 +591,7 @@ class TemperaturePanel(Panel):
         r, sel = self.win.results, self.win.selection
         f = self.form("Dataset")
         if r is None or not self.win.has_field_results:
-            f.addRow(muted_label("No results yet. Configure the Study and press Run; then pick the time step "
+            f.addRow(muted_label("No results yet. Configure the Problem and press Run; then pick the time step "
                                  "and variable value here (or click a point in a plot)."))
             return self._settings()
         f.addRow(muted_label(self.win.results_summary()))
@@ -695,14 +688,14 @@ def delete_item(win, kind: str, index: int):
     win.rebuild_tree(("physics", None))
 
 
-def set_study_type(win, typ: str):
-    """Stationary / transient / frequency domain. A transient study gets a time plot of the average temperature
-    unless it already has one; a frequency-domain study needs a frequency (a variable f by default, so it can
+def set_problem_type(win, typ: str):
+    """Stationary / transient / frequency domain. A transient problem gets a time plot of the average temperature
+    unless it already has one; a frequency-domain problem needs a frequency (a variable f by default, so it can
     be swept) and shows the oscillation amplitude in field views."""
     from ...physics.heat.plots import time_plot
     p = win.project
-    p.heat.study.type = typ
-    if typ == "frequency" and p.heat.study.frequency == "f" and "f" not in p.variables:
+    p.heat.problem.type = typ
+    if typ == "frequency" and p.heat.problem.frequency == "f" and "f" not in p.variables:
         p.variables["f"] = "1[kHz]"
     for pl in p.plots:
         if pl.kind == "field" and pl.quantity in ("T", "Tamp"):
@@ -712,5 +705,5 @@ def set_study_type(win, typ: str):
         plot = time_plot()
         if plot.name not in names:
             win.project.plots.append(plot)
-    win.study_changed()
-    win.rebuild_tree(("heat_study", None))
+    win.problem_changed()
+    win.rebuild_tree(("problem", None))

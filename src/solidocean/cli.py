@@ -1,6 +1,6 @@
 """Command-line entry point.
 
-    solidocean model.toml            run the study headless, write results ([output])
+    solidocean model.toml            run the problem headless, write results ([output])
     solidocean                       open the GUI
     solidocean --gui model.toml      open a model in the GUI
 """
@@ -25,7 +25,7 @@ def _parse_set(items: list[str]) -> dict[str, str]:
 
 
 def _run(project, out_dir, log, progress):
-    """Run the project's study headless and write its results; None on error."""
+    """Run the project's problem headless and write its results; None on error."""
     from . import physics
     spec = physics.of(project)
     plots = [pl for pl in project.plots if pl.kind != "field" and not spec.plot_unavailable(project, pl)]

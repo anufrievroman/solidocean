@@ -15,7 +15,7 @@ from .style import LINESTYLES, outer_axis, outer_text, plot_ranges, set_scales, 
 
 @dataclass
 class FieldResults:
-    """Base of the results of field studies. Subclasses hold the solution fields and implement
+    """Base of the results of field problems. Subclasses hold the solution fields and implement
     point_values (line plots) and save; `quantities` maps an expression to its values (n_outer, n_times)."""
     outer_name: str = ""
     outer_values: np.ndarray = field(default_factory=lambda: np.zeros(1))

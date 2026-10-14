@@ -58,7 +58,7 @@ def steady_project(order_: int):
         description="Validation: steady heat flow through layers with a boundary resistance and a thin layer",
         variables={"w": "0.25[um]"},
         materials=[_material(n, k) for n, _, _, k in LAYERS] + [_material("Film", K_F)],
-        geometry=[_block(n, x0, x1) for n, x0, x1, _ in LAYERS],
+        objects=[_block(n, x0, x1) for n, x0, x1, _ in LAYERS],
         mesh=MeshSettings(max_size="w/2", order=order_),
         heat=HeatPhysics(initial="300[K]", conditions=[
             HeatCondition("temperature", ["xmin"], f"{T1:g}[K]", name="Hot"),
@@ -141,20 +141,20 @@ class TwoLayer:
 
 
 def transient_project(steps=1200):
-    from solidocean.physics.heat.model import HeatCondition, HeatInterface, HeatPhysics, HeatStudy
+    from solidocean.physics.heat.model import HeatCondition, HeatInterface, HeatPhysics, HeatProblem
     from solidocean.project import MeshSettings, Project
     return Project(
         name="Two layers", physics_kind="heat",
         description="Validation: transient heat flow through two layers with a boundary resistance",
         variables={"w": "0.2[um]"},
         materials=[_material("A", K1, RC1), _material("B", K2, RC2)],
-        geometry=[_block("A", 0.0, L1_ * 1e6), _block("B", L1_ * 1e6, (L1_ + L2_) * 1e6)],
+        objects=[_block("A", 0.0, L1_ * 1e6), _block("B", L1_ * 1e6, (L1_ + L2_) * 1e6)],
         mesh=MeshSettings(max_size="w/2", order=2),
         heat=HeatPhysics(initial=f"{T0:g}[K]", conditions=[
             HeatCondition("temperature", ["xmin"], f"{T1:g}[K]", name="Hot"),
             HeatCondition("temperature", ["xmax"], f"{T0:g}[K]", name="Cold")],
             interfaces=[HeatInterface("resistance", ["A", "B"], f"{R_T:g}[m^2*K/W]", name="Kapitza")],
-            study=HeatStudy(type="transient", t_end=f"{T_END:g}[s]", steps=steps, theta=0.5, save_every=10)))
+            problem=HeatProblem(type="transient", t_end=f"{T_END:g}[s]", steps=steps, theta=0.5, save_every=10)))
 
 
 def run(quick: bool = False) -> Report:
@@ -244,7 +244,7 @@ def run(quick: bool = False) -> Report:
                                              "profiles at three times (Crank-Nicolson, quadratic elements).")
         r.table("Transient two-layer problem.", ["quantity", "value"], [
             ("eigenvalues used", len(ref.modes)),
-            ("time steps (Crank-Nicolson)", p.heat.study.steps),
+            ("time steps (Crank-Nicolson)", p.heat.problem.steps),
             ("largest nodal error for t ≥ 5 ns, relative to T₁ − T₀", f"{err:.1e}")])
         r.check("steady stack: flux and temperatures (P1 and P2)", steady_err, 1e-9)
         r.check("transient: largest nodal error for t ≥ 5 ns", err, 1e-3)

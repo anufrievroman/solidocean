@@ -67,20 +67,20 @@ def timoshenko(L, b, n=3):
 
 
 def project(slenderness: float, h_frac: float = 1 / 3, free_root: bool = False):
-    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidStudy
+    from solidocean.physics.solid.model import SolidCondition, SolidPhysics, SolidProblem
     from solidocean.project import Feature, Material, MeshSettings, Project
     return Project(
         name="Cantilever", physics_kind="solid", description="Validation: bending modes of a cantilever",
         variables={"b": "1[um]", "L": f"{slenderness:g}*b"},
         materials=[Material("M", {"model": "isotropic", "rho": f"{RHO:g}[kg/m^3]", "E": f"{E / 1e9:g}[GPa]",
                                    "nu": str(NU)})],
-        geometry=[Feature("block", "Beam", material="M", params={"center": ["L/2", "0", "0"], "size": ["L", "b", "b"]})],
+        objects=[Feature("block", "Beam", material="M", params={"center": ["L/2", "0", "0"], "size": ["L", "b", "b"]})],
         mesh=MeshSettings(max_size=f"b*{h_frac:g}", order=2),
         solid=SolidPhysics(conditions=[
             SolidCondition("displacement", ["xmin"], displacement=["", "0", "0"], name="Root centre",
                            box={"min": ["0", "-0.35*b", "-0.35*b"], "max": ["0", "0.35*b", "0.35*b"]})
             if free_root else SolidCondition("fixed", ["xmin"], name="Clamp")],
-            symmetry=["xmin"] if free_root else [], study=SolidStudy(num_eigs=14)))
+            symmetry=["xmin"] if free_root else [], problem=SolidProblem(num_eigs=14)))
 
 
 def bending_modes(p, n=3):
