@@ -290,13 +290,6 @@ class Project:
     @classmethod
     def from_dict(cls, d: dict) -> "Project":
         sections = {spec.section: spec for spec in physics.REGISTRY.values()}
-        renamed = [(old, new) for old, new in (("[[geometry]]", "[[objects]]"), ("[study]", "[problem]"))
-                   if old.strip("[]") in d]
-        renamed += [(f"[{name}.study]", f"[{name}.problem]") for name in sections
-                    if isinstance(d.get(name), dict) and "study" in d[name]]
-        if renamed:
-            raise ValueError("renamed section(s): " + ", ".join(f"{old} is now {new}" for old, new in renamed)
-                             + "; rename them in the model file")
         unknown = set(d) - set(cls.SECTIONS) - set(sections)
         if unknown:
             raise ValueError(f"unknown section(s): {', '.join(sorted(unknown))}")

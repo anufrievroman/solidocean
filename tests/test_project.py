@@ -114,30 +114,19 @@ def test_log_axes_round_trip_and_draw(tmp_path):
     plt.close(fig)
 
 
-def test_objects_section_and_old_geometry_name():
-    """The geometry is the [[objects]] section; a file with the old [[geometry]] name says what to rename."""
-    import pytest
-
+def test_objects_section():
+    """The geometry is the [[objects]] section."""
     from solidocean import templates
     from solidocean.project import Project
     d = templates.create("square").to_dict()
     assert "objects" in d and "geometry" not in d
     assert Project.from_dict(d).objects[0].name == d["objects"][0]["name"]
-    old = {("geometry" if k == "objects" else k): v for k, v in d.items()}
-    with pytest.raises(ValueError, match=r"\[\[geometry\]\] is now \[\[objects\]\]"):
-        Project.from_dict(old)
 
 
-def test_problem_sections_and_old_study_names():
-    """The problem settings are [problem] and [<physics>.problem]; old [study] names say what to rename."""
-    import pytest
-
+def test_problem_sections():
+    """The problem settings are [problem] and [<physics>.problem]."""
     from solidocean import templates
     from solidocean.project import Project
     d = templates.create("heat_3omega").to_dict()
     assert "problem" in d and "problem" in d["heat"] and "study" not in d and "study" not in d["heat"]
     assert Project.from_dict(d).heat.problem.type == "frequency"
-    old = {("study" if k == "problem" else k): v for k, v in d.items()}
-    old["heat"] = {("study" if k == "problem" else k): v for k, v in d["heat"].items()}
-    with pytest.raises(ValueError, match=r"\[study\] is now \[problem\], \[heat.study\] is now \[heat.problem\]"):
-        Project.from_dict(old)
