@@ -20,8 +20,9 @@ import numpy as np  # noqa: E402
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 MODELS = HERE / "models"
-FIGURES = ROOT / "docs" / "validation"
-FIGURE_LINK = "validation"          # figures relative to docs/validation.md
+DOCS = ROOT.parent / "solidocean-docs" / "docs"      # the documentation repository, cloned next to this one
+FIGURES = DOCS / "images" / "validation"             # set by run.py --docs
+FIGURE_LINK = "../images/validation"                 # figures relative to docs/validation/report.md
 
 REF_COLOR, FEM_COLOR = "0.35", "C3"
 COLORS = ["C0", "C3", "C2", "C1", "C4"]

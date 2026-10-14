@@ -330,7 +330,7 @@ class Project:
 
     def dumps(self) -> str:
         """The model as the text of its TOML file."""
-        return "# SolidOcean model file — see docs/input-format.md\n\n" + tomlio.dumps(self.to_dict())
+        return "# SolidOcean model file — see https://anufrievroman.gitbook.io/solidocean/model-file\n\n" + tomlio.dumps(self.to_dict())
 
     def save(self, path: str | Path | None = None) -> Path:
         path = Path(path or self.path)

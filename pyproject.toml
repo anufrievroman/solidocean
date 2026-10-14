@@ -16,6 +16,10 @@ dependencies = ["numpy", "scipy", "gmsh", "matplotlib", "tomli_w"]
 gui = ["PySide6", "pyvista", "pyvistaqt", "pillow"]
 dev = ["pytest"]
 
+[project.urls]
+Documentation = "https://anufrievroman.gitbook.io/solidocean"
+Source = "https://github.com/anufrievroman/solidocean"
+
 [project.scripts]
 solidocean = "solidocean.cli:main"
 
