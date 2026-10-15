@@ -516,6 +516,17 @@ def quantity_menu(project, pick) -> QComboBox:
 
 
 REDUCTION_LABELS = {"": "Value", "mean": "Mean", "integral": "Integral", "max": "Maximum", "min": "Minimum"}
+# where in the chosen place a reduction runs: its volume, its whole outer surface or one bounding-box face
+PARTS = {"": "volume", "all": "surface", **{f: f"{f} face" for f in ("xmin", "xmax", "ymin", "ymax", "zmin", "zmax")}}
+
+
+def _place_text(place: str) -> str:
+    """How a label names the second argument of a reduction: "in Pad", "on the zmax face of Film"."""
+    on, colon, part = place.rpartition(":")
+    if not colon and place not in PARTS:
+        return f"in {place}"
+    part = "surface" if part == "all" else f"{part} face"
+    return f"on the {part} of {on}" if on else f"on the {part}"
 
 
 def _uses_field(expr: str, field_names) -> bool:
@@ -537,12 +548,12 @@ def builder_label(project, expr: str) -> str:
     unit = re.search(r"\s*\(([^()]*)\)$", label)
     name = label[:unit.start()] if unit else label
     if op == "integral":
-        unit = None     # the unit changes (times m³)
+        unit = None     # the unit changes (times m³, or m² over a surface)
     if op:
         name = (f"Integral of {name[0].lower() + name[1:]}" if op == "integral"
                 else f"{REDUCTION_LABELS[op]} {name[0].lower() + name[1:]}")
     if place:
-        name += f" in {place}"
+        name += f" {_place_text(place)}"
     return name + (f" ({unit.group(1)})" if unit else "")
 
 
@@ -555,8 +566,8 @@ def quantity_builder(panel, editor, run, reduce: bool = True) -> tuple[QHBoxLayo
     p, pl = panel.p, getattr(panel, "pl", None)
     spec = physics.of(p)
     row = QHBoxLayout()
-    op, qty, place = QComboBox(), QComboBox(), QComboBox()
-    for box in (op, qty, place):
+    op, qty, place, part = QComboBox(), QComboBox(), QComboBox(), QComboBox()
+    for box in (op, qty, place, part):
         box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         box.setMinimumContentsLength(5)
     for fn, label in REDUCTION_LABELS.items():
@@ -568,9 +579,14 @@ def quantity_builder(panel, editor, run, reduce: bool = True) -> tuple[QHBoxLayo
     place.addItem("whole model", "")
     for o in objects(p):
         place.addItem(o, o)
+    for key, label in PARTS.items():
+        part.addItem(label, key)
     op.setToolTip("How a field is reduced to one number (scalars such as time are taken as they are)")
     qty.setToolTip("The quantity; its expression is shown when hovering an item")
     place.setToolTip("The whole model, or one object or material")
+    part.setToolTip("Its volume, or its outer surface (interfaces with other objects excluded) or one face of its "
+                    "bounding box. Over a surface, mean is the area average and integral the surface integral; "
+                    "nx, ny, nz are the outward normal there")
 
     def sync():
         field = _uses_field(qty.currentData() or "", spec.field_names)
@@ -581,12 +597,14 @@ def quantity_builder(panel, editor, run, reduce: bool = True) -> tuple[QHBoxLayo
         op.model().item(0).setEnabled(not field)
         op.setEnabled(field)
         place.setEnabled(field)
+        part.setEnabled(field)
 
     def built() -> str:
-        expr, fn, o = qty.currentData() or "", op.currentData(), place.currentData()
+        expr, fn, o, side = qty.currentData() or "", op.currentData(), place.currentData(), part.currentData()
         if not reduce or not fn:
             return expr
-        return f'{fn}({expr}, "{o}")' if o else f"{fn}({expr})"
+        where = f"{o}:{side}" if o and side else o or side
+        return f'{fn}({expr}, "{where}")' if where else f"{fn}({expr})"
 
     def use():
         old = editor.text().strip()
@@ -617,6 +635,7 @@ def quantity_builder(panel, editor, run, reduce: bool = True) -> tuple[QHBoxLayo
     if reduce:
         row.addWidget(QLabel("in"))
         row.addWidget(place, 3)
+        row.addWidget(part, 2)
     return row, [use_b, insert_b]
 
 

@@ -8,6 +8,7 @@ import csv
 import json
 import time
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -179,7 +180,7 @@ def compute_quantity(results: ModalResults, project, quantity: str) -> np.ndarra
                 ub = solid_fields.normalise(u[b].astype(complex), quad) if needs else None
                 out[i, j, b] = fields.evaluate(q, _scalars(ev, results.freqs[i, j, b], results.k[i, j], b),
                                                quad if needs else None,
-                                               solid_fields.at_quadrature(quad, ub, cel) if needs else None)
+                                               partial(solid_fields.at_quadrature, u=ub, cel=cel) if needs else None)
     results.quantities[q] = out
     return out
 
@@ -301,7 +302,7 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
                     ub = solid_fields.normalise(u[b], quad) if q in field_qs else None
                     qvals[q][i, j, b] = fields.evaluate(
                         q, _scalars(ev, f[b], k, b), quad,
-                        solid_fields.at_quadrature(quad, ub, solver._model.cel) if ub is not None else None)
+                        partial(solid_fields.at_quadrature, u=ub, cel=solver._model.cel) if ub is not None else None)
             step += 1
             solver.progress(step, total)
         solver.log(f"  lowest: {', '.join(f'{v / 1e9:.4g}' for v in freqs[i, 0, :min(6, n_eigs)])} GHz")

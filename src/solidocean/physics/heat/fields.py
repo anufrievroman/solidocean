@@ -36,7 +36,7 @@ def at_quadrature(quad, T: np.ndarray, kel=None) -> dict:
         out = dict(Tx=g[..., 0], Ty=g[..., 1], Tz=g[..., 2])
         if kel is not None:
             Tq = quad.at_points(Tr)
-            q = _flux(kel, np.broadcast_to(np.arange(len(Tq))[:, None], Tq.shape), Tq, g)
+            q = _flux(kel, np.broadcast_to(quad.elements[:, None], Tq.shape), Tq, g)
             out.update(qx=q[..., 0], qy=q[..., 1], qz=q[..., 2])
         return out
 

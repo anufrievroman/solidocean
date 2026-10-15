@@ -96,9 +96,10 @@ def split_nodes(cells: np.ndarray, order: int, cut: np.ndarray, faces=None):
     return out, pairs[~first, 0], (t1, t2)
 
 
-def boundary_faces(cells: np.ndarray, order: int, owners: bool = False):
+def boundary_faces(cells: np.ndarray, order: int, owners: bool = False, local: bool = False):
     """Triangles (F, 3|6) on the outer boundary, gmsh triangle node order (vertices, then edges 01 12 20).
-    With owners=True also the index of the tetrahedron each triangle belongs to."""
+    With owners=True also the index of the tetrahedron each triangle belongs to; with local=True also which
+    face of it the triangle is (k: the face without vertex k)."""
     tris = []
     for a, b, c in _FACES:
         f = [cells[:, a], cells[:, b], cells[:, c]]
@@ -110,6 +111,8 @@ def boundary_faces(cells: np.ndarray, order: int, owners: bool = False):
     key = np.sort(tris[:, :3], axis=1)
     _, idx, counts = np.unique(key, axis=0, return_index=True, return_counts=True)
     idx = idx[counts == 1]  # faces belonging to one tet only
+    if local:
+        return tris[idx], idx % len(cells), idx // len(cells)
     return (tris[idx], idx % len(cells)) if owners else tris[idx]
 
 

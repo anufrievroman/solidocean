@@ -68,7 +68,7 @@ def at_quadrature(quad, u: np.ndarray, cel: np.ndarray | None = None) -> dict:
     if cel is not None:
         def mechanics():
             grad = np.stack([quad.grad_at_points(u[:, c]) for c in range(3)], axis=-2)   # (E, Q, 3, 3)
-            return _mechanics(grad, cel[:, None])
+            return _mechanics(grad, cel[quad.elements][:, None])
         out.update({name: mechanics for name in MECHANICS})
     return out
 

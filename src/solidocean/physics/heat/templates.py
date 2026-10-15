@@ -234,14 +234,14 @@ def heat_3omega() -> Project:
 
 def heat_fdtr() -> Project:
     probe = "exp(-4*log(2)*(x^2 + y^2)/w^2)"
-    weighted = f'integral(Tim*{probe}, "Film"), integral(Tre*{probe}, "Film")'
+    weighted = f'integral(Tim*{probe}, "Film:zmax"), integral(Tre*{probe}, "Film:zmax")'
     return Project(
         name="FDTR: gold transducer on silicon", physics_kind="heat", frequency_unit="MHz",
         description="Frequency-domain thermoreflectance: a pump laser modulated at f heats a gold transducer film on "
                     "silicon through a Gaussian spot (FWHM w, absorbed power amplitude P); the probe, a Gaussian of "
-                    "the same size, reads the film's temperature. The phase of the probed temperature against f is "
-                    "what FDTR fits for the substrate's conductivity and the Au | Si boundary conductance G. A quarter "
-                    "of the spot (symmetry planes x = 0 and y = 0); far faces at T0",
+                    "the same size, reads the temperature of the film's top surface. The phase of the probed "
+                    "temperature against f is what FDTR fits for the substrate's conductivity and the Au | Si boundary "
+                    "conductance G. A quarter of the spot (symmetry planes x = 0 and y = 0); far faces at T0",
         variables={"w": "2[um]", "d": "100[nm]", "R": "10[um]", "P": "1[mW]", "G": "150[MW/(m^2*K)]",
                     "T0": "300[K]", "f": "1[MHz]", "q0": "4*log(2)*P/(pi*w^2)"},
         materials=[_si(), _lib("Au")],
@@ -260,8 +260,8 @@ def heat_fdtr() -> Project:
                ResultPlot("Probe phase", f"atan2({weighted}) * 180/pi", kind="quantity",
                           y_label="Phase of the probed temperature (°)",
                           style=PlotStyle(x_log=True)),
-               ResultPlot("Probe amplitude", f'sqrt(integral(Tre*{probe}, "Film")^2 + integral(Tim*{probe}, "Film")^2)'
-                          f' / integral({probe}, "Film")', kind="quantity",
+               ResultPlot("Probe amplitude", f'sqrt(integral(Tre*{probe}, "Film:zmax")^2 + '
+                          f'integral(Tim*{probe}, "Film:zmax")^2) / integral({probe}, "Film:zmax")', kind="quantity",
                           y_label="Amplitude of the probed temperature (K)", style=PlotStyle(x_log=True, y_log=True))])
 
 

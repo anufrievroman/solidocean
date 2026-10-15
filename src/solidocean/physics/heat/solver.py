@@ -16,6 +16,7 @@ import re
 import threading
 import time
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -471,7 +472,7 @@ class HeatSolver:
                 m.quad = fields.Quadrature.of(m.mesh)
             for q in quantities:
                 qvals[q].append([fields.evaluate(q, {**ev.values, "time": t}, m.quad,
-                                                 heat_fields.at_quadrature(m.quad, Tj, m.cond))
+                                                 partial(heat_fields.at_quadrature, T=Tj, kel=m.cond))
                                  for t, Tj in zip(times, T)])
             if np.iscomplexobj(T):
                 self.log(f"  temperature amplitude: up to {np.abs(T[-1]).max():.6g} K")
@@ -502,6 +503,6 @@ def compute_quantity(results: HeatResults, project, quantity: str) -> np.ndarray
         quad = quads.setdefault(id(mesh), fields.Quadrature.of(mesh))
         for j, t in enumerate(results.times):
             out[i, j] = fields.evaluate(q, {**ev.values, "time": t}, quad,
-                                        heat_fields.at_quadrature(quad, T[j], results.kels[i]))
+                                        partial(heat_fields.at_quadrature, T=T[j], kel=results.kels[i]))
     results.quantities[q] = out
     return out

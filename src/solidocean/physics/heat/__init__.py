@@ -9,6 +9,7 @@ import numpy as np
 from ..base import PhysicsSpec
 from . import fields as heat_fields
 from . import plots
+from ...fields import SURFACE_HELP
 from .model import HEAT_PROBLEM_TYPES, HeatPhysics, validate_settings
 from .properties import REFERENCE_T, Material
 
@@ -18,10 +19,12 @@ HELP = {
               "frequency domain: Tamp, Tphase (amplitude, K, and phase, degrees, of the oscillation), Tre, Tim (its "
               "in-phase and out-of-phase parts)",
     "Reduce fields with": "mean(f), integral(f), max(f), min(f); over one object (one of the Objects, "
-                          "or a material): mean(f, \"pad\")",
+                          "or a material): mean(f, \"pad\")" + SURFACE_HELP,
     "Functions": "abs, sqrt, exp, log, sin, cos, tan, atan2, if(cond, a, b)",
     "Examples": "mean(T) · mean(T, \"pad\") (average temperature of the object 'pad') · max(T) · mean(T*(x>0)) · "
                 "integral(qx) / a (heat flow per length) · -mean(qx)·L/ΔT (effective conductivity) · "
+                "integral(qx*nx + qy*ny + qz*nz, \"xmax\") (heat leaving through the xmax face, W) · "
+                "mean(T, \"Film:zmax\") (temperature of the film's top surface) · "
                 "sqrt(mean(Tre)^2 + mean(Tim)^2) (amplitude of the mean oscillation) · "
                 "atan2(mean(Tim), mean(Tre)) * 180/pi (its phase)",
 }

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -77,7 +78,7 @@ def run(solver, quantities=()) -> StaticResults:
         res.meshes[i], res.cels[i] = m.mesh, m.cel
         if quantities:
             quad = quads.setdefault(id(m.mesh), fields.Quadrature.of(m.mesh))
-            values = solid_fields.at_quadrature(quad, u, m.cel)
+            values = partial(solid_fields.at_quadrature, u=u, cel=m.cel)
             for q in quantities:
                 qvals[q][i, 0] = fields.evaluate(q, ev.values, quad, values)
         solver.log(f"  largest displacement {np.linalg.norm(np.abs(u), axis=1).max():.4g} m"
@@ -102,6 +103,6 @@ def compute_quantity(results: StaticResults, project, quantity: str) -> np.ndarr
     for i, u in enumerate(results.U):
         ev = base.with_overrides({results.outer_name: results.outer_values[i]}) if results.outer_name else base
         quad = quads.setdefault(id(results.meshes[i]), fields.Quadrature.of(results.meshes[i]))
-        out[i, 0] = fields.evaluate(q, ev.values, quad, solid_fields.at_quadrature(quad, u, results.cels[i]))
+        out[i, 0] = fields.evaluate(q, ev.values, quad, partial(solid_fields.at_quadrature, u=u, cel=results.cels[i]))
     results.quantities[q] = out
     return out

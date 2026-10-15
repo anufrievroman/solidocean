@@ -9,6 +9,7 @@ from ... import materials as mat
 from ..base import PhysicsSpec
 from . import fields as solid_fields
 from . import plots
+from ...fields import SURFACE_HELP
 from .model import PROBLEM_TYPES, SolidPhysics, validate_settings
 
 DISPLACEMENT_MAGNITUDE = "sqrt(abs(ux)^2 + abs(uy)^2 + abs(uz)^2)"   # also the amplitude of a harmonic response
@@ -17,7 +18,7 @@ MODAL_HELP = {
     "Scalars": "freq (Hz), omega (rad/s), kx, ky, kz, k (rad/m), mode (band number), any model variable, pi",
     "Fields": "ux, uy, uz (complex displacement, normalised so mean(|u|²) = 1), strains exx..exy, stresses "
               "sxx..sxy (Pa) and mises of the normalised mode, x, y, z (m)",
-    "Reduce fields with": "mean(f), integral(f), max(f), min(f)",
+    "Reduce fields with": "mean(f), integral(f), max(f), min(f)" + SURFACE_HELP,
     "Functions": "abs, real, imag, conj, angle, sqrt, exp, log, sin, cos, tan, atan2, if(cond, a, b)",
     "Examples": "freq · mean(abs(uz)^2) (out-of-plane fraction) · mean(abs(ux)^2*(z>0)) · max(abs(uz))",
 }
@@ -25,7 +26,8 @@ HARMONIC_HELP = {
     "Scalars": "any model variable (e.g. the swept frequency f), pi",
     "Fields": "ux, uy, uz (complex displacement amplitude, m: u(t) = Re(u e^{iωt})), strains exx..exy, stresses "
               "sxx..sxy (Pa, complex), mises (of the real part), x, y, z (m)",
-    "Reduce fields with": "mean(f), integral(f), max(f), min(f); over one object: mean(f, \"probe\")",
+    "Reduce fields with": "mean(f), integral(f), max(f), min(f); over one object: mean(f, \"probe\")"
+                          + SURFACE_HELP,
     "Functions": "abs, real, imag, conj, angle, sqrt, exp, log, sin, cos, tan, atan2, if(cond, a, b)",
     "Examples": "mean(abs(uz), \"probe\") (amplitude of the out-of-plane motion in the object 'probe') · "
                 "max(abs(ux)) · angle(mean(uz, \"probe\")) (phase, rad)",
@@ -35,10 +37,11 @@ STATIC_HELP = {
     "Fields": "ux, uy, uz (displacement, m), exx, eyy, ezz, eyz, exz, exy (strain), sxx, syy, szz, syz, sxz, sxy "
               "(stress, Pa), mises (von Mises stress, Pa), x, y, z (m)",
     "Reduce fields with": "mean(f), integral(f), max(f), min(f); over one object (one of the Objects, "
-                          "or a material): mean(f, \"pad\")",
+                          "or a material): mean(f, \"pad\")" + SURFACE_HELP,
     "Functions": "abs, sqrt, exp, log, sin, cos, tan, atan2, if(cond, a, b)",
     "Examples": "min(uz) (largest downward deflection) · max(mises) · mean(sxx) / mean(exx) (Young's modulus "
-                "along x) · mean(uz, \"pad\") · -min(uz) / 1[nm] (deflection in nm)",
+                "along x) · mean(uz, \"pad\") · -min(uz) / 1[nm] (deflection in nm) · "
+                "integral(sxx*nx + sxy*ny + sxz*nz, \"xmax\") (force along x on the xmax face, N)",
 }
 
 

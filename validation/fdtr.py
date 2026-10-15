@@ -19,11 +19,23 @@ film by
 $$Z \leftarrow \frac{Z + \tanh(q_f d)/(k_f q_f)}{1 + k_f q_f Z \tanh(q_f d)},\qquad q = \sqrt{\lambda^2 +
 i\omega/\alpha},$$
 and the probed temperature is $\Delta T = \frac{P}{2\pi}\int_0^\infty \lambda Z(\lambda)\,
-e^{-\lambda^2(w_0^2 + w_1^2)/8}\,d\lambda$ ($w_0$, $w_1$ the $1/e^2$ radii of pump and probe). The model is the
-template "FDTR: gold transducer on silicon" (a quarter of the spot, the boundary conductance as a contact
-resistance $1/G$, far faces at the ambient temperature); the probed temperature is the film's top
-surface temperature weighted by the probe's Gaussian. (The template's plots weight the film's volume instead,
-which reads about 1 % lower: the film's top is warmer than its average by about $q d / 2k_f$.)
+e^{-\lambda^2(w_0^2 + w_1^2)/8}\,d\lambda$ ($w_0$, $w_1$ the $1/e^2$ radii of pump and probe, here both
+$w/\sqrt{2\ln 2}$). The model is the template "FDTR: gold transducer on silicon" (a quarter of the spot, the
+boundary conductance as a contact resistance $1/G$, far faces at the ambient temperature). Its solution is the
+complex amplitude $\hat T = T_\mathrm{re} + i\,T_\mathrm{im}$ of $T(t) = T_0 + \mathrm{Re}(\hat T e^{i\omega t})$,
+and the probe reads it on the film's top surface $S$, weighted by its Gaussian intensity
+$g(x, y) = \exp(-4\ln 2\,(x^2 + y^2)/w^2)$:
+$$\Delta\hat T = \frac{\int_S g\,\hat T\,dA}{\int_S g\,dA},\qquad
+|\Delta\hat T| = \frac{\sqrt{\left(\int_S g\,T_\mathrm{re}\,dA\right)^2 + \left(\int_S g\,T_\mathrm{im}\,dA\right)^2}}
+{\int_S g\,dA},\qquad
+\varphi = \operatorname{atan2}\left(\int_S g\,T_\mathrm{im}\,dA,\ \int_S g\,T_\mathrm{re}\,dA\right).$$
+The in-phase and out-of-phase parts are averaged before the magnitude is taken, as a lock-in amplifier does:
+points across the spot oscillate with slightly different phases, so the average of the local amplitude
+$|\hat T|$ would overstate the signal. Meshing a quarter of the spot divides both integrals by the same 4, which
+cancels. In the template these are the expressions of its plots, `sqrt(integral(Tre*g, "Film:zmax")^2 +
+integral(Tim*g, "Film:zmax")^2) / integral(g, "Film:zmax")` and `atan2(integral(Tim*g, "Film:zmax"),
+integral(Tre*g, "Film:zmax")) * 180/pi` with $g$ written out; the comparison below evaluates the same integrals
+directly from the boundary triangles, an independent route that agrees with them to round-off.
 """
 
 
