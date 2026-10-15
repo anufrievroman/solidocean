@@ -525,3 +525,39 @@ def test_the_spectrum_plot_marks_the_ceiling_when_carried_past_it():
     scale = 1e9 if p.frequency_unit == "GHz" else 1.0
     assert marks[0].get_xdata()[0] * scale == pytest.approx(spectra.complete_to(r))
     plt.close(fig)
+
+
+def test_every_zone_plot_explains_its_sums():
+    """Each plot over the zone carries a Formalism block, and a spectrum explains the one it draws rather
+    than spectra in general; the field view has none."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    from solidocean.gui.physics.solid import SolidUI
+    from solidocean.physics.solid.plots import (band_map, band_surfaces, conductance_plot, field_plot,
+                                                spectrum_plot)
+
+    p = templates.create("zone_crystal")
+    ui = SolidUI()
+    for plot in (band_map(), band_surfaces(), conductance_plot()):
+        assert ui.plot_formalism(p, plot), plot.kind
+    assert ui.plot_formalism(p, field_plot()) == ""
+    spectra_text = {kind: ui.plot_formalism(p, spectrum_plot(spectrum=kind))
+                    for kind in ("dos", "velocity", "flux")}
+    assert len(set(spectra_text.values())) == 3                  # one explanation each, not a shared one
+    assert "Bose-Einstein" in spectra_text["flux"] and "Bose-Einstein" not in spectra_text["dos"]
+    power = ui.plot_formalism(p, conductance_plot(transport="power"))
+    assert power != ui.plot_formalism(p, conductance_plot(transport="conductance"))
+
+    w = MainWindow()
+    w.set_project(p)
+    app.processEvents()
+    index = next(n for n, pl in enumerate(p.plots) if pl.kind == "spectrum")
+    w.select_node("plot", index)
+    app.processEvents()
+    assert w.settings.widget().formalism                          # the panel picked it up
+    w.dirty = False
+    w.close()

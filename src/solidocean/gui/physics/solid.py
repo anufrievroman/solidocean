@@ -7,6 +7,7 @@ import numpy as np
 from ... import units
 from ...physics.solid.model import SOLID_CONDITION_TITLES
 from ..panels import solid as sp
+from ..panels.common import equations
 from .base import PhysicsUI
 from .common import condition_highlights
 
@@ -15,6 +16,61 @@ STATIONARY_PLOT_HELP = {
                 "Variable sweep). Click a point to see the field.",
     "line": "A cross-section: the quantity along a straight line from a start to an end point. Gaps mark holes or "
             "points outside the structure.",
+}
+
+
+# How the plots over the Brillouin zone arrive at their numbers. The sums run over every band j and every
+# triangle m of the wavevector mesh whose range contains the frequency, L is the length of the level set in
+# that triangle and S the copies of the meshed region that fill the zone.
+BANDS_OVER_THE_ZONE = (
+    "ω<sub>j</sub>(k)", "The j-th lowest eigenfrequency at each wavevector of the mesh, from the same "
+    "eigenproblem as a dispersion. Over each triangle it is the plane through the three corner "
+    "frequencies, which is where the facets come from; bands are numbered by frequency, not followed "
+    "through their crossings.")
+MESH_SUMS = (
+    "L<sub>jm</sub>(f),&nbsp; ∇f<sub>jm</sub>", "A band is a plane over each triangle, so the level set "
+    "ω<sub>j</sub>(k) = f inside it is a straight segment of length L, and its gradient is constant. Every "
+    "integral over the zone becomes a sum over the (band, triangle) pairs the level crosses.")
+ZONE_FORMALISM = {
+    "kmap": equations(BANDS_OVER_THE_ZONE,
+                      ("ω<sub>j</sub>(k) = const", "The filled contours: the level sets of that band, drawn "
+                       "on the meshed region with the zone outlined behind it.")),
+    "surfaces": equations(BANDS_OVER_THE_ZONE,
+                          ("", "Each band is drawn as its own surface over k<sub>x</sub>, k<sub>y</sub>. "
+                           "Where two surfaces touch, the branches cross and the numbering swaps between "
+                           "them.")),
+    "dos": equations(MESH_SUMS,
+                     ("D(f) = (1/4π²) S Σ<sub>j,m</sub> L<sub>jm</sub>(f) / |∇f<sub>jm</sub>|",
+                      "States per unit frequency and unit area: each segment counts for its length divided "
+                      "by how fast the band climbs across it. Divide by the membrane thickness for a "
+                      "per-volume density.")),
+    "velocity": equations(MESH_SUMS,
+                          ("|v<sub>j</sub>| = 2π |∇<sub>k</sub>f<sub>j</sub>|", "The group velocity of a "
+                           "band over a triangle, from the same gradient (k is in rad/m)."),
+                          ("⟨v⟩(f) = 2π Σ<sub>j,m</sub> L<sub>jm</sub> / Σ<sub>j,m</sub> L<sub>jm</sub> / "
+                           "|∇f<sub>jm</sub>|", "Averaged over the states at that frequency, weighted as "
+                           "the density of states weights them — not over the wavevectors.")),
+    "flux": equations(MESH_SUMS,
+                      ("n(f, T) = 1 / (e<sup>hf/k<sub>B</sub>T</sup> − 1)", "The Bose-Einstein occupation "
+                       "of a mode of frequency f."),
+                      ("p(f, T) = h f n(f, T) S Σ<sub>j,m</sub> L<sub>jm</sub>(f) / 2π²", "The energy a "
+                       "convex boundary radiates into the structure, per unit frequency and unit length of "
+                       "that boundary. Averaging the flux over the directions of that boundary cancels the "
+                       "group velocity against the Jacobian of the change of variable from k to f, which "
+                       "is what leaves the bare contour length — and what lets a mesh of the irreducible "
+                       "wedge stand for the whole zone, since a flux along one direction could not.")),
+    "power": equations(("P(T) = ∫ p(f, T) df", "The heat flux of the spectrum, integrated over the "
+                        "computed bands: the power radiated per unit length of the boundary."),
+                       ("", "The sum over the mesh does not depend on the temperature, so it is taken once "
+                        "and each temperature is a quadrature over the same sampled spectrum.")),
+    "conductance": equations(("∂n/∂T = (hf/k<sub>B</sub>T²) e<sup>x</sup>/(e<sup>x</sup> − 1)²,&nbsp; "
+                              "x = hf/k<sub>B</sub>T", "How the occupation of a mode answers a change of "
+                              "temperature."),
+                             ("G(T) = dP/dT = ∫ h f (∂n/∂T) S Σ<sub>j,m</sub> L<sub>jm</sub>(f) / 2π² df",
+                              "The ballistic thermal conductance per unit length of the boundary: what the "
+                              "band structure carries when nothing scatters. The integral stops where the "
+                              "computed bands stop being complete, so it is a lower bound once k<sub>B</sub>T/h "
+                              "approaches that frequency.")),
 }
 
 
@@ -157,3 +213,8 @@ class SolidUI(PhysicsUI):
 
     def plot_help(self, project, kind):
         return STATIONARY_PLOT_HELP.get(kind, "") if project.solid.problem.field_problem else ""
+
+    def plot_formalism(self, project, plot):
+        """The plots over the zone explain their sums; a spectrum explains the one it draws."""
+        key = {"spectrum": plot.spectrum, "conductance": plot.transport}.get(plot.kind, plot.kind)
+        return ZONE_FORMALISM.get(key, "")

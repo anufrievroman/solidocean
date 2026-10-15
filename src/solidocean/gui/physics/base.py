@@ -58,3 +58,7 @@ class PhysicsUI:
 
     def plot_help(self, project, kind: str) -> str:
         return ""
+
+    def plot_formalism(self, project, plot) -> str:
+        """How a plot's values are arrived at, collapsed under "Formalism" (panels.common.equations)."""
+        return ""

@@ -83,6 +83,7 @@ class PlotPanel(Panel):
         from ..physics import of as ui_of
         self.ui = ui_of(win.project)
         self.help = self.ui.plot_help(win.project, self.pl.kind) or PLOT_HELP.get(self.pl.kind, "")
+        self.formalism = self.ui.plot_formalism(win.project, self.pl)
         self.q_status = None
         super().__init__(win)
 
