@@ -286,3 +286,50 @@ def test_loft_sections_are_added_and_removed_in_the_object_panel():
     w.cancel.set()
     w.dirty = False
     w.close()
+
+
+def test_structure_and_plot_can_share_the_window():
+    """The two result views sit behind tabs, side by side or stacked; the widgets are never reparented, so
+    the 3D view keeps its render context, and a plot drawn while its view is hidden (a run ends with the
+    Structure in front) must not fall over a zero-size figure."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    w = MainWindow()
+    w.resize(1400, 800)
+    w.show()
+    w.set_project(templates.create("square"))
+    app.processEvents()
+    views, parents = w.views, (w.viewer.parent(), w.plot.parent())
+
+    assert views.mode == "tabs" and views.bar.isVisible()
+    assert w.viewer.isVisible() and not w.plot.isVisible()
+
+    views.set_mode("side")
+    app.processEvents()
+    assert w.viewer.isVisible() and w.plot.isVisible() and not views.bar.isVisible()
+    assert views.splitter.orientation() == Qt.Orientation.Horizontal
+    left, right = views.splitter.sizes()
+    assert abs(left - right) <= 1                      # the handle starts in the middle
+
+    views.set_mode("stacked")
+    app.processEvents()
+    assert views.splitter.orientation() == Qt.Orientation.Vertical
+    top, bottom = views.splitter.sizes()
+    assert abs(top - bottom) <= 1
+
+    views.set_mode("tabs")
+    views.setCurrentWidget(w.plot)
+    app.processEvents()
+    assert w.plot.isVisible() and not w.viewer.isVisible()
+    assert views.bar.currentIndex() == 1               # the tab follows the code's choice
+    assert (w.viewer.parent(), w.plot.parent()) == parents    # nothing was reparented on the way
+
+    views.setCurrentWidget(w.viewer)
+    app.processEvents()
+    w.plot.show_message("drawn while hidden")          # used to raise: singular transform
+    assert min(w.plot.figure.get_size_inches()) >= w.plot.MIN_INCHES
+    w.dirty = False
+    w.close()

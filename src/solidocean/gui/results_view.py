@@ -110,7 +110,7 @@ class ResultsMixin:
         if pdef.kind == "field":
             return self.show_field()
         if switch_tab:
-            self.tabs.setCurrentWidget(self.plot)
+            self.views.setCurrentWidget(self.plot)
         why = self.plot_unavailable(pdef)
         if why:
             self.plot.show_message(why)
@@ -288,7 +288,7 @@ class ResultsMixin:
         self.mark_selection()
         self._mode = None
         self._view = "field"
-        self.tabs.setCurrentWidget(self.viewer)
+        self.views.setCurrentWidget(self.viewer)
         self.ui.show_field(self)
 
     def show_mode(self, i=None, j=None, b=None):
@@ -330,7 +330,7 @@ class ResultsMixin:
     def _display_mode(self, mesh, u, title):
         self._mode = (mesh, u, title)
         self._view = "mode"
-        self.tabs.setCurrentWidget(self.viewer)
+        self.views.setCurrentWidget(self.viewer)
         comp = self.field_component if self.field_component in self.viewer.COMPONENTS else "|u|"
         self.viewer.show_mode(mesh, u, title, self.deform_scale, comp, style=self.field_style)
         if self.mode_animate:

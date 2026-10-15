@@ -17,7 +17,7 @@ from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QDockWidget, QFileDialog, QLabel, QListWidget, QListWidgetItem,
     QMainWindow, QMenu, QMessageBox, QPushButton, QSizePolicy, QToolButton, QVBoxLayout, QPlainTextEdit,
-    QProgressBar, QScrollArea, QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem, QWidget,
+    QProgressBar, QScrollArea, QSplitter, QTreeWidget, QTreeWidgetItem, QWidget,
 )
 
 from .. import meshing, physics, units
@@ -31,6 +31,7 @@ from .panels import results as rp
 from .panels.common import model_box, swatch
 from .panels.problem import VariableSweepPanel
 from .plot_canvas import PlotCanvas
+from .view_area import ViewArea
 from .results_view import ResultsMixin
 from .viewer import Viewer
 from .worker import Task
@@ -143,14 +144,12 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.plot = PlotCanvas()
         self.plot.picked.connect(self.pick_mode)
         self.plot.deselected.connect(self.deselect)
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self.viewer, "Structure")
-        self.tabs.addTab(self.plot, "Plot")
+        self.views = ViewArea(self.viewer, self.plot)
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.addWidget(self.tree)
         split.addWidget(self.settings)
-        split.addWidget(self.tabs)
+        split.addWidget(self.views)
         split.setSizes([230, 470, 800])
         self.setCentralWidget(split)
 
@@ -418,7 +417,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         self._view = view
         self._overlay_line()
         if switch_tab:
-            self.tabs.setCurrentWidget(self.viewer)
+            self.views.setCurrentWidget(self.viewer)
         return True
 
     UNIT_KINDS = {"length_unit": "Lengths", "frequency_unit": "Frequencies", "time_unit": "Times"}

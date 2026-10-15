@@ -39,8 +39,14 @@ class PlotCanvas(QWidget):
     # plot kinds drawn in a 3D axes (kx, ky, frequency), rotated with the mouse
     PROJECTED_3D = ("surfaces",)
 
+    MIN_INCHES = 1.0   # a figure with a zero side has singular transforms and cannot be drawn on
+
     def _fresh_axes(self, projection: str | None = None):
         """Start from an empty figure (removes colour bars of the previous plot); its selection circle goes too."""
+        if min(self.figure.get_size_inches()) < self.MIN_INCHES:
+            # drawn while hidden (the other view has the room): keep a workable size until it is laid out,
+            # which resizes the figure and redraws it at the real one
+            self.figure.set_size_inches(5, 4, forward=False)
         self.figure.clear()
         self.ax = self.figure.add_subplot(projection=projection)
         self._marker = self._marked_row = None
