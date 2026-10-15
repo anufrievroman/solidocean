@@ -33,8 +33,8 @@ class PlotStyle:
     line_style: str = "solid"   # solid | dashed | dotted | none
     line_width: float = 1.2
     colors: str = "bands"       # one colour per band from the colormap, or a single colour
-    color: str = "#1f77b4"
-    colormap: str = "Paired"    # qualitative palette: per-band colours and overlaid variable values
+    color: str = "#64b999"      # our plot green; `colors = "bands"` takes the palette instead
+    colormap: str = "SolidOcean"  # qualitative palette: per-band colours and overlaid variable values
     grid: bool = True
     title: bool = False
     legend: bool = True         # a legend of the overlaid curves (variable values, k points)

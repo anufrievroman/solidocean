@@ -32,7 +32,7 @@ DPI = 300
 FONT = "Arial"
 SHORE = ["#0b2a5b", "#13608f", "#1b9aaa", "#5cc8c0", "#bfe8dc"]   # the app icon's palette, open sea -> beach
 REF_COLOR = "0.35"                   # reference solutions are grey, so the shore colours are SolidOcean's own
-FEM_COLOR = SHORE[1]
+FEM_COLOR = "#64b999"                # SolidOcean's own results: the same green the app plots with
 COLORS = SHORE
 
 plt.rcParams.update({

@@ -9,6 +9,9 @@ from ..materials import DEFAULT_COLORS
 
 ACCENT = DEFAULT_COLORS[0]  # the first material colour: selections, chosen buttons
 ACCENT_TEXT = "#04302b"     # text on the accent (too bright for white text)
+# the app icon's palette, open sea -> beach: drawings of our own (the Brillouin-zone sketches), the same
+# colours the validation figures use
+SHORE = ["#0b2a5b", "#13608f", "#1b9aaa", "#5cc8c0", "#bfe8dc"]
 
 
 def is_dark() -> bool:
@@ -18,6 +21,17 @@ def is_dark() -> bool:
 def muted() -> str:
     """Secondary text (hints, computed values)."""
     return "#a8a8a8" if is_dark() else "#666666"
+
+
+def shore_line() -> str:
+    """Outlines and fine lines of our own drawings (the Brillouin-zone sketches): the open-sea end of the
+    palette on a light panel, the beach end on a dark one."""
+    return SHORE[3] if is_dark() else SHORE[1]
+
+
+def shore_mark() -> str:
+    """Points and markers of those drawings, a step further along the palette than the lines."""
+    return SHORE[4] if is_dark() else SHORE[0]
 
 
 def disabled_text() -> str:

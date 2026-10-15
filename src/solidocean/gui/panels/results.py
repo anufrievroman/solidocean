@@ -57,7 +57,8 @@ class ResultsPanel(Panel):
 
 
 # qualitative palettes: neighbouring bands get clearly different colours
-DISPERSION_PALETTES = ["Paired", "Pastel1", "Pastel2", "Set1", "Set2", "Set3", "tab10", "tab20", "Dark2", "Accent"]
+DISPERSION_PALETTES = ["SolidOcean", "Paired", "Pastel1", "Pastel2", "Set1", "Set2", "Set3", "tab10",
+                       "tab20", "Dark2", "Accent"]
 
 
 CONTINUOUS_MAPS = ["Blues", "Reds", "Greens", "Purples", "viridis", "plasma", "inferno", "magma", "cividis", "coolwarm", "RdBu_r", "turbo", "jet", "gray"]

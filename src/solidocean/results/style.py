@@ -6,10 +6,20 @@ import numpy as np
 
 PLOT_FONT = ["Arial", "Helvetica", "DejaVu Sans"]  # first available is used
 
+# our own curve colours, in the order curves take them: the plot green, the accent (the first material
+# colour) and then the app icon's palette, open sea -> beach
+PALETTE_NAME = "SolidOcean"
+# light and dark alternate so neighbouring bands stay apart; the palest beach tone is left out, being too
+# faint for a line on white
+SERIES = ["#64b999", "#9adcd2", "#13608f", "#5cc8c0", "#0b2a5b", "#1b9aaa"]
+
 
 def use_plot_style() -> None:
-    """Arial (with fallbacks) for all matplotlib text."""
+    """Arial (with fallbacks) for all matplotlib text, and our own qualitative palette."""
     import matplotlib
+    from matplotlib.colors import ListedColormap
+    if PALETTE_NAME not in matplotlib.colormaps:
+        matplotlib.colormaps.register(ListedColormap(SERIES, name=PALETTE_NAME))
     matplotlib.rcParams["font.family"] = "sans-serif"
     matplotlib.rcParams["font.sans-serif"] = PLOT_FONT + [f for f in matplotlib.rcParams["font.sans-serif"]
                                                          if f not in PLOT_FONT]

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from ... import units
+from .. import theme
 from ...physics.solid.model import (LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_TITLES, KMesh, KPath,
                                     SolidCondition)
 from ...project import AXES, Feature
@@ -297,6 +298,35 @@ def kmesh_counts(project, km: KMesh) -> tuple[int, int] | None:
     return len(points), len(tris)
 
 
+def accent_fill():
+    """A one-colour colormap of the accent, for filling a region of a sketch."""
+    from matplotlib.colors import ListedColormap
+    return ListedColormap([theme.ACCENT])
+
+
+def zone_sketch(outer, recip, draw, height: int = 190):
+    """A small drawing of the 2D Brillouin zone in the app's own colours, with `draw(ax)` putting the
+    wavevectors on top of it. The canvas is added to `outer`; nothing happens if the lattice has no plane."""
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+    from matplotlib.figure import Figure
+
+    from ... import lattice as lat
+    fig = Figure(figsize=(2.6, 2.4), layout="constrained")
+    fig.patch.set_alpha(0)
+    ax = fig.add_subplot()
+    ax.set_aspect("equal")
+    ax.axis("off")
+    zone = lat.brillouin_zone_2d(*recip)
+    poly = np.vstack([zone, zone[:1]])
+    ax.fill(poly[:, 0], poly[:, 1], color=theme.SHORE[4], alpha=0.2 if not theme.is_dark() else 0.3)
+    ax.plot(poly[:, 0], poly[:, 1], color=theme.shore_line(), lw=1.1)
+    draw(ax)
+    canvas = FigureCanvasQTAgg(fig)
+    canvas.setFixedHeight(height)
+    canvas.setStyleSheet("background: transparent;")
+    outer.addWidget(canvas)
+
+
 def problem_summary(project) -> dict[str, str]:
     """Short text per problem node (empty string = inactive)."""
     st = project.solid.problem
@@ -534,36 +564,26 @@ class KPathPanel(SweepPanel):
         b = [v for v in recip if v is not None]
         if len(b) < 2 or abs(b[0][2]) > 0 or abs(b[1][2]) > 0:
             return
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-        from matplotlib.figure import Figure
-        fig = Figure(figsize=(2.6, 2.4), layout="constrained")
-        fig.patch.set_alpha(0)
-        ax = fig.add_subplot()
-        ax.set_aspect("equal")
-        ax.axis("off")
-        bz = lat.brillouin_zone_2d(b[0], b[1])
-        poly = np.vstack([bz, bz[:1]])
-        ax.fill(poly[:, 0], poly[:, 1], color="#cfd8e3", alpha=0.5)
-        ax.plot(poly[:, 0], poly[:, 1], color="#8a99ab", lw=1)
         kp = self._draft
 
         def pos(name):
             r = kp.points[name]
             return sum((ri * bi for ri, bi in zip(r, recip) if bi is not None), np.zeros(3))[:2]
 
-        path = [pos(n) for n in kp.path if n in kp.points]
-        if len(path) > 1:
-            xy = np.array(path)
-            ax.plot(xy[:, 0], xy[:, 1], color="#d62728", lw=1.6)
-        for name in kp.points:
-            x, y = pos(name)
-            ax.plot(x, y, "o", color="#d62728", ms=3)
-            ax.annotate(pretty_point(name), (x, y), textcoords="offset points", xytext=(4, 3), fontsize=9,
-                        color=theme_text())
-        canvas = FigureCanvasQTAgg(fig)
-        canvas.setFixedHeight(190)
-        canvas.setStyleSheet("background: transparent;")
-        self.outer.addWidget(canvas)
+        def draw(ax):
+            path = [pos(n) for n in kp.path if n in kp.points]
+            if len(path) > 1:
+                xy = np.array(path)
+                ax.plot(xy[:, 0], xy[:, 1], color=theme.ACCENT, lw=3.0, solid_capstyle="round", zorder=2)
+                ax.plot(xy[:, 0], xy[:, 1], color=theme.shore_line(), lw=1.0, solid_capstyle="round",
+                        zorder=3)
+            for name in kp.points:
+                x, y = pos(name)
+                ax.plot(x, y, "o", color=theme.shore_mark(), ms=3.4, zorder=4)
+                ax.annotate(pretty_point(name), (x, y), textcoords="offset points", xytext=(4, 3), fontsize=9,
+                            color=theme_text())
+
+        zone_sketch(self.outer, (b[0], b[1]), draw)
 
     def _add_kpoint(self, name, vec):
         self.ktable.blockSignals(True)
@@ -642,39 +662,31 @@ class KMeshPanel(SweepPanel):
         """The zone with the meshed region drawn in it."""
         from ... import lattice as lat
         try:
-            recip = [v for v in lat.reciprocal(lat.slots(self.p.lattice, self.p.evaluator())) if v is not None]
+            ev = self.p.evaluator()
+            recip = [v for v in lat.reciprocal(lat.slots(self.p.lattice, ev)) if v is not None]
             if len(recip) != 2 or abs(recip[0][2]) > 0 or abs(recip[1][2]) > 0:
                 return
+            kind = lat.classify(self.p.lattice, ev)
             shown = KMesh(n=min(km.n, 12), region=km.region)
-            reduced, tris = lat.zone_mesh(*recip, shown.n, shown.region,
-                                          lat.classify(self.p.lattice, self.p.evaluator()))
+            reduced, tris = lat.zone_mesh(*recip, shown.n, shown.region, kind)
         except Exception:
             return
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-        from matplotlib.figure import Figure
-        fig = Figure(figsize=(2.6, 2.4), layout="constrained")
-        fig.patch.set_alpha(0)
-        ax = fig.add_subplot()
-        ax.set_aspect("equal")
-        ax.axis("off")
-        bz = lat.brillouin_zone_2d(*recip)
-        poly = np.vstack([bz, bz[:1]])
-        ax.fill(poly[:, 0], poly[:, 1], color="#cfd8e3", alpha=0.5)
-        ax.plot(poly[:, 0], poly[:, 1], color="#8a99ab", lw=1)
-        xy = reduced[:, :1] * recip[0][:2] + reduced[:, 1:] * recip[1][:2]
-        ax.triplot(xy[:, 0], xy[:, 1], tris, color="#d62728", lw=0.7)
-        kind = lat.classify(self.p.lattice, self.p.evaluator())
-        for name, corner in zip(lat.WEDGE_LABELS.get(kind, ()) if km.region == "irreducible" else (),
-                                lat.WEDGES.get(kind, ())):
-            x, y = corner[0] * recip[0][:2] + corner[1] * recip[1][:2]
-            ax.annotate(pretty_point(name), (x, y), textcoords="offset points", xytext=(4, 3), fontsize=9,
-                        color=theme_text())
-        if km.n > shown.n:
-            ax.set_title(f"n = {shown.n} shown", fontsize=8, color=theme_text())
-        canvas = FigureCanvasQTAgg(fig)
-        canvas.setFixedHeight(190)
-        canvas.setStyleSheet("background: transparent;")
-        self.outer.addWidget(canvas)
+
+        def draw(ax):
+            xy = reduced[:, :1] * recip[0][:2] + reduced[:, 1:] * recip[1][:2]
+            ax.tripcolor(xy[:, 0], xy[:, 1], tris, facecolors=np.zeros(len(tris)), cmap=accent_fill(),
+                         vmin=0, vmax=1, zorder=2)                   # the meshed region in the accent
+            ax.triplot(xy[:, 0], xy[:, 1], tris, color=theme.shore_line(), lw=0.6, alpha=0.8, zorder=3)
+            for name, corner in zip(lat.WEDGE_LABELS.get(kind, ()) if km.region == "irreducible" else (),
+                                    lat.WEDGES.get(kind, ())):
+                x, y = corner[0] * recip[0][:2] + corner[1] * recip[1][:2]
+                ax.plot(x, y, "o", color=theme.shore_mark(), ms=3.4, zorder=4)
+                ax.annotate(pretty_point(name), (x, y), textcoords="offset points", xytext=(4, 3), fontsize=9,
+                            color=theme_text())
+            if km.n > shown.n:
+                ax.set_title(f"n = {shown.n} shown", fontsize=8, color=theme_text())
+
+        zone_sketch(self.outer, (recip[0], recip[1]), draw)
 
 
 class DisplacementPanel(Panel):
