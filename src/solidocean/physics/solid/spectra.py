@@ -15,6 +15,11 @@ region in the zone (8 for the wedge of a square lattice, 12 for a hexagonal one,
 taken from the area the mesh covers. The group velocity |v| = 2 pi |grad_k f| follows from the same
 gradients (k is in rad/m).
 
+Everything here is per unit frequency f, which is what the plots draw and what the files record. The
+published form of these, and the one the panels and the model-file reference show, is per unit angular
+frequency omega = 2 pi f: a density per unit f is 2 pi times the one per unit omega, h f is the h-bar omega
+of those equations, and the velocity is the same either way.
+
 The heat flux is the emission of a convex boundary averaged over its directions: averaging (v . n) over the
 directions of n gives |v| / pi, which cancels the group velocity against the Jacobian of the change of
 variable from k to f and leaves the contour length alone. That average is also what makes a mesh of the

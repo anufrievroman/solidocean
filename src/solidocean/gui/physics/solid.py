@@ -19,18 +19,23 @@ STATIONARY_PLOT_HELP = {
 }
 
 
-# How the plots over the Brillouin zone arrive at their numbers. The sums run over every band j and every
-# triangle m of the wavevector mesh whose range contains the frequency, L is the length of the level set in
-# that triangle and S the copies of the meshed region that fill the zone.
+# How the plots over the Brillouin zone arrive at their numbers, written for the angular frequency the
+# literature uses. The sums run over every band j and every triangle m of the wavevector mesh whose range
+# contains the frequency, L is the length of the level set in that triangle and S the copies of the meshed
+# region that fill the zone.
+IN_OMEGA = ("Written for the angular frequency ω = 2πf, as the literature has it. The plots draw these "
+            "against the frequency f instead, so a density per unit frequency is 2π times the one per "
+            "unit ω; the group velocity, being a velocity, is the same either way.")
 BANDS_OVER_THE_ZONE = (
     "ω<sub>j</sub>(k)", "The j-th lowest eigenfrequency at each wavevector of the mesh, from the same "
     "eigenproblem as a dispersion. Over each triangle it is the plane through the three corner "
     "frequencies, which is where the facets come from; bands are numbered by frequency, not followed "
     "through their crossings.")
 MESH_SUMS = (
-    "L<sub>jm</sub>(f),&nbsp; ∇f<sub>jm</sub>", "A band is a plane over each triangle, so the level set "
-    "ω<sub>j</sub>(k) = f inside it is a straight segment of length L, and its gradient is constant. Every "
-    "integral over the zone becomes a sum over the (band, triangle) pairs the level crosses.")
+    "L<sub>jm</sub>(ω),&nbsp; ∇<sub>k</sub>ω<sub>jm</sub>", "A band is a plane over each triangle, so the "
+    "level set ω<sub>j</sub>(k) = ω inside it is a straight segment of length L, and its gradient is "
+    "constant. Every integral over the zone becomes a sum over the (band, triangle) pairs the level "
+    "crosses.")
 ZONE_FORMALISM = {
     "kmap": equations(BANDS_OVER_THE_ZONE,
                       ("ω<sub>j</sub>(k) = const", "The filled contours: the level sets of that band, drawn "
@@ -40,37 +45,43 @@ ZONE_FORMALISM = {
                            "Where two surfaces touch, the branches cross and the numbering swaps between "
                            "them.")),
     "dos": equations(MESH_SUMS,
-                     ("D(f) = (1/4π²) S Σ<sub>j,m</sub> L<sub>jm</sub>(f) / |∇f<sub>jm</sub>|",
-                      "States per unit frequency and unit area: each segment counts for its length divided "
-                      "by how fast the band climbs across it. Divide by the membrane thickness for a "
-                      "per-volume density.")),
+                     ("D(ω) = (1/4π²) S Σ<sub>j,m</sub> L<sub>jm</sub>(ω) / |∇<sub>k</sub>ω<sub>jm</sub>|",
+                      "States per unit angular frequency and unit area: each segment counts for its length "
+                      "divided by how fast the band climbs across it. Divide by the membrane thickness for "
+                      "a per-volume density."),
+                     IN_OMEGA),
     "velocity": equations(MESH_SUMS,
-                          ("|v<sub>j</sub>| = 2π |∇<sub>k</sub>f<sub>j</sub>|", "The group velocity of a "
-                           "band over a triangle, from the same gradient (k is in rad/m)."),
-                          ("⟨v⟩(f) = 2π Σ<sub>j,m</sub> L<sub>jm</sub> / Σ<sub>j,m</sub> L<sub>jm</sub> / "
-                           "|∇f<sub>jm</sub>|", "Averaged over the states at that frequency, weighted as "
-                           "the density of states weights them — not over the wavevectors.")),
+                          ("v<sub>j</sub>(k) = ∇<sub>k</sub>ω<sub>j</sub>", "The group velocity is the "
+                           "gradient of the band itself (k is in rad/m)."),
+                          ("⟨v⟩(ω) = Σ<sub>j,m</sub> L<sub>jm</sub> / Σ<sub>j,m</sub> L<sub>jm</sub> / "
+                           "|∇<sub>k</sub>ω<sub>jm</sub>|", "Averaged over the states at that frequency, "
+                           "weighted as the density of states weights them — not over the wavevectors."),
+                          IN_OMEGA),
     "flux": equations(MESH_SUMS,
-                      ("n(f, T) = 1 / (e<sup>hf/k<sub>B</sub>T</sup> − 1)", "The Bose-Einstein occupation "
-                       "of a mode of frequency f."),
-                      ("p(f, T) = h f n(f, T) S Σ<sub>j,m</sub> L<sub>jm</sub>(f) / 2π²", "The energy a "
-                       "convex boundary radiates into the structure, per unit frequency and unit length of "
-                       "that boundary. Averaging the flux over the directions of that boundary cancels the "
-                       "group velocity against the Jacobian of the change of variable from k to f, which "
-                       "is what leaves the bare contour length — and what lets a mesh of the irreducible "
-                       "wedge stand for the whole zone, since a flux along one direction could not.")),
-    "power": equations(("P(T) = ∫ p(f, T) df", "The heat flux of the spectrum, integrated over the "
+                      ("n(ω, T) = 1 / (e<sup>ħω/k<sub>B</sub>T</sup> − 1)", "The Bose-Einstein occupation "
+                       "of a mode of angular frequency ω."),
+                      ("p(ω, T) = ħω n(ω, T) S Σ<sub>j,m</sub> L<sub>jm</sub>(ω) / 4π³", "The energy a "
+                       "convex boundary radiates into the structure, per unit angular frequency and unit "
+                       "length of that boundary. Averaging the flux over the directions of that boundary "
+                       "cancels the group velocity against the Jacobian of the change of variable from k "
+                       "to ω, which is what leaves the bare contour length — and what lets a mesh of the "
+                       "irreducible wedge stand for the whole zone, since a flux along one direction could "
+                       "not."),
+                      IN_OMEGA),
+    "power": equations(("P(T) = ∫ p(ω, T) dω", "The heat flux of the spectrum, integrated over the "
                         "computed bands: the power radiated per unit length of the boundary."),
                        ("", "The sum over the mesh does not depend on the temperature, so it is taken once "
-                        "and each temperature is a quadrature over the same sampled spectrum.")),
-    "conductance": equations(("∂n/∂T = (hf/k<sub>B</sub>T²) e<sup>x</sup>/(e<sup>x</sup> − 1)²,&nbsp; "
-                              "x = hf/k<sub>B</sub>T", "How the occupation of a mode answers a change of "
+                        "and each temperature is a quadrature over the same sampled spectrum."),
+                       IN_OMEGA),
+    "conductance": equations(("∂n/∂T = (ħω/k<sub>B</sub>T²) e<sup>x</sup>/(e<sup>x</sup> − 1)²,&nbsp; "
+                              "x = ħω/k<sub>B</sub>T", "How the occupation of a mode answers a change of "
                               "temperature."),
-                             ("G(T) = dP/dT = ∫ h f (∂n/∂T) S Σ<sub>j,m</sub> L<sub>jm</sub>(f) / 2π² df",
+                             ("G(T) = dP/dT = ∫ ħω (∂n/∂T) S Σ<sub>j,m</sub> L<sub>jm</sub>(ω) / 4π³ dω",
                               "The ballistic thermal conductance per unit length of the boundary: what the "
                               "band structure carries when nothing scatters. The integral stops where the "
-                              "computed bands stop being complete, so it is a lower bound once k<sub>B</sub>T/h "
-                              "approaches that frequency.")),
+                              "computed bands stop being complete, so it is a lower bound once "
+                              "k<sub>B</sub>T/ħ approaches that frequency."),
+                             IN_OMEGA),
 }
 
 

@@ -17,10 +17,11 @@ zone, and the spectra are summed from the wedge (physics/solid/spectra.py).
 
 The reference needs no mesh. The plate is isotropic, so its exact dispersion is radially symmetric: every
 Rayleigh-Lamb and shear-horizontal branch $$\omega_j(k)$$, rotated about the origin, is a surface whose
-iso-frequency contour is a circle of circumference $$2\pi k_j(\omega)$$. Summing those circles gives
+iso-frequency contour is a circle of circumference $$2\pi k_j(\omega)$$. Summing those circles gives,
+per unit angular frequency,
 
-$$D(f) = \frac{1}{(2\pi)^2}\sum_j \frac{2\pi k_j}{|\mathrm{d}f/\mathrm{d}k|_j},\qquad
-\langle v\rangle(f) = 2\pi\frac{\sum_j k_j}{\sum_j k_j/|\mathrm{d}f/\mathrm{d}k|_j},$$
+$$D(\omega) = \frac{1}{(2\pi)^2}\sum_j \frac{2\pi k_j}{|\mathrm{d}\omega/\mathrm{d}k|_j},\qquad
+\langle v\rangle(\omega) = \frac{\sum_j k_j}{\sum_j k_j/|\mathrm{d}\omega/\mathrm{d}k|_j},$$
 
 evaluated on a dense grid of the exact branches. The two routes share nothing: one is a finite-element
 eigenproblem sampled over a two-dimensional zone of an invented cell, the other a one-dimensional analytic
