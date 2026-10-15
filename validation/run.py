@@ -25,9 +25,9 @@ import traceback
 
 import common
 
-CASES = ["lamb_plate", "free_sphere", "driven_bar", "lame_cylinder", "semi_infinite", "spreading_disk",
-         "contact_stack", "three_omega", "fdtr"]
-GROUPS = [("Elastic waves and vibrations", ["lamb_plate", "free_sphere", "driven_bar"]),
+CASES = ["lamb_plate", "zone_spectra", "free_sphere", "driven_bar", "lame_cylinder", "semi_infinite",
+         "spreading_disk", "contact_stack", "three_omega", "fdtr"]
+GROUPS = [("Elastic waves and vibrations", ["lamb_plate", "zone_spectra", "free_sphere", "driven_bar"]),
           ("Statics", ["lame_cylinder"]),
           ("Heat transfer", ["semi_infinite", "spreading_disk", "contact_stack", "three_omega", "fdtr"])]
 SECTIONS = common.HERE / "sections.json"
@@ -71,7 +71,8 @@ def gitbook(markdown: str, demote: bool = True) -> str:
             parts[i] = re.sub(r"\$([^$\n]+(?:\n[^$\n]+)*?)\$", r"$$\1$$", part)
     text = re.sub(r"!\[(.*?)\]\((.*?)\)\n\*(.*?)\*\n",
                   r'<figure><img src="\2" alt="\1"><figcaption><p>\3</p></figcaption></figure>\n', "".join(parts))
-    prose = re.compile(r"[^\s|#!$*-]|\*\*|\$\$\S")
+    # a line continuing a paragraph: ordinary text, bold, or the tail of inline math ("$$ and so on")
+    prose = re.compile(r"[^\s|#!$*-]|\*\*|\$\$\s*\S")
     lines = []
     for line in text.split("\n"):
         if lines and prose.match(line) and prose.match(lines[-1]) and lines[-1] != "$$":

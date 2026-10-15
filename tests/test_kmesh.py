@@ -302,3 +302,163 @@ def test_zone_plots_offer_only_the_style_that_applies():
     assert "Wavevectors" in rows["kmap"][0] and "Colour bar" in rows["kmap"][1]
     w.dirty = False
     w.close()
+
+
+# ---- spectra of the mesh ---------------------------------------------------------------
+
+def cone_results(n: int = 40, region: str = "full", velocity: float = 5000.0, period: float = 1e-6,
+                 branches=(1.0,)):
+    """A synthetic mesh carrying isotropic linear bands f = c v |k| / 2pi, whose spectra are exact."""
+    from solidocean.physics.solid.modal import ModalResults
+    b1 = np.array([2 * np.pi / period, 0.0, 0.0])
+    b2 = np.array([0.0, 2 * np.pi / period, 0.0])
+    reduced, tris = lat.zone_mesh(b1, b2, n, region, "square")
+    k = reduced[:, :1] * b1 + reduced[:, 1:] * b2
+    base = velocity * np.linalg.norm(k, axis=1) / (2 * np.pi)
+    freqs = np.column_stack([base / c for c in branches])
+    return ModalResults(freqs[None], k[None], np.arange(len(k), dtype=float), "k point",
+                        ktris=tris, kred=reduced)
+
+
+def test_spectra_of_a_linear_band_match_the_analytic_ones():
+    """For one isotropic branch ω = v k the spectra are known in closed form: D(f) = 2πf/v², the average
+    group velocity is v, and the radiated flux is 2 h f² n(f, T) / v. Compared inside the circle that fits
+    in the zone, away from the badly resolved cone tip."""
+    from solidocean.physics.solid import spectra
+    v, a, temperature = 5000.0, 1e-6, 1.0
+    r = cone_results(n=60, velocity=v, period=a)
+    top = v / (2 * a)                       # the contour is a full circle below this
+    for kind, exact in (("dos", lambda f: 2 * np.pi * f / v ** 2),
+                        ("velocity", lambda f: np.full_like(f, v)),
+                        ("flux", lambda f: 2 * spectra.H_PLANCK * f ** 2
+                         * spectra.bose_einstein(f, temperature) / v)):
+        freq, value = spectra.spectrum(r, kind, bins=400, temperature=temperature)
+        band = (freq > 0.3e9) & (freq < top)
+        assert np.max(np.abs(value[band] - exact(freq)[band]) / exact(freq)[band]) < 0.02, kind
+
+
+def test_the_density_of_states_counts_every_state_once():
+    """Integrating the density of states over complete bands gives one state per band per unit cell area —
+    the sum rule that ties together the contour lengths, the gradients and the symmetry factor of a wedge.
+    """
+    from solidocean.physics.solid import spectra
+    a = 1e-6
+    for region in ("full", "irreducible"):
+        r = cone_results(n=60, region=region, period=a, branches=(1.0, 1.7))
+        freq, dos = spectra.spectrum(r, "dos", bins=6000)
+        assert np.trapezoid(dos, freq) * a ** 2 == pytest.approx(2.0, rel=2e-3)
+
+
+def test_a_wedge_and_the_whole_zone_give_the_same_spectra():
+    """The symmetry factor is what makes a mesh of the wedge stand for the whole zone: two meshes that
+    share nothing but the lattice must give the same spectrum.
+
+    Only above the lowest frequencies. A branch is a cone at its apex, which no triangulation resolves —
+    flat patches over a corner stay equally wrong however fine the mesh — so the two meshes disagree there
+    by an amount that does not converge, and real acoustic branches carry the same error at low frequency.
+    """
+    from solidocean.physics.solid import spectra
+    freq, whole = spectra.spectrum(cone_results(n=48, region="full"), "dos", bins=200)
+    same, wedge = spectra.spectrum(cone_results(n=48, region="irreducible"), "dos", bins=200)
+    np.testing.assert_allclose(freq, same)
+    band = (freq > 0.3e9) & (freq < 5000.0 / (2 * 1e-6))
+    np.testing.assert_allclose(whole[band], wedge[band], rtol=0.02)
+
+
+def test_heat_flux_follows_the_occupation():
+    """The flux is the contour sum weighted by h f n(f, T): no states are occupied at absolute zero, and
+    raising the temperature can only add to it."""
+    from solidocean.physics.solid import spectra
+    r = cone_results(n=30)
+    freq, cold = spectra.spectrum(r, "flux", bins=120, temperature=0.0)
+    _, warm = spectra.spectrum(r, "flux", bins=120, temperature=0.2)
+    _, hot = spectra.spectrum(r, "flux", bins=120, temperature=2.0)
+    assert np.all(cold == 0)
+    assert np.all(hot >= warm) and hot.sum() > 10 * warm.sum()
+    ratio = hot / np.where(warm > 0, warm, np.inf)
+    assert np.all(ratio[warm > 0] > 1)
+
+
+def test_spectrum_plot_draws_and_is_offered_only_with_a_mesh():
+    """The plot draws a curve per spectrum, picks nothing, and needs a wavevector mesh."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from solidocean.physics import of
+    from solidocean.physics.solid.plots import spectrum_plot
+    from solidocean.results.modal import draw
+
+    p, r = mesh_results()
+    fig, ax = plt.subplots()
+    for kind in ("dos", "velocity", "flux"):
+        ax.clear()
+        pl = spectrum_plot(spectrum=kind)
+        pl.temperature = "0.5[K]"
+        assert draw(r, ax, p, pl).shape == (0, 5)
+        assert len(ax.lines) == 1 and np.all(np.isfinite(ax.lines[0].get_ydata()))
+    assert "Frequency" in ax.get_xlabel()
+    plt.close(fig)
+    assert of(p).plot_unavailable(p, spectrum_plot()) == ""
+    p.solid.problem.type = "eigenfrequency"
+    assert "Spectra need" in of(p).plot_unavailable(p, spectrum_plot())
+
+
+# ---- the conductance -------------------------------------------------------------------
+
+def test_power_and_conductance_match_the_analytic_low_temperature_laws():
+    """One isotropic branch in two dimensions radiates P = 4 zeta(3) kB^3 T^3 / (v h^2), so the ballistic
+    conductance G = dP/dT goes as T^2. Checked where the computed bands still reach far above the occupied
+    frequencies — the integral stops at the highest band, and below that it is a lower bound."""
+    from scipy.special import zeta
+
+    from solidocean.physics.solid import spectra
+    v = 5000.0
+    r = cone_results(n=60, region="full", velocity=v, period=1e-6)
+    kb, h = spectra.K_BOLTZMANN, spectra.H_PLANCK
+    cold = np.array([0.005, 0.01])
+    assert spectra.thermal_frequency(cold[-1]) * 9 < r.freqs.max()      # the bands reach far enough
+    for kind, exact in (("power", lambda t: 4 * zeta(3) * kb ** 3 * t ** 3 / (v * h ** 2)),
+                        ("conductance", lambda t: 12 * zeta(3) * kb ** 3 * t ** 2 / (v * h ** 2))):
+        _, value = spectra.transport(r, kind, cold, bins=3000)
+        np.testing.assert_allclose(value, exact(cold), rtol=0.02)
+
+
+def test_the_conductance_is_the_derivative_of_the_power():
+    """G(T) = dP/dT, the two computed from the same contour sums by different occupation factors."""
+    from solidocean.physics.solid import spectra
+    r = cone_results(n=40)
+    t = np.array([0.0099, 0.0101])
+    _, power = spectra.transport(r, "power", t, bins=2000)
+    _, conductance = spectra.transport(r, "conductance", np.array([0.01]), bins=2000)
+    assert (power[1] - power[0]) / (t[1] - t[0]) == pytest.approx(conductance[0], rel=1e-3)
+
+
+def test_conductance_plot_draws_over_its_temperature_range():
+    """The plot computes the curve over the range it is given, rises with temperature, and picks nothing."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from solidocean.physics import of
+    from solidocean.physics.solid.plots import conductance_plot
+    from solidocean.results.modal import draw, temperatures_of
+
+    p, r = mesh_results()
+    fig, ax = plt.subplots()
+    for kind in ("conductance", "power"):
+        ax.clear()
+        pl = conductance_plot(transport=kind)
+        pl.t_min, pl.t_max, pl.t_points = "0.05[K]", "0.5[K]", 12
+        assert draw(r, ax, p, pl).shape == (0, 5)
+        x, y = ax.lines[0].get_xdata(), ax.lines[0].get_ydata()
+        assert len(x) == 12 and x[0] == pytest.approx(0.05) and x[-1] == pytest.approx(0.5)
+        assert np.all(np.diff(y) > 0) and np.all(np.isfinite(y))
+        assert len(temperatures_of(p, pl)) == 12
+    assert ax.get_xscale() == "log" and "Temperature" in ax.get_xlabel()
+    plt.close(fig)
+    pl = conductance_plot()
+    pl.t_min, pl.t_max = "1[K]", "0.1[K]"
+    with pytest.raises(ValueError, match="positive and increasing"):
+        temperatures_of(p, pl)
+    assert of(p).plot_unavailable(p, conductance_plot()) == ""
+    p.solid.problem.type = "eigenfrequency"
+    assert "Conductance curves need" in of(p).plot_unavailable(p, conductance_plot())

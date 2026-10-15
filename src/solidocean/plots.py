@@ -84,12 +84,16 @@ SWEEP_AXES = ("auto", "kpath", "variable")
 # colored: frequency vs sweep with every point coloured by an expression; field: 3D view of the solution
 # (displacement / temperature); time: heat, any expression vs time (transient problems); line: heat, an
 # expression evaluated point by point along a straight line (a cross-section profile); kmap: one band of a
-# wavevector mesh as a map over the Brillouin zone; surfaces: several of its bands as surfaces in 3D
-PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section", "kmap", "surfaces")
+# wavevector mesh as a map over the Brillouin zone; surfaces: several of its bands as surfaces in 3D;
+# spectrum: a quantity of the whole mesh against frequency (density of states, group velocity, heat flux);
+# conductance: that flux integrated over frequency, against temperature
+PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section", "kmap", "surfaces",
+              "spectrum", "conductance")
 # the type of each kind, shown with plot names: 3D views of the structure, 2D maps (cross-sections), XY plots, and
 # XY plots whose points are coloured by a third value
 PLOT_TYPES = {"field": "3D", "surfaces": "3D", "section": "2D", "kmap": "2D", "dispersion": "XY",
-              "quantity": "XY", "time": "XY", "line": "XY", "colored": "XYz"}
+              "quantity": "XY", "time": "XY", "line": "XY", "spectrum": "XY", "conductance": "XY",
+              "colored": "XYz"}
 
 
 def plot_label(kind: str, text: str) -> str:
@@ -120,6 +124,16 @@ class ResultPlot:
     component: str = "|u|"      # field, solid mechanics: |u|, ux, uy, uz or mises
     band: int = 0               # band map and surfaces: the band (mode) of the wavevector mesh to start at
     bands: int = 6              # surfaces: how many bands are drawn from `band` up (0 = all of them)
+    # spectrum: which one ("dos", "velocity" or "flux"), how many frequencies it is sampled at, and the
+    # temperature the heat flux is radiated at
+    spectrum: str = "dos"
+    bins: int = 200
+    temperature: Expr = "1[K]"
+    # conductance: which integral ("conductance" or "power") and the temperature axis it is drawn against
+    transport: str = "conductance"
+    t_min: Expr = "0.05[K]"
+    t_max: Expr = "1[K]"
+    t_points: int = 60
     # line plots: the segment start -> end (expressions), number of points, x axis, time step (-1 = last)
     start: list[str] = field(default_factory=lambda: ["0", "0", "0"])
     end: list[str] = field(default_factory=lambda: ["1[um]", "0", "0"])
@@ -149,8 +163,8 @@ class ResultPlot:
     def expressions(self) -> list[str]:
         """Quantities this plot needs evaluated (one number per solution; field, line and section plots
         evaluate their own, point by point)."""
-        if self.kind in ("field", "line", "section"):
-            return []
+        if self.kind in ("field", "line", "section", "spectrum", "conductance"):
+            return []      # these are summed over the bands, not evaluated per mode
         return [self.quantity] + ([self.color_by] if self.kind == "colored" and self.color_by.strip() else [])
 
     def to_dict(self):

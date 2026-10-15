@@ -938,8 +938,9 @@ def set_problem_type(win, typ: str):
     if typ == "conductance":
         if st.kmesh is None:
             st.kmesh = default_kmesh(p)
-        from ...physics.solid.plots import band_map, band_surfaces
-        for n, (kind, make) in enumerate((("kmap", band_map), ("surfaces", band_surfaces))):
+        from ...physics.solid.plots import band_map, band_surfaces, conductance_plot, spectrum_plot
+        for n, (kind, make) in enumerate((("kmap", band_map), ("surfaces", band_surfaces),
+                                          ("spectrum", spectrum_plot), ("conductance", conductance_plot))):
             if not any(pl.kind == kind for pl in p.plots):      # the plots a zone run is for
                 p.plots.insert(n, make())
     if not any(pl.kind == "field" for pl in win.project.plots):

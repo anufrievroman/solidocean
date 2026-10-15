@@ -1,6 +1,7 @@
 """Plots of modal results (eigenfrequencies per sweep point and mode): dispersion, coloured dispersion and
 quantities per mode against a k-path or a variable sweep, and — over a wavevector mesh of the Brillouin
-zone — the map of one band or several bands as surfaces in a 3D view."""
+zone — the map of one band, several bands as surfaces in a 3D view, the spectra summed over the bands
+(density of states, group velocity, heat flux) and those integrated against temperature (conductance)."""
 
 from __future__ import annotations
 
@@ -59,6 +60,10 @@ def draw(results, ax, project, pdef, values: np.ndarray | None = None,
         return draw_map(results, ax, project, pdef, values)
     if pdef.kind == "surfaces":
         return draw_surfaces(results, ax, project, pdef, values)
+    if pdef.kind == "spectrum":
+        return draw_spectrum(results, ax, project, pdef)
+    if pdef.kind == "conductance":
+        return draw_conductance(results, ax, project, pdef)
     if colored and colors is None:
         colors = results.values(pdef.color_by)
     scatter = []  # colored: (x, y, colour value) per point
@@ -308,24 +313,99 @@ def draw_surfaces(results, ax, project, pdef, values: np.ndarray | None = None) 
     return np.zeros((0, 5))
 
 
-def _zone_limits(ax, project, style, k_scale: float) -> None:
-    """Apply the kx (x_min, x_max) and ky (ky_min, ky_max) ranges of a plot over the zone. Plain numbers are
-    in the displayed wavevector unit, expressions with units (e.g. 5[1/um]) are SI, as elsewhere."""
+def _scaled_range(project, style, attrs, scale: float) -> tuple:
+    """(low, high) of a pair of range fields: plain numbers are in the displayed unit, expressions carrying
+    units (e.g. 5[1/um]) are SI, as everywhere else."""
     ev = project.evaluator()
-
-    def value(text):
-        text = str(text).strip()
-        if not text:
-            return None
+    out = []
+    for attr in attrs:
+        text = str(getattr(style, attr)).strip()
         try:
-            v = ev(text)
+            value = ev(text) if text else None
         except Exception:
-            return None
-        return v / k_scale if "[" in text else v
+            value = None
+        out.append(value / scale if value is not None and "[" in text else value)
+    return tuple(out)
 
-    lo, hi = value(style.x_min), value(style.x_max)
+
+def _zone_limits(ax, project, style, k_scale: float) -> None:
+    """Apply the kx (x_min, x_max) and ky (ky_min, ky_max) ranges of a plot over the zone."""
+    for attrs, setter in ((("x_min", "x_max"), ax.set_xlim), (("ky_min", "ky_max"), ax.set_ylim)):
+        lo, hi = _scaled_range(project, style, attrs, k_scale)
+        if lo is not None or hi is not None:
+            setter(lo, hi)
+
+
+def draw_spectrum(results, ax, project, pdef) -> np.ndarray:
+    """A spectrum of the wavevector mesh against frequency: the density of states, the average group
+    velocity or the heat flux, each summed over the bands (physics/solid/spectra.py). Nothing on the curve
+    belongs to a single mode, so the pick table comes back empty."""
+    from ..physics.solid import spectra
+    use_plot_style()
+    st = pdef.style
+    i = min(max(pdef.at, 0), results.freqs.shape[0] - 1)
+    try:
+        temperature = project.evaluator()(pdef.temperature)
+    except Exception as exc:
+        raise ValueError(f"temperature '{pdef.temperature}': {exc}") from None
+    freq, values = spectra.spectrum(results, pdef.spectrum, bins=pdef.bins, temperature=temperature,
+                                    outer=i, band=pdef.band, bands=pdef.bands)
+    scale = UNITS[project.frequency_unit]
+    ax.plot(freq / scale, values, color=st.color, ls=LINESTYLES.get(st.line_style, "-"), lw=st.line_width,
+            marker="o" if st.markers else None, ms=st.marker_size, mew=0)
+    ax.set_xlabel(pdef.x_label or f"Frequency ({project.frequency_unit})", fontsize=13)
+    ax.set_ylabel(pdef.y_label or spectra.SPECTRUM_LABELS[pdef.spectrum], fontsize=13)
+    ax.tick_params(labelsize=11)
+    set_scales(ax, st)
+    lo, hi = _scaled_range(project, st, ("y_min", "y_max"), 1.0)
+    ax.set_ylim(bottom=0 if lo is None and not st.y_log else lo, top=hi)
+    lo, hi = _scaled_range(project, st, ("x_min", "x_max"), scale)
+    ax.set_xlim(left=lo, right=hi)
+    if st.grid:
+        ax.grid(True, alpha=0.3)
+    else:
+        ax.grid(False)
+    if st.title:
+        ax.set_title(f"{project.name}: {pdef.name}")
+    return np.zeros((0, 5))
+
+
+def temperatures_of(project, pdef) -> np.ndarray:
+    """The temperatures (K) a conductance plot is drawn at: spaced logarithmically when the axis is."""
+    ev = project.evaluator()
+    low, high = ev(pdef.t_min), ev(pdef.t_max)
+    if not (high > low > 0):
+        raise ValueError(f"temperature range {low:g} to {high:g} K: both must be positive and increasing")
+    points = max(int(pdef.t_points), 2)
+    space = np.geomspace if pdef.style.x_log else np.linspace
+    return space(low, high, points)
+
+
+def draw_conductance(results, ax, project, pdef) -> np.ndarray:
+    """The heat flux integrated over the computed bands, against temperature: the ballistic thermal
+    conductance G(T) or the radiated power P(T). Nothing on the curve belongs to one mode, so the pick
+    table comes back empty."""
+    from ..physics.solid import spectra
+    use_plot_style()
+    st = pdef.style
+    i = min(max(pdef.at, 0), results.freqs.shape[0] - 1)
+    wanted = temperatures_of(project, pdef)
+    temperatures, values = spectra.transport(results, pdef.transport, wanted, bins=pdef.bins, outer=i,
+                                             band=pdef.band, bands=pdef.bands)
+    ax.plot(temperatures, values, color=st.color, ls=LINESTYLES.get(st.line_style, "-"), lw=st.line_width,
+            marker="o" if st.markers else None, ms=st.marker_size, mew=0)
+    ax.set_xlabel(pdef.x_label or "Temperature (K)", fontsize=13)
+    ax.set_ylabel(pdef.y_label or spectra.TRANSPORT_LABELS[pdef.transport], fontsize=13)
+    ax.tick_params(labelsize=11)
+    set_scales(ax, st)
+    ax.set_xlim(temperatures[0], temperatures[-1])      # the axis is the range that was computed
+    lo, hi = _scaled_range(project, st, ("y_min", "y_max"), 1.0)
     if lo is not None or hi is not None:
-        ax.set_xlim(left=lo, right=hi)
-    lo, hi = value(style.ky_min), value(style.ky_max)
-    if lo is not None or hi is not None:
-        ax.set_ylim(bottom=lo, top=hi)
+        ax.set_ylim(lo, hi)
+    if st.grid:
+        ax.grid(True, alpha=0.3, which="both")
+    else:
+        ax.grid(False)
+    if st.title:
+        ax.set_title(f"{project.name}: {pdef.name}")
+    return np.zeros((0, 5))

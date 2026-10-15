@@ -118,6 +118,10 @@ class SolidSpec(PhysicsSpec):
             return plots.band_map()
         if kind == "surfaces":
             return plots.band_surfaces()
+        if kind == "spectrum":
+            return plots.spectrum_plot()
+        if kind == "conductance":
+            return plots.conductance_plot()
         if kind == "dispersion":
             return ResultPlot()
         if kind == "line":
@@ -133,8 +137,9 @@ class SolidSpec(PhysicsSpec):
 
     def plot_unavailable(self, project, plot) -> str:
         st = project.solid.problem
-        if plot.kind in ("kmap", "surfaces") and not st.active_kmesh:
-            what = "Band maps" if plot.kind == "kmap" else "Band surfaces"
+        if plot.kind in ("kmap", "surfaces", "spectrum", "conductance") and not st.active_kmesh:
+            what = {"kmap": "Band maps", "surfaces": "Band surfaces", "spectrum": "Spectra",
+                    "conductance": "Conductance curves"}[plot.kind]
             return f"{what} need a coherent heat conduction problem with a wavevector mesh " \
                    "(Problem → Problem type, then Wavevector mesh)."
         if st.field_problem:

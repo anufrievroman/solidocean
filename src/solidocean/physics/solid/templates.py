@@ -12,7 +12,8 @@ from ...project import Feature, MeshSettings, VariableSweep, Project, Problem
 from ...plots import PlotStyle, ResultPlot
 from ...templates import Template, library_material
 from .model import KMesh, KPath, SolidCondition, SolidPhysics, SolidProblem
-from .plots import band_map, band_surfaces, colored_plot, field_plot
+from .plots import (band_map, band_surfaces, colored_plot, conductance_plot, field_plot,
+                    spectrum_plot)
 
 
 def _si(**overrides):
@@ -151,7 +152,7 @@ def zone_crystal() -> Project:
         objects=[Feature("cell", "Cell", material="SiN", params={"center": ["0", "0", "0"], "height": "t"}), hole],
         mesh=MeshSettings(max_size="a/8", min_size="a/40"), lattice=Lattice(periodic={"x": "a", "y": "a"}),
         solid=SolidPhysics(problem=SolidProblem(type="conductance", num_eigs=12, kmesh=KMesh(n=8))),
-        plots=[band_map(), band_surfaces(), field_plot()])
+        plots=[band_map(), band_surfaces(), spectrum_plot(), conductance_plot(), field_plot()])
 
 
 def cantilever() -> Project:

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from ...plots import PlotStyle, ResultPlot
 
-PLOT_KINDS = ("dispersion", "colored", "quantity", "kmap", "surfaces", "field", "section", "line")
+PLOT_KINDS = ("dispersion", "colored", "quantity", "kmap", "surfaces", "spectrum", "conductance", "field",
+              "section", "line")
 PLOT_TITLES = {"dispersion": "Dispersion", "colored": "Dispersion (colored)", "quantity": "Quantity vs sweep",
-               "kmap": "Band map", "surfaces": "Band surfaces", "field": "Displacement field",
+               "kmap": "Band map", "surfaces": "Band surfaces", "spectrum": "Spectrum", "conductance": "Conductance", "field": "Displacement field",
                "section": "Cross-section", "line": "Profile along line"}
 
 
@@ -33,9 +34,25 @@ def band_surfaces(name: str = "", quantity: str = "freq", band: int = 0, bands: 
                       style=PlotStyle(colormap="Paired", title=False, k_unit="1/um"))
 
 
+def spectrum_plot(name: str = "", spectrum: str = "dos") -> ResultPlot:
+    """A spectrum of the wavevector mesh against frequency: density of states, group velocity or heat flux
+    (physics/solid/spectra.py). All the bands take part, so it starts at the lowest with no limit."""
+    from .spectra import SPECTRUM_TITLES
+    return ResultPlot(name=name or SPECTRUM_TITLES[spectrum], kind="spectrum", spectrum=spectrum,
+                      band=0, bands=0, at=0, style=PlotStyle(markers=False))
+
+
+def conductance_plot(name: str = "", transport: str = "conductance") -> ResultPlot:
+    """The heat flux integrated over the bands, against temperature: the conductance G(T) or the radiated
+    power P(T). Drawn log-log, where a ballistic power law is a straight line."""
+    from .spectra import TRANSPORT_TITLES
+    return ResultPlot(name=name or TRANSPORT_TITLES[transport], kind="conductance", transport=transport,
+                      band=0, bands=0, at=0, style=PlotStyle(markers=False, x_log=True, y_log=True))
+
+
 def default_plots(stationary: bool = False, coherent: bool = False) -> list[ResultPlot]:
     """A dispersion plot and the displacement field (stationary: the displacement field; coherent heat
     conduction: a map of the lowest band over the zone, there being no path to plot along)."""
     if coherent:
-        return [band_map(), band_surfaces(), field_plot()]
+        return [band_map(), band_surfaces(), spectrum_plot(), conductance_plot(), field_plot()]
     return ([] if stationary else [ResultPlot()]) + [field_plot()]

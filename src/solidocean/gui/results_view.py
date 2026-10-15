@@ -136,7 +136,7 @@ class ResultsMixin:
                 finally:
                     QApplication.restoreOverrideCursor()
             evaluated.append(vals)
-        values = evaluated[0]
+        values = evaluated[0] if evaluated else None     # a spectrum evaluates nothing per mode
         colors = evaluated[1] if len(evaluated) > 1 else None
         self.plot.show_results(self.results, self.project, pdef, values, colors)
         self.mark_selection()
@@ -488,7 +488,8 @@ class ResultsMixin:
             self.log("A 3D view has no table: use “Save this run” for the fields, or add a line or section plot.")
             return
         field = isinstance(self.results, FieldResults)
-        is_freq = pdef.quantity.strip() == "freq" and not field
+        is_freq = (pdef.quantity.strip() == "freq" and not field
+                   and pdef.kind not in ("spectrum", "conductance"))
         default = "dispersion.csv" if is_freq else f"{pdef.name.replace(' ', '_')}.csv"
         path, _ = QFileDialog.getSaveFileName(self, "Save data", self.results_start(default),
                                               "CSV table (*.csv)")
@@ -500,7 +501,10 @@ class ResultsMixin:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         from ..results.field import save_line_table, save_section_table
         try:
-            if is_freq:
+            if pdef.kind in ("spectrum", "conductance"):
+                from ..physics.solid.spectra import save_table
+                save_table(self.results, self.results_project, pdef, Path(path))
+            elif is_freq:
                 self.results.save_csv(Path(path), self.project.frequency_unit)
             elif field and pdef.kind == "line":
                 save_line_table(self.results, self.results_project, pdef, Path(path))

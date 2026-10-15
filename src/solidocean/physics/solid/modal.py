@@ -124,6 +124,11 @@ class ModalResults:
         written = self.save(directory, project.frequency_unit, out.contents)
         if out.wants("tables"):
             for pl in plots:
+                if pl.kind in ("spectrum", "conductance"):
+                    from . import spectra
+                    if self.is_kmesh:
+                        written.append(spectra.save_table(self, project, pl, directory / f"{slug(pl.name)}.csv"))
+                    continue
                 extra = pl.color_by if pl.kind == "colored" else pl.quantity
                 # dispersion.csv already holds the frequencies; a quantity of a plot added after the run
                 # has no values yet

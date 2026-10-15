@@ -125,6 +125,14 @@ class PlotPanel(Panel):
         elif self.fieldres:
             if (pl.kind == "time" and r.outer_name) or (pl.kind == "quantity" and len(r.times) > 1):
                 self._heat_sweep_rows(d)
+        elif pl.kind in ("spectrum", "conductance") and r.is_kmesh:
+            if r.outer_name:
+                at = QComboBox()
+                for n, label in enumerate(outer_labels(self.win)):
+                    at.addItem(label, n)
+                at.setCurrentIndex(max(0, at.findData(max(pl.at, 0))))
+                at.currentIndexChanged.connect(lambda i: (setattr(pl, "at", at.itemData(i)), self._refresh()))
+                d.addRow("Variable sweep", at)
         elif pl.kind in ("kmap", "surfaces") and r.is_kmesh:
             self._map_rows(d)
         elif r.is_kpath and r.outer_name:
@@ -138,6 +146,10 @@ class PlotPanel(Panel):
             d.addRow(muted_label("Eigenfrequencies (freq), one curve per band. For other quantities add a "
                                  "'Quantity vs sweep' or a coloured dispersion plot."))
             return
+        if kind == "spectrum":
+            return self._spectrum_rows(d)
+        if kind == "conductance":
+            return self._conductance_rows(d)
         attr = "color_by" if kind == "colored" else "quantity"
         if kind == "colored":
             d.addRow(muted_label("The points are the eigenfrequencies; this expression sets their colour:"))
@@ -449,6 +461,10 @@ class PlotPanel(Panel):
             return self._section_rows(d)
         if pl.kind in ("kmap", "surfaces"):
             return self._zone_rows(d)
+        if pl.kind == "spectrum":
+            return self._spectrum_plot_rows(d)
+        if pl.kind == "conductance":
+            return self._conductance_plot_rows(d)
         is_freq = pl.quantity.strip() == "freq" and not self.fieldres
         if is_freq:
             fu = QComboBox()
@@ -510,6 +526,63 @@ class PlotPanel(Panel):
             row, _, _ = self._range_row(("color_min", "color_max"), "")
             d.addRow("Colour range", row)
 
+    def _conductance_plot_rows(self, d):
+        """The temperature axis: the range the curve is computed over, and how many points it takes."""
+        pl = self.pl
+        row = QHBoxLayout()
+        for attr in ("t_min", "t_max"):
+            edit = QLineEdit(str(getattr(pl, attr)))
+            edit.setMaximumWidth(80)
+
+            def commit(edit=edit, attr=attr):
+                text = edit.text().strip()
+                try:
+                    self.p.evaluator()(text)
+                    edit.setStyleSheet("")
+                    setattr(pl, attr, text)
+                    self._refresh()
+                except Exception as exc:
+                    edit.setStyleSheet(ERROR_STYLE)
+                    edit.setToolTip(str(exc))
+
+            edit.editingFinished.connect(commit)
+            row.addWidget(edit)
+            if attr == "t_min":
+                row.addWidget(QLabel("–"))
+        row.addWidget(QLabel("K"))
+        points = QSpinBox()
+        points.setRange(2, 2000)
+        points.setValue(pl.t_points)
+        points.setPrefix("points ")
+        points.valueChanged.connect(lambda v: (setattr(pl, "t_points", v), self._refresh()))
+        row.addWidget(points)
+        row.addStretch(1)
+        d.addRow("Temperature range", row)
+        d.addRow("", self._checks((("Log temperature", "x_log"),)))
+        row, _, _ = self._range_row(("y_min", "y_max"), "", "y_log")
+        d.addRow("Y range", row)
+        d.addRow("Y axis title", self._text_row("y_label"))
+        d.addRow("X axis title", self._text_row("x_label"))
+
+    def _spectrum_plot_rows(self, d):
+        """A spectrum has frequency on the x axis and the quantity on the y axis, both with a range."""
+        fu = QComboBox()
+        fu.addItems(list(units.FREQUENCY_UNITS))
+        fu.setCurrentText(self.p.frequency_unit)
+        d.addRow("Frequency unit", fu)
+        row, _, xunit = self._range_row(("x_min", "x_max"), self.p.frequency_unit, "x_log")
+        d.addRow("Frequency range", row)
+
+        def set_unit(u):
+            xunit.setText(u)
+            self._set_unit(u)
+
+        fu.currentTextChanged.connect(set_unit)
+        row, _, _ = self._range_row(("y_min", "y_max"), "", "y_log")
+        d.addRow("Y range", row)
+        d.addRow("Y axis title", self._text_row("y_label"))
+        d.addRow("X axis title", self._text_row("x_label"))
+
     def _zone_rows(self, d):
         """Plots over the Brillouin zone: the unit and range of the quantity (the colour scale of a map, the
         vertical axis of the surfaces) and the ranges of the two wavevector axes. Neither has a logarithmic
@@ -541,6 +614,87 @@ class PlotPanel(Panel):
             unit.setText(k_axis_label(pl.style.k_unit))
             ku.currentTextChanged.connect(lambda u, lbl=unit: lbl.setText(k_axis_label(u)))
             d.addRow(name, row)
+
+    def _spectrum_rows(self, d):
+        """A spectrum is summed over every band of the mesh, so it is chosen from a list rather than
+        written as an expression; the heat flux also needs a temperature."""
+        from ...physics.solid.spectra import SPECTRA, SPECTRUM_HELP, SPECTRUM_TITLES
+        pl = self.pl
+        which = QComboBox()
+        for name in SPECTRA:
+            which.addItem(SPECTRUM_TITLES[name], name)
+        which.setCurrentIndex(max(0, which.findData(pl.spectrum)))
+        help_text = muted_label(SPECTRUM_HELP.get(pl.spectrum, ""))
+
+        def changed(i):
+            pl.spectrum = which.itemData(i)
+            if pl.name in SPECTRUM_TITLES.values():      # a plot still carrying its default name
+                pl.name = SPECTRUM_TITLES[pl.spectrum]
+            self._refresh()
+            self.win.rebuild_tree(("plot", self.index))
+
+        which.currentIndexChanged.connect(changed)
+        d.addRow("Spectrum", which)
+        d.addRow(help_text)
+        if pl.spectrum == "flux":
+            temp = ExprEdit(self.win, lambda: pl.temperature,
+                            lambda t: (setattr(pl, "temperature", t or "1[K]"), self._refresh()))
+            temp.setToolTip("Temperature of the radiating boundary, e.g. 0.3[K]")
+            d.addRow("Temperature", temp)
+        samples = QSpinBox()
+        samples.setRange(2, 20000)
+        samples.setValue(pl.bins)
+        samples.setToolTip("How many frequencies the spectrum is sampled at between zero and the highest "
+                           "computed one")
+        samples.valueChanged.connect(lambda v: (setattr(pl, "bins", v), self._refresh()))
+        d.addRow("Frequency samples", samples)
+        d.addRow(muted_label("Every band of the mesh takes part. The spectrum falls away near the highest "
+                             "computed frequency, where the bands run out rather than the states."))
+
+    def _conductance_rows(self, d):
+        """The heat flux integrated over the bands: which integral, how finely the frequency quadrature is
+        sampled, and a warning when the computed bands do not reach the occupied frequencies."""
+        import numpy as np
+
+        from ...physics.solid.spectra import (TRANSPORT, TRANSPORT_HELP, TRANSPORT_TITLES,
+                                              thermal_frequency)
+        pl = self.pl
+        which = QComboBox()
+        for name in TRANSPORT:
+            which.addItem(TRANSPORT_TITLES[name], name)
+        which.setCurrentIndex(max(0, which.findData(pl.transport)))
+
+        def changed(i):
+            pl.transport = which.itemData(i)
+            if pl.name in TRANSPORT_TITLES.values():
+                pl.name = TRANSPORT_TITLES[pl.transport]
+            self._refresh()
+            self.win.rebuild_tree(("plot", self.index))
+
+        which.currentIndexChanged.connect(changed)
+        d.addRow("Quantity", which)
+        d.addRow(muted_label(TRANSPORT_HELP.get(pl.transport, "")))
+        samples = QSpinBox()
+        samples.setRange(2, 20000)
+        samples.setValue(pl.bins)
+        samples.setToolTip("Frequencies the integral over the bands is sampled at")
+        samples.valueChanged.connect(lambda v: (setattr(pl, "bins", v), self._refresh()))
+        d.addRow("Frequency samples", samples)
+        r = self.win.results
+        if r is not None and getattr(r, "is_kmesh", False):
+            top = float(np.nanmax(r.freqs)) if np.any(np.isfinite(r.freqs)) else 0.0
+            try:
+                hottest = self.p.evaluator()(pl.t_max)
+            except Exception:
+                hottest = 0.0
+            occupied = thermal_frequency(hottest)
+            note = (f"The bands reach {top / 1e9:.3g} GHz; at {hottest:.3g} K the occupied frequencies "
+                    f"reach about {occupied / 1e9:.3g} GHz.")
+            if top < 9 * occupied:
+                note += (f" The integral stops where the bands do, so the curve is a lower bound and flattens "
+                         f"above roughly {top / (9 * thermal_frequency(1.0)):.3g} K. Compute more "
+                         f"eigenfrequencies (Problem → Number of solutions) to carry it higher.")
+            d.addRow(muted_label(note))
 
     def _zone_style_box(self):
         """Style of the plots over the zone: a map can show its wavevectors and a colour bar; the surfaces
@@ -578,7 +732,63 @@ class PlotPanel(Panel):
             else (("Grid", "grid"), ("Title", "title"))
         d.addRow("", self._checks(checks))
 
+    def _curve_style_box(self):
+        """Style of a single curve (a spectrum): its points, its line and its colour."""
+        st, setter = self.pl.style, self._restyle
+        d = self.form("Style")
+        row = QHBoxLayout()
+        pts = QCheckBox("Show")
+        pts.setChecked(st.markers)
+        pts.toggled.connect(setter("markers"))
+        size = QDoubleSpinBox()
+        size.setRange(0.5, 15)
+        size.setSingleStep(0.5)
+        size.setValue(st.marker_size)
+        size.setPrefix("size ")
+        size.valueChanged.connect(setter("marker_size"))
+        row.addWidget(pts)
+        row.addWidget(size)
+        row.addStretch(1)
+        d.addRow("Points", row)
+        row = QHBoxLayout()
+        line = QComboBox()
+        line.addItems(["solid", "dashed", "dotted", "none"])
+        line.setCurrentText(st.line_style)
+        line.currentTextChanged.connect(setter("line_style"))
+        width = QDoubleSpinBox()
+        width.setRange(0.2, 6)
+        width.setSingleStep(0.2)
+        width.setValue(st.line_width)
+        width.setPrefix("width ")
+        width.valueChanged.connect(setter("line_width"))
+        row.addWidget(line)
+        row.addWidget(width)
+        row.addStretch(1)
+        d.addRow("Lines", row)
+        swatch = QPushButton()
+        swatch.setFixedWidth(46)
+
+        def paint():
+            swatch.setStyleSheet(f"background: {st.color}; border: 1px solid #777; border-radius: 4px;")
+
+        def pick():
+            from PySide6.QtWidgets import QColorDialog
+            c = QColorDialog.getColor(QColor(st.color), self, "Curve colour")
+            if c.isValid():
+                setter("color")(c.name())
+                paint()
+
+        swatch.clicked.connect(pick)
+        paint()
+        row = QHBoxLayout()
+        row.addWidget(swatch)
+        row.addStretch(1)
+        d.addRow("Colour", row)
+        d.addRow("", self._checks((("Grid", "grid"), ("Title", "title"))))
+
     def _style_box(self):
+        if self.pl.kind in ("spectrum", "conductance"):
+            return self._curve_style_box()
         if self.pl.kind in ("kmap", "surfaces"):
             return self._zone_style_box()
         if self.pl.kind == "colored":
