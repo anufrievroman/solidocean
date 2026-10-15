@@ -30,8 +30,7 @@ def band_map(name: str = "", quantity: str = "freq", band: int = 0) -> ResultPlo
 def band_surfaces(name: str = "", quantity: str = "freq", band: int = 0, bands: int = 6) -> ResultPlot:
     """Bands of a wavevector mesh as surfaces over the zone, in a 3D kx, ky, frequency view."""
     return ResultPlot(name=name or PLOT_TITLES["surfaces"], kind="surfaces", quantity=quantity, band=band,
-                      bands=bands, at=0,
-                      style=PlotStyle(colormap="Paired", title=False, k_unit="1/um"))
+                      bands=bands, at=0, style=PlotStyle(title=False, k_unit="1/um"))
 
 
 def spectrum_plot(name: str = "", spectrum: str = "dos") -> ResultPlot:

@@ -295,6 +295,10 @@ def draw_surfaces(results, ax, project, pdef, values: np.ndarray | None = None) 
     if not drawn:
         ax.text2D(0.5, 0.5, "No values in these bands", ha="center", va="center", color="0.5",
                   transform=ax.transAxes)
+    for axis in (ax.xaxis, ax.yaxis, ax.zaxis):     # white walls, not matplotlib's grey ones
+        axis.pane.set_facecolor("white")
+        axis.pane.set_alpha(1.0)
+        axis.pane.set_edgecolor("0.85")
     axis_label = k_axis_label(st.k_unit, mathtext=True)
     ax.set_xlabel(f"$k_x$ ({axis_label})", fontsize=11, labelpad=6)
     ax.set_ylabel(f"$k_y$ ({axis_label})", fontsize=11, labelpad=6)
