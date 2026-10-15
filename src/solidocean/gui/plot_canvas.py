@@ -13,6 +13,9 @@ from ..results.modal import draw
 from ..results.style import use_plot_style
 
 
+TOOLBAR_SCALE = 0.7      # of matplotlib's default icon size
+
+
 class PlotCanvas(QWidget):
     # (outer index, inner index, band index)
     picked = Signal(int, int, int)
@@ -25,7 +28,10 @@ class PlotCanvas(QWidget):
         self.canvas = FigureCanvasQTAgg(self.figure)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(NavigationToolbar2QT(self.canvas, self))
+        toolbar = NavigationToolbar2QT(self.canvas, self)
+        icons = toolbar.iconSize()      # matplotlib's own are chunky beside the rest of the interface
+        toolbar.setIconSize(icons * TOOLBAR_SCALE)
+        layout.addWidget(toolbar)
         layout.addWidget(self.canvas)
         self.ax = self.figure.add_subplot()
         self.results = None
