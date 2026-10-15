@@ -10,10 +10,12 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QHBoxLayout, QSplitter, QTabBar, QVBoxLayout, QWidget
 
-MODES = ("tabs", "side", "stacked")
-MODE_NAMES = {"tabs": "Single", "side": "Horizontal split", "stacked": "Vertical split"}
+# named for the divider between the views, as editors name them: a horizontal split is a horizontal line
+# with a view above and below it, a vertical one puts them side by side
+MODES = ("tabs", "stacked", "side")
+MODE_NAMES = {"tabs": "Single", "stacked": "Horizontal split", "side": "Vertical split"}
 MODE_HINTS = {"tabs": "One view at a time, chosen by the tabs on the left",
-              "side": "Both views, side by side", "stacked": "Both views, one above the other"}
+              "stacked": "Both views, one above the other", "side": "Both views, side by side"}
 
 
 class ViewArea(QWidget):
