@@ -616,6 +616,18 @@ class PlotPanel(Panel):
             ku.currentTextChanged.connect(lambda u, lbl=unit: lbl.setText(k_axis_label(u)))
             d.addRow(name, row)
 
+    def _complete_note(self) -> str:
+        """Where the computed bands stop being complete, and where they reach: the two are not the same,
+        since the topmost band dips somewhere in the zone (often at Gamma, where folded bands crowd)."""
+        from ...physics.solid import spectra
+        r, pl = self.win.results, self.pl
+        if r is None or not getattr(r, "is_kmesh", False):
+            return "no results yet."
+        whole = spectra.complete_to(r, max(pl.at, 0), pl.band, pl.bands)
+        reached = spectra.highest(r, max(pl.at, 0), pl.band, pl.bands)
+        return (f"every band is present below {whole / 1e9:.3g} GHz, though some reach "
+                f"{reached / 1e9:.3g} GHz.")
+
     def _spectrum_rows(self, d):
         """A spectrum is summed over every band of the mesh, so it is chosen from a list rather than
         written as an expression; the heat flux also needs a temperature."""
@@ -645,18 +657,21 @@ class PlotPanel(Panel):
         samples = QSpinBox()
         samples.setRange(2, 20000)
         samples.setValue(pl.bins)
-        samples.setToolTip("How many frequencies the spectrum is sampled at between zero and the highest "
-                           "computed one")
+        samples.setToolTip("How many frequencies the spectrum is sampled at")
         samples.valueChanged.connect(lambda v: (setattr(pl, "bins", v), self._refresh()))
         d.addRow("Frequency samples", samples)
-        d.addRow(muted_label("Every band of the mesh takes part. The spectrum falls away near the highest "
-                             "computed frequency, where the bands run out rather than the states."))
+        d.addRow("", self._checks((("Carry past the complete range", "show_incomplete"),), on=pl))
+        d.addRow(muted_label("Every band of the mesh takes part, and the spectrum stops where the computed "
+                             "bands stop being complete — " + self._complete_note() + " Beyond it states "
+                             "are missing, so the curve only sags; carried on, it is a lower bound and the "
+                             "line is marked."))
 
     def _conductance_rows(self, d):
         """The heat flux integrated over the bands: which integral, how finely the frequency quadrature is
         sampled, and a warning when the computed bands do not reach the occupied frequencies."""
         import numpy as np
 
+        from ...physics.solid import spectra
         from ...physics.solid.spectra import (TRANSPORT, TRANSPORT_HELP, TRANSPORT_TITLES,
                                               thermal_frequency)
         pl = self.pl
@@ -681,19 +696,21 @@ class PlotPanel(Panel):
         samples.setToolTip("Frequencies the integral over the bands is sampled at")
         samples.valueChanged.connect(lambda v: (setattr(pl, "bins", v), self._refresh()))
         d.addRow("Frequency samples", samples)
+        d.addRow("", self._checks((("Carry past the complete range", "show_incomplete"),), on=pl))
         r = self.win.results
         if r is not None and getattr(r, "is_kmesh", False):
-            top = float(np.nanmax(r.freqs)) if np.any(np.isfinite(r.freqs)) else 0.0
+            top = (spectra.highest if pl.show_incomplete else spectra.complete_to)(r, max(pl.at, 0),
+                                                                                   pl.band, pl.bands)
             try:
                 hottest = self.p.evaluator()(pl.t_max)
             except Exception:
                 hottest = 0.0
             occupied = thermal_frequency(hottest)
-            note = (f"The bands reach {top / 1e9:.3g} GHz; at {hottest:.3g} K the occupied frequencies "
-                    f"reach about {occupied / 1e9:.3g} GHz.")
+            note = (self._complete_note() + f" At {hottest:.3g} K the occupied frequencies reach about "
+                    f"{occupied / 1e9:.3g} GHz.")
             if top < 9 * occupied:
-                note += (f" The integral stops where the bands do, so the curve is a lower bound and flattens "
-                         f"above roughly {top / (9 * thermal_frequency(1.0)):.3g} K. Compute more "
+                note += (f" The integral stops there, so the curve is a lower bound and flattens above "
+                         f"roughly {top / (9 * thermal_frequency(1.0)):.3g} K. Compute more "
                          f"eigenfrequencies (Problem → Number of solutions) to carry it higher.")
             d.addRow(muted_label(note))
 
@@ -909,13 +926,23 @@ class PlotPanel(Panel):
         d.addRow("Colour scale", cmap)
         d.addRow("", self._checks((("Grid", "grid"), ("Title", "title"), ("Colour bar", "colorbar"))))
 
-    def _checks(self, items) -> QHBoxLayout:
-        """A row of style check boxes: (label, PlotStyle attribute)."""
+    def _checks(self, items, on=None) -> QHBoxLayout:
+        """A row of check boxes: (label, attribute) of the plot's style, or of `on` (the plot itself)."""
         row = QHBoxLayout()
+        holder = self.pl.style if on is None else on
+
+        def setter(attr):
+            def fn(v):
+                setattr(holder, attr, v)
+                self._refresh()
+                if on is not None:
+                    self.win.select_node("plot", self.index)    # the notes below depend on it
+            return fn
+
         for label, attr in items:
             cb = QCheckBox(label)
-            cb.setChecked(getattr(self.pl.style, attr))
-            cb.toggled.connect(self._restyle(attr))
+            cb.setChecked(getattr(holder, attr))
+            cb.toggled.connect(setter(attr))
             row.addWidget(cb)
         row.addStretch(1)
         return row

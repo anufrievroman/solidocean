@@ -25,8 +25,9 @@ $$D(f) = \frac{1}{(2\pi)^2}\sum_j \frac{2\pi k_j}{|\mathrm{d}f/\mathrm{d}k|_j},\
 evaluated on a dense grid of the exact branches. The two routes share nothing: one is a finite-element
 eigenproblem sampled over a two-dimensional zone of an invented cell, the other a one-dimensional analytic
 dispersion rotated in k-space. They must still agree, because the artificial cell only folds the states into
-its zone and folding moves no state. The comparison runs to $$\omega t / c_\mathrm{T} = 10$$, below which
-every computed band is present.
+its zone and folding moves no state. The comparison runs to $$\omega t / c_\mathrm{T} = 10$$, which is below
+the frequency where the sixteen computed bands stop being complete — the lowest value the topmost of them
+takes over the zone, not the highest frequency any of them reaches.
 
 What is left over is the price of sampling. Bands are numbered by ascending frequency at each wavevector, so
 where two branches cross, the surfaces kink; a mesh of flat triangles cuts those corners and flattens the
@@ -133,7 +134,8 @@ def run(quick: bool = False) -> Report:
                 common.save_model(p, "zone_spectra")
             results = modal.run(Solver(p, log=quiet))
             dos, velocity, contour = spectra_of(results, levels)
-            window = float(np.nanmin(results.freqs[0, :, -1]))
+            from solidocean.physics.solid import spectra
+            window = spectra.complete_to(results)        # the bands are all present only below this
             assert window > top, f"only {NUM_EIGS} bands: complete to {window:.3g} Hz, compared to {top:.3g} Hz"
             points.append(results.freqs.shape[1])
             dos_errors.append(l1_error(dos, dos_exact, levels))

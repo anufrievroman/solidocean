@@ -128,6 +128,9 @@ class ResultPlot:
     # temperature the heat flux is radiated at
     spectrum: str = "dos"
     bins: int = 200
+    # carry the curve past the frequency where the computed bands stop being complete, marking that
+    # frequency with a dashed line; beyond it states are missing and the curve only sags
+    show_incomplete: bool = False
     temperature: Expr = "1[K]"
     # conductance: which integral ("conductance" or "power") and the temperature axis it is drawn against
     transport: str = "conductance"

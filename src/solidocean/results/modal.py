@@ -348,11 +348,23 @@ def draw_spectrum(results, ax, project, pdef) -> np.ndarray:
         temperature = project.evaluator()(pdef.temperature)
     except Exception as exc:
         raise ValueError(f"temperature '{pdef.temperature}': {exc}") from None
-    freq, values = spectra.spectrum(results, pdef.spectrum, bins=pdef.bins, temperature=temperature,
-                                    outer=i, band=pdef.band, bands=pdef.bands)
+    try:
+        freq, values = spectra.spectrum(results, pdef.spectrum, bins=pdef.bins, temperature=temperature,
+                                        outer=i, band=pdef.band, bands=pdef.bands,
+                                        incomplete=pdef.show_incomplete)
+    except spectra.NoCompleteRange as exc:
+        ax.text(0.5, 0.5, "\n".join(_wrap(str(exc))), ha="center", va="center", color="0.5",
+                transform=ax.transAxes)
+        return np.zeros((0, 5))
     scale = UNITS[project.frequency_unit]
     ax.plot(freq / scale, values, color=st.color, ls=LINESTYLES.get(st.line_style, "-"), lw=st.line_width,
             marker="o" if st.markers else None, ms=st.marker_size, mew=0)
+    if pdef.show_incomplete:
+        complete = spectra.complete_to(results, i, pdef.band, pdef.bands)
+        ax.axvline(complete / scale, color="0.55", ls="--", lw=1.0, zorder=1)
+        ax.annotate("bands complete to here", (complete / scale, 0.97), xycoords=("data", "axes fraction"),
+                    ha="right", va="top", rotation=90, fontsize=9, color="0.45",
+                    textcoords="offset points", xytext=(-4, 0))
     ax.set_xlabel(pdef.x_label or f"Frequency ({project.frequency_unit})", fontsize=13)
     ax.set_ylabel(pdef.y_label or spectra.SPECTRUM_LABELS[pdef.spectrum], fontsize=13)
     ax.tick_params(labelsize=11)
@@ -390,8 +402,14 @@ def draw_conductance(results, ax, project, pdef) -> np.ndarray:
     st = pdef.style
     i = min(max(pdef.at, 0), results.freqs.shape[0] - 1)
     wanted = temperatures_of(project, pdef)
-    temperatures, values = spectra.transport(results, pdef.transport, wanted, bins=pdef.bins, outer=i,
-                                             band=pdef.band, bands=pdef.bands)
+    try:
+        temperatures, values = spectra.transport(results, pdef.transport, wanted, bins=pdef.bins, outer=i,
+                                                 band=pdef.band, bands=pdef.bands,
+                                                 incomplete=pdef.show_incomplete)
+    except spectra.NoCompleteRange as exc:
+        ax.text(0.5, 0.5, "\n".join(_wrap(str(exc))), ha="center", va="center", color="0.5",
+                transform=ax.transAxes)
+        return np.zeros((0, 5))
     ax.plot(temperatures, values, color=st.color, ls=LINESTYLES.get(st.line_style, "-"), lw=st.line_width,
             marker="o" if st.markers else None, ms=st.marker_size, mew=0)
     ax.set_xlabel(pdef.x_label or "Temperature (K)", fontsize=13)
@@ -409,3 +427,9 @@ def draw_conductance(results, ax, project, pdef) -> np.ndarray:
     if st.title:
         ax.set_title(f"{project.name}: {pdef.name}")
     return np.zeros((0, 5))
+
+
+def _wrap(text: str, width: int = 46) -> list[str]:
+    """Break a message into lines short enough for a plot area."""
+    import textwrap
+    return textwrap.wrap(text, width)

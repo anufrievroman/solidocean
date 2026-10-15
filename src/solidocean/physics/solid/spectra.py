@@ -21,6 +21,12 @@ variable from k to f and leaves the contour length alone. That average is also w
 irreducible wedge enough: a flux in one chosen direction is not symmetric under the point group, so it
 could not be recovered by multiplying the wedge by S.
 
+A run computes a fixed number of bands at every wavevector, so the set is only complete below the *lowest*
+value the highest of them takes over the zone (`complete_to`) — usually at Gamma, where the bands of a
+membrane are folded down and crowd together. Above that line states are missing and every spectrum sags
+towards zero, which looks like physics and is not: the highest frequency reached somewhere in the zone says
+nothing about where the set stops being complete.
+
 Integrating the flux over frequency gives what the whole band structure carries, against temperature:
 
     P(T) = int p(f,T) df            power radiated per unit width of the boundary
@@ -65,6 +71,10 @@ SPECTRUM_HELP = {
     "flux": "The energy a convex boundary at the given temperature radiates into the structure, per unit "
             "frequency and unit length of that boundary, averaged over its directions.",
 }
+
+
+class NoCompleteRange(ValueError):
+    """The computed bands have no frequency range in which every state is present."""
 
 
 def multiplicity(reduced: np.ndarray, tris: np.ndarray) -> float:
@@ -150,29 +160,58 @@ def bose_einstein(freq: np.ndarray, temperature: float) -> np.ndarray:
     return 1.0 / np.expm1(x)
 
 
-def sampled(results, bins: int = 200, outer: int = 0, band: int = 0, bands: int = 0):
-    """The frequencies a mesh is sampled at and the sums every spectrum is built from: (levels, total
-    contour length, that length over |grad f|, copies of the meshed region in the zone)."""
+def _bands_of(results, outer: int, band: int, bands: int) -> np.ndarray:
+    """The columns of frequencies a spectrum is summed over."""
     if not results.is_kmesh:
         raise ValueError("spectra are computed from a wavevector mesh (a coherent heat conduction problem)")
     n_bands = results.freqs.shape[2]
     first = min(max(band, 0), n_bands - 1)
     last = n_bands if bands < 1 else min(first + bands, n_bands)
-    freqs = results.freqs[outer, :, first:last]
-    top = np.nanmax(freqs) if np.any(np.isfinite(freqs)) else 0.0
-    levels = np.linspace(0.0, float(top), max(int(bins), 2) + 1)[1:]   # 0 carries no states
+    return results.freqs[outer, :, first:last]
+
+
+def complete_to(results, outer: int = 0, band: int = 0, bands: int = 0) -> float:
+    """The highest frequency (Hz) whose states are all accounted for: the lowest value the topmost included
+    band takes over the zone. Above it the run simply stopped computing bands, so a spectrum drawn there is
+    missing states rather than reporting that there are none."""
+    freqs = _bands_of(results, outer, band, bands)
+    top = freqs[:, -1]
+    return float(np.nanmin(top)) if np.any(np.isfinite(top)) else 0.0
+
+
+def highest(results, outer: int = 0, band: int = 0, bands: int = 0) -> float:
+    """The highest frequency computed anywhere in the zone — not where the bands stop being complete."""
+    freqs = _bands_of(results, outer, band, bands)
+    return float(np.nanmax(freqs)) if np.any(np.isfinite(freqs)) else 0.0
+
+
+def sampled(results, bins: int = 200, outer: int = 0, band: int = 0, bands: int = 0,
+            incomplete: bool = False):
+    """The frequencies a mesh is sampled at and the sums every spectrum is built from: (levels, total
+    contour length, that length over |grad f|, copies of the meshed region in the zone).
+
+    The levels stop where the bands stop being complete; `incomplete` carries them to the highest frequency
+    computed anywhere instead, where the spectra are a lower bound.
+    """
+    freqs = _bands_of(results, outer, band, bands)
+    top = highest(results, outer, band, bands) if incomplete else complete_to(results, outer, band, bands)
+    if top <= 0:
+        raise NoCompleteRange(
+            "the topmost computed band falls to zero somewhere in the zone, so no range of frequencies has "
+            "all of its states: compute more eigenfrequencies, or carry the spectrum past the complete range")
+    levels = np.linspace(0.0, top, max(int(bins), 2) + 1)[1:]          # 0 carries no states
     length, weighted = contour_sums(results.k[outer][:, :2], results.ktris, freqs, levels)
     return levels, length, weighted, multiplicity(results.kred, results.ktris)
 
 
 def spectrum(results, kind: str, bins: int = 200, temperature: float = 1.0, outer: int = 0,
-             band: int = 0, bands: int = 0) -> tuple[np.ndarray, np.ndarray]:
+             band: int = 0, bands: int = 0, incomplete: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """(frequencies in Hz, values) of a spectral quantity of a wavevector mesh: "dos", "velocity" or
     "flux". `bands` bands from `band` up are included (0 = all of them), for value `outer` of the variable
     sweep; `temperature` (K) only matters to the flux."""
     if kind not in SPECTRA:
         raise ValueError(f"unknown spectrum '{kind}' (one of {', '.join(SPECTRA)})")
-    levels, length, weighted, copies = sampled(results, bins, outer, band, bands)
+    levels, length, weighted, copies = sampled(results, bins, outer, band, bands, incomplete)
     if kind == "dos":
         return levels, copies * weighted / (2 * np.pi) ** 2
     if kind == "velocity":
@@ -224,14 +263,14 @@ def d_occupation_dT(freq: np.ndarray, temperature: float) -> np.ndarray:
 
 
 def transport(results, kind: str, temperatures: np.ndarray, bins: int = 200, outer: int = 0,
-              band: int = 0, bands: int = 0) -> tuple[np.ndarray, np.ndarray]:
+              band: int = 0, bands: int = 0, incomplete: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """(temperatures in K, values) of the radiated power P(T) in W/m or the ballistic thermal conductance
     G(T) = dP/dT in W/(K m), integrating the heat flux over the computed bands. The contour lengths do not
     depend on the temperature, so the mesh is summed once for the whole curve."""
     if kind not in TRANSPORT:
         raise ValueError(f"unknown quantity '{kind}' (one of {', '.join(TRANSPORT)})")
     temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
-    levels, length, _, copies = sampled(results, bins, outer, band, bands)
+    levels, length, _, copies = sampled(results, bins, outer, band, bands, incomplete)
     weight = copies * H_PLANCK * levels * length / (2 * np.pi ** 2)
     occupation = bose_einstein if kind == "power" else d_occupation_dT
     values = np.array([np.trapezoid(weight * occupation(levels, float(t)), levels) for t in temperatures])
