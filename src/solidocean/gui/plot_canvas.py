@@ -13,7 +13,7 @@ from ..results.modal import draw
 from ..results.style import use_plot_style
 
 
-TOOLBAR_SCALE = 0.7      # of matplotlib's default icon size
+TOOLBAR_SCALE = 0.56     # of matplotlib's default icon size
 
 
 class PlotCanvas(QWidget):
@@ -31,6 +31,9 @@ class PlotCanvas(QWidget):
         toolbar = NavigationToolbar2QT(self.canvas, self)
         icons = toolbar.iconSize()      # matplotlib's own are chunky beside the rest of the interface
         toolbar.setIconSize(icons * TOOLBAR_SCALE)
+        # no frame and no backing of its own: the style draws rules along a toolbar's edges, which boxed
+        # the plot in
+        toolbar.setStyleSheet("QToolBar { border: none; background: transparent; }")
         layout.addWidget(toolbar)
         layout.addWidget(self.canvas)
         self.ax = self.figure.add_subplot()
