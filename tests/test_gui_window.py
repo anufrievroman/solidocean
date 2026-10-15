@@ -333,3 +333,43 @@ def test_structure_and_plot_can_share_the_window():
     assert min(w.plot.figure.get_size_inches()) >= w.plot.MIN_INCHES
     w.dirty = False
     w.close()
+
+
+def test_a_mode_can_be_shown_from_results_loaded_off_disk(tmp_path):
+    """Results read back from a run have no solver behind them, so picking a point used to raise inside the
+    worker ('NoneType' has no attribute 'log'). One is built from the model the results were loaded with."""
+    import copy
+    import time
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from solidocean import physics, templates
+    from solidocean.gui.main_window import MainWindow
+    from solidocean.physics.solid.modal import ModalResults
+
+    project = templates.create("membrane")
+    project.solid.problem.num_eigs, project.mesh.max_size = 6, "a"
+    ModalResults.save(physics.of(project).solver(project, log=lambda m: None).run(), tmp_path)
+
+    def wait_for(done, limit=60.0):
+        """Spin the event loop until the work lands (the task starts on a thread, so waiting on `busy`
+        alone can miss it) or the time is up."""
+        end = time.time() + limit
+        while time.time() < end and not done():
+            app.processEvents()
+            time.sleep(0.01)
+        app.processEvents()
+
+    w = MainWindow()
+    w.set_project(project)
+    wait_for(lambda: not w.busy)
+    w.results = ModalResults.load(tmp_path / "results.npz")
+    w.results_project = copy.deepcopy(w.project)
+    assert w.solver is None                      # nothing ran in this window
+    assert not w.results.modes                   # mode shapes are not saved with the results
+
+    w.pick_mode(0, 3, 1)
+    wait_for(lambda: w._mode is not None)
+    assert w.solver is not None                  # built on demand, from the loaded model
+    assert w._mode is not None and "Mode 2" in w._mode[2]
+    w.dirty = False
+    w.close()

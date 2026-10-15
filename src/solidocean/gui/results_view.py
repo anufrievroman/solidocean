@@ -49,6 +49,15 @@ class ResultsMixin:
     def has_field_results(self) -> bool:
         return isinstance(self.results, FieldResults)
 
+    def results_solver(self):
+        """The solver the current results came from. Results loaded from a file have none, so one is built
+        from the model they were loaded with: recomputing a mode shape or a quantity needs the model the
+        results belong to, not whatever is being edited now."""
+        if self.solver is None and self.results_project is not None:
+            from .. import physics
+            self.solver = physics.of(self.results_project).solver(self.results_project, log=self.log)
+        return self.solver
+
     # ---- running ----------------------------------------------------------
     def compute(self):
         if not self._check():
@@ -194,16 +203,19 @@ class ResultsMixin:
         """Re-solve the sweep to evaluate a field quantity whose mode shapes were not kept."""
         if self.results is None:
             return
+        solver = self.results_solver()
+        if solver is None:
+            return
         snap = copy.deepcopy(self.results_project)
         exprs = [e for e in self.project.plots[index].expressions() if self.results.values(e) is None]
         q = ", ".join(exprs)
 
         def work(sig):
-            self.solver.project = snap
-            self.solver.log = sig.log.emit
-            self.solver.progress = sig.progress.emit
-            self.solver.cancel = self.cancel
-            return self.solver.run(quantities=exprs, store_modes=False)
+            solver.project = snap
+            solver.log = sig.log.emit
+            solver.progress = sig.progress.emit
+            solver.cancel = self.cancel
+            return solver.run(quantities=exprs, store_modes=False)
 
         def done(res):
             self.results.quantities.update(res.quantities)
@@ -312,7 +324,9 @@ class ResultsMixin:
             return
         ev = snap.evaluator({r.outer_name: r.outer_values[i]} if r.outer_name else None)
         k = r.k[i, j]
-        solver = self.solver
+        solver = self.results_solver()
+        if solver is None:
+            return
 
         def work(sig):
             solver.log = sig.log.emit
