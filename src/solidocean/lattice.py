@@ -156,3 +156,95 @@ def brillouin_zone_2d(b1: np.ndarray, b2: np.ndarray) -> np.ndarray:
     poly = vor.vertices[region]
     angle = np.arctan2(poly[:, 1], poly[:, 0])
     return poly[np.argsort(angle)]
+
+
+# Corners of the irreducible wedge of the 2D Brillouin zone, in reduced coordinates of b1, b2: the standard
+# high-symmetry points of each lattice. Meshing the wedge instead of the whole zone assumes the contents of
+# the unit cell have the full point symmetry of the lattice (true for an empty cell or a centred hole, not
+# for a tilted or off-centre inclusion), so the zone can be filled in from it by symmetry.
+WEDGES: dict[str, list[list[float]]] = {
+    "square": [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5]],                   # G, X, M: an eighth of the zone
+    "rectangular": [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]],  # G, X, S, Y: a quarter
+    "hexagonal": [[0.0, 0.0], [0.5, 0.0], [2 / 3, 1 / 3]],            # G, M, K: a twelfth
+}
+WEDGE_LABELS: dict[str, tuple[str, ...]] = {"square": ("G", "X", "M"), "rectangular": ("G", "X", "S", "Y"),
+                                            "hexagonal": ("G", "M", "K")}
+ZONE_REGIONS = ("irreducible", "full")
+
+
+def zone_mesh(b1: np.ndarray, b2: np.ndarray, n: int, region: str = "irreducible",
+              kind: str = "square") -> tuple[np.ndarray, np.ndarray]:
+    """Uniform triangular mesh of the first Brillouin zone (`region` "full") or of its irreducible wedge:
+    points (P, 2) in reduced coordinates of b1, b2 and triangles (T, 3) of indices into them.
+
+    Every edge of the region is divided into `n`, so a triangular wedge holds (n + 1)(n + 2) / 2 points.
+    The mesh is built in reduced coordinates, which depend on the shape of the lattice but not its size: a
+    sweep of the lattice constant keeps the same points and the same connectivity.
+    """
+    if n < 1:
+        raise ValueError("a Brillouin-zone mesh needs at least one division per edge")
+    if region == "full":
+        corners, apex = _zone_polygon(b1, b2), np.zeros(2)
+    elif kind in WEDGES:
+        corners, apex = np.array(WEDGES[kind], dtype=float), None
+    else:
+        raise ValueError(f"no standard irreducible wedge for a {kind} lattice (use the whole zone)")
+    return _mesh_polygon(corners, n, apex)
+
+
+def _zone_polygon(b1: np.ndarray, b2: np.ndarray) -> np.ndarray:
+    """The first Brillouin zone as a polygon (n, 2) in reduced coordinates of b1, b2 (its shape in reduced
+    coordinates follows from the metric of the reciprocal vectors, not from the plane they lie in)."""
+    from scipy.spatial import Voronoi
+    gram = np.array([[b1 @ b1, b1 @ b2], [b1 @ b2, b2 @ b2]])
+    chol = np.linalg.cholesky(gram)                 # reduced r -> Cartesian x = chol.T @ r, in some frame
+    reduced = np.array([[i, j] for i in range(-2, 3) for j in range(-2, 3)], dtype=float)
+    vor = Voronoi(reduced @ chol)
+    centre = int(np.argmin(np.linalg.norm(reduced, axis=1)))
+    poly = vor.vertices[vor.regions[vor.point_region[centre]]]
+    poly = poly[np.argsort(np.arctan2(poly[:, 1], poly[:, 0]))]
+    return np.linalg.solve(chol.T, poly.T).T
+
+
+def _mesh_polygon(corners: np.ndarray, n: int, apex: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Uniform triangular mesh of a convex polygon: fanned into triangles from `apex` (by default the first
+    corner, which is then not an interior point), each divided into n**2 similar triangles, shared points
+    merged. The first point of the mesh is the apex."""
+    corners = np.asarray(corners, dtype=float)
+    if apex is None:
+        apex, ring, wrap = corners[0], corners[1:], False     # a corner of the polygon: open fan
+    else:
+        apex, ring, wrap = np.asarray(apex, dtype=float), corners, True   # inside it: fan all the way round
+    points, tris = [], []
+    m = len(ring)
+    for s in range(m if wrap else m - 1):
+        p, t = _subdivide(apex, ring[s], ring[(s + 1) % m], n)
+        tris.append(t + sum(len(q) for q in points))
+        points.append(p)
+    return _merge(np.vstack(points), np.vstack(tris))
+
+
+def _subdivide(a: np.ndarray, b: np.ndarray, c: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
+    """A triangle divided into n**2 similar triangles: its points and their triangles."""
+    index, points = {}, []
+    for i in range(n + 1):
+        for j in range(n + 1 - i):
+            index[(i, j)] = len(points)
+            points.append(a + (b - a) * (i / n) + (c - a) * (j / n))
+    tris = []
+    for i in range(n):
+        for j in range(n - i):
+            tris.append((index[(i, j)], index[(i + 1, j)], index[(i, j + 1)]))
+            if i + j < n - 1:
+                tris.append((index[(i + 1, j)], index[(i + 1, j + 1)], index[(i, j + 1)]))
+    return np.array(points), np.array(tris, dtype=np.int64)
+
+
+def _merge(points: np.ndarray, tris: np.ndarray, tol: float = 1e-9) -> tuple[np.ndarray, np.ndarray]:
+    """Merge points that coincide (the fan triangles share edges), keeping the order of first appearance."""
+    _, first, inverse = np.unique(np.round(points / tol).astype(np.int64), axis=0,
+                                  return_index=True, return_inverse=True)
+    order = np.argsort(first)
+    remap = np.empty(len(first), dtype=np.int64)
+    remap[order] = np.arange(len(first))
+    return points[first[order]], remap[inverse.ravel()][tris]

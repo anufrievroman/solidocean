@@ -1,5 +1,6 @@
 """Solid mechanics panels: physics overview, periodicity, symmetry, boundary conditions, problem
-(eigenfrequency / stationary) with its solutions, wavevector sweep, solver and the displacement field."""
+(eigenfrequency / stationary) with its solutions, wavevector sweep or mesh, solver and the displacement
+field."""
 
 from __future__ import annotations
 
@@ -13,7 +14,8 @@ from PySide6.QtWidgets import (
 )
 
 from ... import units
-from ...physics.solid.model import LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_TITLES, KPath, SolidCondition
+from ...physics.solid.model import (LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_TITLES, KMesh, KPath,
+                                    SolidCondition)
 from ...project import AXES, Feature
 from ...selection import FACES, selection_text
 from .common import (ERROR_STYLE, ExprEdit, Panel, VectorEdit, equations, field_quantity_rows, muted_label,
@@ -271,12 +273,38 @@ def default_kpath(project, enabled: bool = False) -> KPath:
                  ["G", "X", "M", "G", "R", "X"], 10, enabled=enabled)
 
 
+def default_kmesh(project, enabled: bool = True) -> KMesh:
+    """A mesh of the irreducible wedge where the lattice has a standard one, else of the whole zone."""
+    from ... import lattice as lat
+    try:
+        kind = lat.classify(project.lattice, project.evaluator())
+    except Exception:
+        kind = ""
+    return KMesh(n=12, region="irreducible" if kind in lat.WEDGES else "full", enabled=enabled)
+
+
+def kmesh_counts(project, km: KMesh) -> tuple[int, int] | None:
+    """(points, triangles) the mesh would hold, or None if the lattice cannot carry one."""
+    from ... import lattice as lat
+    try:
+        ev = project.evaluator()
+        recip = [b for b in lat.reciprocal(lat.slots(project.lattice, ev)) if b is not None]
+        if len(recip) != 2:
+            return None
+        points, tris = lat.zone_mesh(*recip, km.n, km.region, lat.classify(project.lattice, ev))
+    except Exception:
+        return None
+    return len(points), len(tris)
+
+
 def problem_summary(project) -> dict[str, str]:
     """Short text per problem node (empty string = inactive)."""
     st = project.solid.problem
-    kp = st.active_kpath
+    kp, km = st.active_kpath, st.active_kmesh
+    counts = kmesh_counts(project, km) if km else None
     return {**sweep_summary(project.problem), "problem_type": PROBLEM_TITLES.get(st.type, st.type),
-            "kpath": "–".join(pretty_point(p) for p in kp.path) if kp else ""}
+            "kpath": "–".join(pretty_point(p) for p in kp.path) if kp else "",
+            "kmesh": (f"{counts[0]} points" if counts else f"{km.region}, n = {km.n}") if km else ""}
 
 
 PROBLEM_HELP = {
@@ -288,6 +316,12 @@ PROBLEM_HELP = {
                   "displacements, for every value of the variable sweep. The model must be held against "
                   "rigid-body motion (fixed constraints, prescribed displacements or symmetry planes). Periodic "
                   "models give the periodic solution (wavevector 0).",
+    "conductance": "Coherent (ballistic) heat conduction: the carriers of heat are the phonons of the "
+                   "structure itself, so the band structure has to be known over the whole Brillouin zone, "
+                   "not just along a path. The same eigenproblem as an eigenfrequency run is therefore "
+                   "solved on a triangular mesh of the zone (Wavevector mesh below), giving a surface "
+                   "ω(k) per band from which spectral quantities follow. Geometry, mesh and matrices are "
+                   "built once and reused at every k point.",
     "frequency": "The harmonic response to loads and prescribed displacements oscillating at one frequency: "
                  "(K (1 + iη) − ω² M) u = f, the loads and displacements being the amplitudes of the drive. The "
                  "result is the complex displacement amplitude (use abs(uz) for an amplitude). A loss factor η "
@@ -308,6 +342,18 @@ PROBLEM_FORMALISM = {
          "K − σM invertible despite rigid-body modes. One sparse factorisation of K − σM per point; small "
          "systems are solved densely instead."),
         ("f = ω / 2π", "The eigenfrequencies reported, sorted; the eigenvectors are the mode shapes."),
+    ),
+    "conductance": equations(
+        ("(K(k) − ω² M(k)) u = 0", "The eigenproblem of an eigenfrequency run, solved at every point of a "
+         "mesh of the Brillouin zone instead of along a path: K and M are assembled once and only the "
+         "Bloch reduction T(k) changes from point to point."),
+        ("ω<sub>j</sub>(k), j = 1 … N", "The bands over the zone: at each k the eigenfrequencies in "
+         "ascending order, so a band is the j-th lowest surface rather than a branch followed through its "
+         "crossings. Sorting them into branches, and the integrals over the zone that give a conductance, "
+         "come later; what a run produces now is the sampled surfaces themselves."),
+        ("Mesh of the zone", "Either the irreducible wedge (Γ–X–M for a square lattice, Γ–M–K for a "
+         "hexagonal one), which assumes the contents of the cell share the point symmetry of the lattice, "
+         "or the whole zone. Each edge of the region is divided n times."),
     ),
     "stationary": equations(
         ("K u = f", "The assembled stiffness K and load vector f (surface loads integrated over their faces)."),
@@ -371,8 +417,12 @@ class SolidProblemPanel(Panel):
             t.addRow("Around", around)
         f = self.form("Configuration")
         summary = problem_summary(self.p)
-        nodes = (("sweep", "Variable sweep"),) if st.field_problem else \
-            (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"))
+        if st.field_problem:
+            nodes = (("sweep", "Variable sweep"),)
+        elif st.coherent:
+            nodes = (("sweep", "Variable sweep"), ("kmesh", "Wavevector mesh"))
+        else:
+            nodes = (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"))
         for key, label in nodes:
             b = QPushButton(f"{label}: {summary[key] or 'off'}")
             b.setStyleSheet("text-align: left; padding: 4px 8px;")
@@ -540,6 +590,91 @@ class KPathPanel(SweepPanel):
                 continue
         self._draft.points = pts
         self.changed()
+
+
+class KMeshPanel(SweepPanel):
+    title = "Wavevector mesh"
+    help = ("Inner loop: instead of a path, the Bloch wavevector covers a triangular mesh of the Brillouin "
+            "zone, so that every band becomes a surface ω(k) over the zone. Meshing the irreducible wedge "
+            "(an eighth of a square zone, a twelfth of a hexagonal one) assumes the contents of the unit "
+            "cell share the point symmetry of the lattice — true for an empty cell or a centred hole, not "
+            "for a tilted or off-centre inclusion; mesh the whole zone if in doubt.")
+    attr = "kmesh"
+
+    def holder(self):
+        return self.p.solid.problem
+
+    def build(self):
+        st = self.p.solid.problem
+        self._draft = st.kmesh or default_kmesh(self.p)
+        km = self._draft
+        self.enable_box("Enable wavevector mesh", km)
+        if not self.p.lattice.is_periodic:
+            self.outer.addWidget(muted_label("No periodic axes yet: enable Periodicity under Solid Mechanics."))
+        f = self.form("Mesh of the zone")
+        region = QComboBox()
+        region.addItem("Irreducible wedge", "irreducible")
+        region.addItem("Whole zone", "full")
+        region.setCurrentIndex(max(0, region.findData(km.region)))
+        region.currentIndexChanged.connect(
+            lambda i: (setattr(km, "region", region.itemData(i)), self.changed(),
+                       self.win.rebuild_tree(("kmesh", None))))
+        f.addRow("Region", region)
+        n = QSpinBox()
+        n.setRange(1, 400)
+        n.setValue(km.n)
+        n.setToolTip("Each edge of the region is divided this many times; a triangular wedge then holds "
+                     "(n + 1)(n + 2) / 2 points")
+        n.valueChanged.connect(lambda v: (setattr(km, "n", v), self.changed(),
+                                          self.win.rebuild_tree(("kmesh", None))))
+        f.addRow("Divisions per edge", n)
+        counts = kmesh_counts(self.p, km)
+        if counts is None:
+            self.outer.addWidget(muted_label("The mesh needs a lattice periodic in exactly two directions; "
+                                             "a lattice with no standard wedge must use the whole zone."))
+        else:
+            self.outer.addWidget(muted_label(f"{counts[0]} wavevectors, {counts[1]} triangles — one "
+                                             f"eigenvalue solve per wavevector, per value of the variable "
+                                             f"sweep."))
+        self._mesh_sketch(km)
+
+    def _mesh_sketch(self, km: KMesh):
+        """The zone with the meshed region drawn in it."""
+        from ... import lattice as lat
+        try:
+            recip = [v for v in lat.reciprocal(lat.slots(self.p.lattice, self.p.evaluator())) if v is not None]
+            if len(recip) != 2 or abs(recip[0][2]) > 0 or abs(recip[1][2]) > 0:
+                return
+            shown = KMesh(n=min(km.n, 12), region=km.region)
+            reduced, tris = lat.zone_mesh(*recip, shown.n, shown.region,
+                                          lat.classify(self.p.lattice, self.p.evaluator()))
+        except Exception:
+            return
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+        from matplotlib.figure import Figure
+        fig = Figure(figsize=(2.6, 2.4), layout="constrained")
+        fig.patch.set_alpha(0)
+        ax = fig.add_subplot()
+        ax.set_aspect("equal")
+        ax.axis("off")
+        bz = lat.brillouin_zone_2d(*recip)
+        poly = np.vstack([bz, bz[:1]])
+        ax.fill(poly[:, 0], poly[:, 1], color="#cfd8e3", alpha=0.5)
+        ax.plot(poly[:, 0], poly[:, 1], color="#8a99ab", lw=1)
+        xy = reduced[:, :1] * recip[0][:2] + reduced[:, 1:] * recip[1][:2]
+        ax.triplot(xy[:, 0], xy[:, 1], tris, color="#d62728", lw=0.7)
+        kind = lat.classify(self.p.lattice, self.p.evaluator())
+        for name, corner in zip(lat.WEDGE_LABELS.get(kind, ()) if km.region == "irreducible" else (),
+                                lat.WEDGES.get(kind, ())):
+            x, y = corner[0] * recip[0][:2] + corner[1] * recip[1][:2]
+            ax.annotate(pretty_point(name), (x, y), textcoords="offset points", xytext=(4, 3), fontsize=9,
+                        color=theme_text())
+        if km.n > shown.n:
+            ax.set_title(f"n = {shown.n} shown", fontsize=8, color=theme_text())
+        canvas = FigureCanvasQTAgg(fig)
+        canvas.setFixedHeight(190)
+        canvas.setStyleSheet("background: transparent;")
+        self.outer.addWidget(canvas)
 
 
 class DisplacementPanel(Panel):
@@ -800,6 +935,12 @@ def set_problem_type(win, typ: str):
     p = win.project
     if typ == "frequency" and st.frequency == "f" and "f" not in p.variables:
         p.variables["f"] = "1[MHz]"
+    if typ == "conductance":
+        if st.kmesh is None:
+            st.kmesh = default_kmesh(p)
+        if not any(pl.kind == "kmap" for pl in p.plots):
+            from ...physics.solid.plots import band_map
+            p.plots.insert(0, band_map())
     if not any(pl.kind == "field" for pl in win.project.plots):
         win.project.plots.append(field_plot())
     win.clear_results()

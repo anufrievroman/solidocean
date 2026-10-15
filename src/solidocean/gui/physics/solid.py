@@ -23,7 +23,8 @@ class SolidUI(PhysicsUI):
     physics_panel = sp.SolidPanel
     problem_panel = sp.SolidProblemPanel
     field_panel = sp.DisplacementPanel
-    node_panels = {"periodicity": sp.PeriodicityPanel, "symmetry": sp.SymmetryPanel, "kpath": sp.KPathPanel}
+    node_panels = {"periodicity": sp.PeriodicityPanel, "symmetry": sp.SymmetryPanel, "kpath": sp.KPathPanel,
+                   "kmesh": sp.KMeshPanel}
     indexed_panels = {"solid_cond": sp.SolidConditionPanel}
     highlight_nodes = ("periodicity", "symmetry", "solid_cond")
 
@@ -40,8 +41,13 @@ class SolidUI(PhysicsUI):
 
     def problem_nodes(self, project):
         summary = sp.problem_summary(project)
-        keys = (("sweep", "Variable sweep"),) if project.solid.problem.field_problem else \
-            (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"))
+        st = project.solid.problem
+        if st.field_problem:
+            keys = (("sweep", "Variable sweep"),)
+        elif st.coherent:
+            keys = (("sweep", "Variable sweep"), ("kmesh", "Wavevector mesh"))
+        else:
+            keys = (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"))
         return [(f"{label} ({summary[key]})" if summary[key] else label, (key, None), not summary[key])
                 for key, label in keys]
 
@@ -54,15 +60,27 @@ class SolidUI(PhysicsUI):
         elif kind == "kpath":
             kp = win.project.solid.problem.kpath
             menu.addAction("Disable" if kp is not None and kp.enabled else "Enable", lambda: self.toggle_kpath(win))
+        elif kind == "kmesh":
+            km = win.project.solid.problem.kmesh
+            menu.addAction("Disable" if km is not None and km.enabled else "Enable", lambda: self.toggle_kmesh(win))
 
     @staticmethod
     def toggle_kpath(win):
-        st = win.project.problem
+        st = win.project.solid.problem
         if st.kpath is None:
             st.kpath = sp.default_kpath(win.project)
         st.kpath.enabled = not st.kpath.enabled
         win.mark_dirty()
         win.rebuild_tree(("kpath", None))
+
+    @staticmethod
+    def toggle_kmesh(win):
+        st = win.project.solid.problem
+        if st.kmesh is None:
+            st.kmesh = sp.default_kmesh(win.project)
+        st.kmesh.enabled = not st.kmesh.enabled
+        win.mark_dirty()
+        win.rebuild_tree(("kmesh", None))
 
     def delete_node(self, win, kind, index):
         if kind != "solid_cond":
@@ -78,6 +96,8 @@ class SolidUI(PhysicsUI):
         st = project.solid.problem
         if st.harmonic:
             return "Solving the harmonic response…"
+        if st.coherent:
+            return "Computing the bands over the Brillouin zone…"
         return "Solving stationary solid mechanics…" if st.field_problem else "Computing eigenfrequencies…"
 
     def show_field(self, win):

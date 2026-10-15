@@ -92,6 +92,8 @@ class ResultsMixin:
             parts.append(f"variable sweep over {r.outer_name} ({n_outer} values)")
         if r.is_kpath:
             parts.append(f"k-path {'–'.join(pretty_point(lbl) for _, lbl in r.ticks)} ({n_inner} points)")
+        if r.is_kmesh:
+            parts.append(f"wavevector mesh ({n_inner} points, {len(r.ktris)} triangles)")
         if r.info.get("elapsed_s") is not None:
             parts.append(f"{r.info['elapsed_s']} s")
         return "; ".join(parts) + "."

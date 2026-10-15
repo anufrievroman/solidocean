@@ -66,15 +66,34 @@ class KPath:
 
 
 @dataclass
+class KMesh:
+    """Wavevector mesh over the Brillouin zone (coherent heat conduction): instead of following a path, the
+    eigenfrequencies are computed on a triangulated patch of k-space, so that spectral quantities can later
+    be integrated over the zone. Every edge of the patch is divided into `n` (a triangular wedge then holds
+    (n + 1)(n + 2) / 2 points), and `region` is the irreducible wedge of the zone or the whole of it."""
+    n: int = 12                      # divisions per edge of the region
+    region: str = "irreducible"      # irreducible | full
+    enabled: bool = True             # disabled meshes are kept in the file but not run
+
+    def to_dict(self):
+        d = {"n": self.n, "region": self.region}
+        if not self.enabled:
+            d["enabled"] = False
+        return d
+
+
+@dataclass
 class SolidProblem:
     """Problem of solid mechanics: eigenfrequencies (modes, phonon dispersion along a k-path), the stationary
-    response to loads, or the harmonic (frequency-domain) response to loads and displacements oscillating at a
-    frequency ([solid.problem])."""
-    type: str = "eigenfrequency"     # eigenfrequency | stationary | frequency
+    response to loads, the harmonic (frequency-domain) response to loads and displacements oscillating at a
+    frequency, or coherent heat conduction (the same eigenproblem on a mesh of the Brillouin zone)
+    ([solid.problem])."""
+    type: str = "eigenfrequency"     # eigenfrequency | stationary | frequency | conductance
     num_eigs: int = 12               # eigenfrequencies per solve
     search_freq: Expr = "0[GHz]"     # find the eigenfrequencies nearest this frequency
     k: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])   # Bloch wave vector (rad/m) without k-path
     kpath: KPath | None = None       # wavevector sweep (inner loop of a variable sweep)
+    kmesh: KMesh | None = None       # wavevector mesh (coherent heat conduction)
     tol: float = 0.0                 # relative eigenvalue tolerance (0 = machine precision)
     maxiter: int = 0                 # Lanczos iterations (0 = ARPACK default)
     frequency: Expr = "f"            # frequency domain: the drive frequency (sweep it with a variable)
@@ -83,6 +102,8 @@ class SolidProblem:
     def __post_init__(self):
         if isinstance(self.kpath, dict):
             self.kpath = KPath(**self.kpath)
+        if isinstance(self.kmesh, dict):
+            self.kmesh = KMesh(**self.kmesh)
 
     @property
     def stationary(self) -> bool:
@@ -93,6 +114,11 @@ class SolidProblem:
         return self.type == "frequency"
 
     @property
+    def coherent(self) -> bool:
+        """Coherent heat conduction: the modes are computed on a mesh of the Brillouin zone."""
+        return self.type == "conductance"
+
+    @property
     def field_problem(self) -> bool:
         """A problem with displacement fields as results (stationary or frequency domain), not modes."""
         return self.type in ("stationary", "frequency")
@@ -100,7 +126,12 @@ class SolidProblem:
     @property
     def active_kpath(self) -> KPath | None:
         kp = self.kpath
-        return kp if kp and kp.enabled and not self.field_problem else None
+        return kp if kp and kp.enabled and self.type == "eigenfrequency" else None
+
+    @property
+    def active_kmesh(self) -> KMesh | None:
+        km = self.kmesh
+        return km if km and km.enabled and self.coherent else None
 
     def to_dict(self):
         if self.harmonic:
@@ -111,6 +142,8 @@ class SolidProblem:
                              keep=("type",))
         if self.kpath:
             d["kpath"] = self.kpath.to_dict()
+        if self.kmesh:
+            d["kmesh"] = self.kmesh.to_dict()
         return d
 
 
@@ -154,8 +187,9 @@ class SolidPhysics:
         return out
 
 
-PROBLEM_TYPES = ("eigenfrequency", "stationary", "frequency")
-PROBLEM_TITLES = {"eigenfrequency": "Eigenfrequency", "stationary": "Stationary", "frequency": "Frequency domain"}
+PROBLEM_TYPES = ("eigenfrequency", "stationary", "frequency", "conductance")
+PROBLEM_TITLES = {"eigenfrequency": "Eigenfrequency", "stationary": "Stationary", "frequency": "Frequency domain",
+                  "conductance": "Coherent heat conduction"}
 
 
 def validate_settings(project, ev, material_names) -> list[str]:
@@ -241,4 +275,36 @@ def validate_settings(project, ev, material_names) -> list[str]:
         for p in kp.path:
             if p not in kp.points:
                 errors.append(f"solid.problem.kpath: point '{p}' not defined")
+    errors += _check_kmesh(project, ev)
+    return errors
+
+
+def _check_kmesh(project, ev) -> list[str]:
+    """Problems with the wavevector mesh: it needs two periodic directions, and the irreducible wedge needs a
+    lattice that has a standard one."""
+    from ... import lattice as lat
+    st = project.solid.problem
+    km = st.kmesh
+    if km is None:
+        return ["solid.problem: a coherent heat conduction problem needs a wavevector mesh "
+                "(solid.problem.kmesh)"] if st.coherent else []
+    errors = []
+    if km.n < 1:
+        errors.append("solid.problem.kmesh.n must be at least 1")
+    if km.region not in lat.ZONE_REGIONS:
+        errors.append(f"solid.problem.kmesh.region must be one of {', '.join(lat.ZONE_REGIONS)}")
+    if not st.active_kmesh:
+        return errors
+    try:
+        vectors = lat.slots(project.lattice, ev)
+    except Exception as exc:
+        return errors + [f"solid.problem.kmesh: {exc}"]
+    if sum(v is not None for v in vectors) != 2:
+        errors.append("solid.problem.kmesh needs a lattice periodic in exactly two directions ([lattice]); the "
+                      "mesh covers the two-dimensional Brillouin zone")
+    elif km.region == "irreducible":
+        kind = lat.classify(project.lattice, ev)
+        if kind not in lat.WEDGES:
+            errors.append(f"solid.problem.kmesh: a {kind} lattice has no standard irreducible wedge; mesh the "
+                          f"whole zone instead (region = \"full\")")
     return errors

@@ -1,5 +1,6 @@
 """Plots of modal results (eigenfrequencies per sweep point and mode): dispersion, coloured dispersion and
-quantities per mode against a k-path or a variable sweep."""
+quantities per mode against a k-path or a variable sweep, and the map of one band over a wavevector mesh of
+the Brillouin zone."""
 
 from __future__ import annotations
 
@@ -54,6 +55,8 @@ def draw(results, ax, project, pdef, values: np.ndarray | None = None,
     colored = pdef.kind == "colored"
     if values is None:
         values = results.values(pdef.quantity)
+    if pdef.kind == "kmap":
+        return draw_map(results, ax, project, pdef, values)
     if colored and colors is None:
         colors = results.values(pdef.color_by)
     scatter = []  # colored: (x, y, colour value) per point
@@ -176,3 +179,69 @@ def _color_range(project, st) -> tuple:
 
 def _pretty(label: str) -> str:
     return {"G": "Γ", "Gamma": "Γ"}.get(label, label)
+
+
+def draw_map(results, ax, project, pdef, values: np.ndarray | None = None) -> np.ndarray:
+    """One band of a wavevector mesh as a map over the Brillouin zone: filled contours of the quantity on the
+    triangulated k points, with the zone outlined. Returns the pick table (P, 5) like `draw`."""
+    import matplotlib
+    from matplotlib.tri import Triangulation
+
+    from ..plots import K_UNITS
+    use_plot_style()
+    st = pdef.style
+    if values is None:
+        values = results.values(pdef.quantity)
+    n_outer, _, n_bands = values.shape
+    i = min(max(pdef.at, 0), n_outer - 1)          # one value of the variable sweep at a time
+    b = min(max(pdef.band, 0), n_bands - 1)
+    scale, label = quantity_label(project, pdef)
+    k_scale = K_UNITS[st.k_unit]
+    kx, ky = results.k[i][:, 0] / k_scale, results.k[i][:, 1] / k_scale
+    z = values[i, :, b] / scale
+    tri = Triangulation(kx, ky, results.ktris)
+    bad = np.isnan(z)
+    if bad.any():                                   # bands the eigensolver did not reach at every point
+        tri.set_mask(bad[results.ktris].any(axis=1))
+    levels = max(int(st.levels), 2)
+    lo, hi = _color_range(project, st)
+    if np.all(bad):
+        ax.text(0.5, 0.5, f"Band {b + 1} has no values", ha="center", va="center", color="0.5",
+                transform=ax.transAxes)
+    else:
+        filled = ax.tricontourf(tri, np.nan_to_num(z, nan=float(np.nanmin(z))), levels=levels,
+                                cmap=st.colormap, vmin=lo, vmax=hi)
+        if st.colorbar:
+            cb = ax.figure.colorbar(filled, ax=ax, pad=0.02, aspect=40)
+            cb.set_label(label, fontsize=13)
+            cb.ax.tick_params(labelsize=11)
+    if st.markers:
+        ax.plot(kx, ky, ".", color="0.25", ms=st.marker_size, zorder=3)
+    _zone_outline(ax, project, results, i, k_scale)
+    axis_label = k_axis_label(st.k_unit, mathtext=True)
+    ax.set_xlabel(f"Wavevector $k_x$ ({axis_label})", fontsize=13)
+    ax.set_ylabel(f"Wavevector $k_y$ ({axis_label})", fontsize=13)
+    ax.tick_params(labelsize=11)
+    ax.set_aspect("equal")
+    ax.grid(False)
+    if st.title:
+        ax.set_title(f"{project.name}: {pdef.name} (band {b + 1})")
+    matplotlib.pyplot.setp(ax.spines.values(), visible=True)
+    table = np.column_stack([kx, ky, np.full(len(kx), i), np.arange(len(kx)), np.full(len(kx), b)])
+    return table.astype(float)
+
+
+def _zone_outline(ax, project, results, i: int, k_scale: float) -> None:
+    """Outline the first Brillouin zone behind the map (skipped if the lattice cannot be evaluated here)."""
+    from .. import lattice as lat
+    try:
+        ev = project.evaluator()
+        if results.outer_name:
+            ev = ev.with_overrides({results.outer_name: float(results.outer_values[i])})
+        recip = [v for v in lat.reciprocal(lat.slots(project.lattice, ev)) if v is not None]
+        if len(recip) != 2:
+            return
+        poly = lat.brillouin_zone_2d(*recip) / k_scale
+    except Exception:
+        return
+    ax.plot(*np.vstack([poly, poly[:1]]).T, color="0.5", lw=0.8, zorder=2)

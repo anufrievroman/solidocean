@@ -47,6 +47,8 @@ class PlotStyle:
     x_max: Expr = ""
     y_log: bool = False         # logarithmic axes (not for the x axis of a k-path)
     x_log: bool = False
+    # band map: number of filled contour levels
+    levels: int = 24
     # colored dispersion: colour scale range (empty = data range), colour bar and its label
     color_min: Expr = ""
     color_max: Expr = ""
@@ -78,12 +80,13 @@ SWEEP_AXES = ("auto", "kpath", "variable")
 # dispersion: frequency vs sweep; quantity: any expression vs sweep (heat: vs the swept variable);
 # colored: frequency vs sweep with every point coloured by an expression; field: 3D view of the solution
 # (displacement / temperature); time: heat, any expression vs time (transient problems); line: heat, an
-# expression evaluated point by point along a straight line (a cross-section profile)
-PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section")
+# expression evaluated point by point along a straight line (a cross-section profile); kmap: one band of a
+# wavevector mesh as a map over the Brillouin zone
+PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section", "kmap")
 # the type of each kind, shown with plot names: 3D views of the structure, 2D maps (cross-sections), XY plots, and
 # XY plots whose points are coloured by a third value
-PLOT_TYPES = {"field": "3D", "section": "2D", "dispersion": "XY", "quantity": "XY", "time": "XY", "line": "XY",
-              "colored": "XYz"}
+PLOT_TYPES = {"field": "3D", "section": "2D", "kmap": "2D", "dispersion": "XY", "quantity": "XY",
+              "time": "XY", "line": "XY", "colored": "XYz"}
 
 
 def plot_label(kind: str, text: str) -> str:
@@ -112,6 +115,7 @@ class ResultPlot:
     color_label: str = ""       # colored: colour-bar label; empty = the expression
     style: PlotStyle = field(default_factory=PlotStyle)
     component: str = "|u|"      # field, solid mechanics: |u|, ux, uy, uz or mises
+    band: int = 0               # band map: which band (mode) of the wavevector mesh is mapped
     # line plots: the segment start -> end (expressions), number of points, x axis, time step (-1 = last)
     start: list[str] = field(default_factory=lambda: ["0", "0", "0"])
     end: list[str] = field(default_factory=lambda: ["1[um]", "0", "0"])

@@ -41,6 +41,11 @@ LIBRARY: dict[str, dict[str, str]] = {
     # fused silica (amorphous SiO2; thermal oxide and deposited films are close, E ~ 66-75 GPa)
     "SiO2": {"model": "isotropic", "rho": "2203[kg/m^3]", "E": "73[GPa]", "nu": "0.17",
              "k": "1.38[W/(m*K)]", "cp": "740[J/(kg*K)]"},
+    # amorphous silicon nitride (low-stress LPCVD films: membranes, cantilevers). Elastic values from
+    # Babaei Gavan et al. 2009 (size-dependent Young's modulus of SiN cantilevers), as used for the band
+    # structure of perforated SiN membranes; k is that of the film (far below bulk Si3N4 ceramics)
+    "SiN": {"model": "isotropic", "rho": "3100[kg/m^3]", "E": "250[GPa]", "nu": "0.23",
+            "k": "3[W/(m*K)]", "cp": "700[J/(kg*K)]"},
     # chromium, polycrystalline (adhesion layers); bulk values, sputtered films are often softer
     "Cr": {"model": "isotropic", "rho": "7190[kg/m^3]", "E": "279[GPa]", "nu": "0.21",
            "k": "93.9[W/(m*K)]", "cp": "449[J/(kg*K)]"},

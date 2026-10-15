@@ -36,10 +36,19 @@ class ModalResults:
     modes: dict = field(default_factory=dict, repr=False)
     meshes: dict = field(default_factory=dict, repr=False)
     cels: dict = field(default_factory=dict, repr=False)      # (E, 6, 6) stiffness per element (stresses)
+    # wavevector mesh: the triangles (T, 3) joining the k points of the inner axis and their reduced
+    # coordinates (n_inner, 2). Both are the same for every value of the outer sweep (only the reciprocal
+    # vectors scale with it), so the connectivity is stored once.
+    ktris: np.ndarray | None = None
+    kred: np.ndarray | None = None
 
     @property
     def is_kpath(self) -> bool:
         return bool(self.ticks)
+
+    @property
+    def is_kmesh(self) -> bool:
+        return self.ktris is not None
 
     @property
     def has_all_modes(self) -> bool:
@@ -97,7 +106,8 @@ class ModalResults:
         if "data" in contents:
             npz_path = directory / "results.npz"
             names = list(self.quantities)
-            np.savez(npz_path, freqs=self.freqs, k=self.k, x=self.x, outer_values=self.outer_values,
+            mesh = {"ktris": self.ktris, "kred": self.kred} if self.is_kmesh else {}
+            np.savez(npz_path, freqs=self.freqs, k=self.k, x=self.x, outer_values=self.outer_values, **mesh,
                      **{f"q{n}": self.quantities[q] for n, q in enumerate(names)},
                      meta=json.dumps({"x_label": self.x_label, "ticks": self.ticks, "quantities": names,
                                       "outer_name": self.outer_name, "info": self.info}))
@@ -133,7 +143,8 @@ class ModalResults:
         meta = json.loads(str(d["meta"]))
         quantities = {q: d[f"q{n}"] for n, q in enumerate(meta.get("quantities", []))}
         return cls(d["freqs"], d["k"], d["x"], meta["x_label"], [tuple(t) for t in meta["ticks"]],
-                   meta["outer_name"], d["outer_values"], meta["info"], quantities)
+                   meta["outer_name"], d["outer_values"], meta["info"], quantities,
+                   ktris=d["ktris"] if "ktris" in d else None, kred=d["kred"] if "kred" in d else None)
 
 
 class NeedsModes(Exception):
@@ -196,6 +207,20 @@ def kpath_vectors(project, ev: Evaluator):
     return np.array(ks), np.array(xs), ticks
 
 
+def kmesh_vectors(project, ev: Evaluator):
+    """The k points (P, 3) of the configured wavevector mesh, their reduced coordinates (P, 2) and the
+    triangles (T, 3) joining them. The mesh covers the irreducible wedge of the 2D Brillouin zone or the
+    whole zone (lattice.zone_mesh)."""
+    from ... import lattice as lat
+    km = project.solid.problem.active_kmesh
+    recip = [b for b in lat.reciprocal(lat.slots(project.lattice, ev)) if b is not None]
+    if len(recip) != 2:
+        raise ValueError("a wavevector mesh needs a lattice periodic in exactly two directions")
+    b1, b2 = recip
+    reduced, tris = lat.zone_mesh(b1, b2, km.n, km.region, lat.classify(project.lattice, ev))
+    return reduced[:, :1] * b1 + reduced[:, 1:] * b2, reduced, tris
+
+
 def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
     """Eigenfrequency problem: for every variable-sweep value, the k-path (or the single k) is solved; quantities
     are expressions evaluated for every mode; store_modes keeps mode shapes in memory (within MODE_BUDGET bytes)
@@ -216,7 +241,12 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
         outer_name, outer_values = "", np.array([np.nan])
 
     n_eigs = p.solid.problem.num_eigs
-    n_inner = len(kpath_vectors(p, base)[0]) if p.solid.problem.active_kpath else 1
+    if p.solid.problem.active_kpath:
+        n_inner = len(kpath_vectors(p, base)[0])
+    elif p.solid.problem.active_kmesh:
+        n_inner = len(kmesh_vectors(p, base)[0])
+    else:
+        n_inner = 1
     total = len(outer_values) * n_inner
     freqs = np.full((len(outer_values), n_inner, n_eigs), np.nan)
     kvecs = np.zeros((len(outer_values), n_inner, 3))
@@ -225,6 +255,7 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
     keep = store_modes
     step = 0
     x, x_label, ticks = np.zeros(1), "", []
+    kred, ktris = None, None
     for i, val in enumerate(outer_values):
         ev = base.with_overrides({outer_name: val}) if outer_name else base
         if outer_name:
@@ -232,6 +263,9 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
         if p.solid.problem.active_kpath:
             ks, x, ticks = kpath_vectors(p, ev)
             x_label = "k path [rad/m]"
+        elif p.solid.problem.active_kmesh:
+            ks, kred, ktris = kmesh_vectors(p, ev)
+            x, x_label = np.arange(len(ks), dtype=float), "k point"
         else:
             ks = solver.k_of(ev)[None]
             x, x_label = np.zeros(1), "k"
@@ -273,4 +307,4 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
             "outer_dim": list(outer_dim) if outer_dim else None}
     solver.log(f"Done in {info['elapsed_s']} s")
     return ModalResults(freqs, kvecs, x, x_label, ticks, outer_name, outer_values, info, qvals,
-                   modes if keep else {}, meshes, cels)
+                   modes if keep else {}, meshes, cels, ktris, kred)

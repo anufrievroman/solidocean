@@ -1,6 +1,7 @@
 """Solid mechanics: linear elasticity. Eigenfrequency problems (modes, phonon dispersion of periodic
-structures with Bloch k-sweeps), stationary problems (displacement, strain and stress under loads) and
-frequency-domain problems (the harmonic response to oscillating loads and displacements)."""
+structures with Bloch k-sweeps), stationary problems (displacement, strain and stress under loads),
+frequency-domain problems (the harmonic response to oscillating loads and displacements) and coherent heat
+conduction (the same eigenproblem over a mesh of the Brillouin zone)."""
 
 from __future__ import annotations
 
@@ -45,7 +46,7 @@ class SolidSpec(PhysicsSpec):
     kind = "solid"
     title = "Solid Mechanics"
     description = "Elastic eigenfrequencies, phonon dispersion and mode shapes; stationary displacement and " \
-                  "stress under loads; driven (harmonic) response"
+                  "stress under loads; driven (harmonic) response; phonon bands over the Brillouin zone"
     section = "solid"
     settings_class = SolidPhysics
     plot_kinds = plots.PLOT_KINDS
@@ -104,7 +105,7 @@ class SolidSpec(PhysicsSpec):
         return plots.field_plot(name)
 
     def default_plots(self, project) -> list:
-        return plots.default_plots(project.solid.problem.field_problem)
+        return plots.default_plots(project.solid.problem.field_problem, project.solid.problem.coherent)
 
     def new_plot(self, project, kind: str, box):
         from ...plots import PlotStyle, ResultPlot
@@ -113,6 +114,8 @@ class SolidSpec(PhysicsSpec):
             return self.field_plot()
         if kind == "colored":
             return plots.colored_plot()
+        if kind == "kmap":
+            return plots.band_map()
         if kind == "dispersion":
             return ResultPlot()
         if kind == "line":
@@ -127,11 +130,18 @@ class SolidSpec(PhysicsSpec):
         return ResultPlot(title, "mean(abs(uz)^2)", kind="quantity")
 
     def plot_unavailable(self, project, plot) -> str:
-        if project.solid.problem.field_problem:
+        st = project.solid.problem
+        if plot.kind == "kmap" and not st.active_kmesh:
+            return "Band maps need a coherent heat conduction problem with a wavevector mesh " \
+                   "(Problem → Problem type, then Wavevector mesh)."
+        if st.field_problem:
             if plot.kind in ("dispersion", "colored"):
                 return "Dispersion plots need an eigenfrequency problem (Problem → Problem type)."
             if plot.kind == "quantity" and not project.problem.active_sweep:
                 return "Sweep plots need a variable sweep (Problem → Variable sweep)."
+        elif st.coherent and plot.kind in ("dispersion", "colored"):
+            return "Coherent heat conduction samples the zone on a mesh, not along a path: map a band over " \
+                   "the zone, or choose an eigenfrequency problem for a dispersion."
         elif plot.kind in ("line", "section"):
             return "Line and cross-section plots need a stationary or frequency-domain problem (Problem → Problem type)."
         return ""

@@ -125,6 +125,8 @@ class PlotPanel(Panel):
         elif self.fieldres:
             if (pl.kind == "time" and r.outer_name) or (pl.kind == "quantity" and len(r.times) > 1):
                 self._heat_sweep_rows(d)
+        elif pl.kind == "kmap" and r.is_kmesh:
+            self._map_rows(d)
         elif r.is_kpath and r.outer_name:
             self._sweep_rows(d)
 
@@ -228,6 +230,25 @@ class PlotPanel(Panel):
         at.setCurrentIndex(max(0, at.findData(pl.at)))
         at.currentIndexChanged.connect(lambda i: (setattr(pl, "at", at.itemData(i)), self._refresh()))
         d.addRow(label, at)
+
+    def _map_rows(self, d):
+        """Band map: which band of the wavevector mesh is mapped, and for which value of the sweep."""
+        from PySide6.QtWidgets import QSpinBox
+        r, pl = self.win.results, self.pl
+        band = QSpinBox()
+        band.setRange(1, r.freqs.shape[2])
+        band.setValue(min(pl.band, r.freqs.shape[2] - 1) + 1)
+        band.setToolTip("Bands are numbered by ascending frequency at each wavevector, so a band is the "
+                        "n-th lowest surface over the zone (branches are not followed through crossings)")
+        band.valueChanged.connect(lambda v: (setattr(pl, "band", v - 1), self._refresh()))
+        d.addRow("Band", band)
+        if r.outer_name:
+            at = QComboBox()
+            for n, label in enumerate(outer_labels(self.win)):
+                at.addItem(label, n)
+            at.setCurrentIndex(max(0, at.findData(max(pl.at, 0))))
+            at.currentIndexChanged.connect(lambda i: (setattr(pl, "at", at.itemData(i)), self._refresh()))
+            d.addRow("Variable sweep", at)
 
     def _sweep_rows(self, d):
         from ...results.modal import sweep_of
