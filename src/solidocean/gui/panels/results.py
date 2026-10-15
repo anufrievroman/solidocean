@@ -125,7 +125,7 @@ class PlotPanel(Panel):
         elif self.fieldres:
             if (pl.kind == "time" and r.outer_name) or (pl.kind == "quantity" and len(r.times) > 1):
                 self._heat_sweep_rows(d)
-        elif pl.kind == "kmap" and r.is_kmesh:
+        elif pl.kind in ("kmap", "surfaces") and r.is_kmesh:
             self._map_rows(d)
         elif r.is_kpath and r.outer_name:
             self._sweep_rows(d)
@@ -232,16 +232,27 @@ class PlotPanel(Panel):
         d.addRow(label, at)
 
     def _map_rows(self, d):
-        """Band map: which band of the wavevector mesh is mapped, and for which value of the sweep."""
-        from PySide6.QtWidgets import QSpinBox
+        """Band map and band surfaces: which band(s) of the wavevector mesh are drawn, and for which value
+        of the variable sweep."""
         r, pl = self.win.results, self.pl
+        n_bands = r.freqs.shape[2]
+        surfaces = pl.kind == "surfaces"
         band = QSpinBox()
-        band.setRange(1, r.freqs.shape[2])
-        band.setValue(min(pl.band, r.freqs.shape[2] - 1) + 1)
+        band.setRange(1, n_bands)
+        band.setValue(min(pl.band, n_bands - 1) + 1)
         band.setToolTip("Bands are numbered by ascending frequency at each wavevector, so a band is the "
                         "n-th lowest surface over the zone (branches are not followed through crossings)")
         band.valueChanged.connect(lambda v: (setattr(pl, "band", v - 1), self._refresh()))
-        d.addRow("Band", band)
+        d.addRow("First band" if surfaces else "Band", band)
+        if surfaces:
+            count = QSpinBox()
+            count.setRange(0, n_bands)
+            count.setSpecialValueText("all")
+            count.setValue(min(pl.bands, n_bands))
+            count.setToolTip("How many bands are drawn from the first one up; 0 draws all of them")
+            count.valueChanged.connect(lambda v: (setattr(pl, "bands", v), self._refresh()))
+            d.addRow("Bands drawn", count)
+            d.addRow(muted_label("Drag inside the plot to turn the view."))
         if r.outer_name:
             at = QComboBox()
             for n, label in enumerate(outer_labels(self.win)):
@@ -436,6 +447,8 @@ class PlotPanel(Panel):
             self._line_rows(d)
         if pl.kind == "section":
             return self._section_rows(d)
+        if pl.kind in ("kmap", "surfaces"):
+            return self._zone_rows(d)
         is_freq = pl.quantity.strip() == "freq" and not self.fieldres
         if is_freq:
             fu = QComboBox()
@@ -497,7 +510,77 @@ class PlotPanel(Panel):
             row, _, _ = self._range_row(("color_min", "color_max"), "")
             d.addRow("Colour range", row)
 
+    def _zone_rows(self, d):
+        """Plots over the Brillouin zone: the unit and range of the quantity (the colour scale of a map, the
+        vertical axis of the surfaces) and the ranges of the two wavevector axes. Neither has a logarithmic
+        axis: a 3D axes cannot, and the colour scale of a map is linear."""
+        from ...plots import K_UNITS
+        from ...results.modal import k_axis_label
+        pl = self.pl
+        is_freq = pl.quantity.strip() == "freq"
+        if is_freq:
+            fu = QComboBox()
+            fu.addItems(list(units.FREQUENCY_UNITS))
+            fu.setCurrentText(self.p.frequency_unit)
+            d.addRow("Frequency unit", fu)
+        row, _, yunit = self._range_row(("y_min", "y_max"), self.p.frequency_unit if is_freq else "")
+        label = "Frequency range" if is_freq else "Value range"
+        d.addRow(f"{label} (colour)" if pl.kind == "kmap" else label, row)
+        if is_freq:
+            def set_unit(u):
+                yunit.setText(u)
+                self._set_unit(u)
+            fu.currentTextChanged.connect(set_unit)
+        ku = QComboBox()
+        ku.addItems(list(K_UNITS))
+        ku.setCurrentText(pl.style.k_unit)
+        ku.currentTextChanged.connect(self._restyle("k_unit"))
+        d.addRow("Wavevector unit", ku)
+        for attrs, name in ((("x_min", "x_max"), "kx range"), (("ky_min", "ky_max"), "ky range")):
+            row, _, unit = self._range_row(attrs, "")
+            unit.setText(k_axis_label(pl.style.k_unit))
+            ku.currentTextChanged.connect(lambda u, lbl=unit: lbl.setText(k_axis_label(u)))
+            d.addRow(name, row)
+
+    def _zone_style_box(self):
+        """Style of the plots over the zone: a map can show its wavevectors and a colour bar; the surfaces
+        take one colour per band from the palette. Lines, single colours and legends play no part in either."""
+        st, pl = self.pl.style, self.pl
+        d = self.form("Style")
+        if pl.kind == "kmap":
+            row = QHBoxLayout()
+            pts = QCheckBox("Show")
+            pts.setChecked(st.markers)
+            pts.toggled.connect(self._restyle("markers"))
+            size = QDoubleSpinBox()
+            size.setRange(0.5, 15)
+            size.setSingleStep(0.5)
+            size.setValue(st.marker_size)
+            size.setPrefix("size ")
+            size.valueChanged.connect(self._restyle("marker_size"))
+            row.addWidget(pts)
+            row.addWidget(size)
+            row.addStretch(1)
+            d.addRow("Wavevectors", row)
+            levels = QSpinBox()
+            levels.setRange(2, 200)
+            levels.setValue(st.levels)
+            levels.valueChanged.connect(self._restyle("levels"))
+            d.addRow("Contour levels", levels)
+        maps = CONTINUOUS_MAPS if pl.kind == "kmap" else DISPERSION_PALETTES
+        cmap = QComboBox()
+        cmap.addItems(list(maps) + ([st.colormap] if st.colormap not in maps else []))
+        cmap.setCurrentText(st.colormap)
+        cmap.setToolTip("Colour scale of the map" if pl.kind == "kmap" else "Distinct colours, one per band")
+        cmap.currentTextChanged.connect(self._restyle("colormap"))
+        d.addRow("Colour scale", cmap)
+        checks = (("Grid", "grid"), ("Title", "title"), ("Colour bar", "colorbar")) if pl.kind == "kmap" \
+            else (("Grid", "grid"), ("Title", "title"))
+        d.addRow("", self._checks(checks))
+
     def _style_box(self):
+        if self.pl.kind in ("kmap", "surfaces"):
+            return self._zone_style_box()
         if self.pl.kind == "colored":
             return self._colored_style_box()
         if self.pl.kind == "section":

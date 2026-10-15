@@ -1,6 +1,6 @@
 """Plots of modal results (eigenfrequencies per sweep point and mode): dispersion, coloured dispersion and
-quantities per mode against a k-path or a variable sweep, and the map of one band over a wavevector mesh of
-the Brillouin zone."""
+quantities per mode against a k-path or a variable sweep, and — over a wavevector mesh of the Brillouin
+zone — the map of one band or several bands as surfaces in a 3D view."""
 
 from __future__ import annotations
 
@@ -57,6 +57,8 @@ def draw(results, ax, project, pdef, values: np.ndarray | None = None,
         values = results.values(pdef.quantity)
     if pdef.kind == "kmap":
         return draw_map(results, ax, project, pdef, values)
+    if pdef.kind == "surfaces":
+        return draw_surfaces(results, ax, project, pdef, values)
     if colored and colors is None:
         colors = results.values(pdef.color_by)
     scatter = []  # colored: (x, y, colour value) per point
@@ -204,7 +206,7 @@ def draw_map(results, ax, project, pdef, values: np.ndarray | None = None) -> np
     if bad.any():                                   # bands the eigensolver did not reach at every point
         tri.set_mask(bad[results.ktris].any(axis=1))
     levels = max(int(st.levels), 2)
-    lo, hi = _color_range(project, st)
+    lo, hi = plot_ranges(project, pdef, scale)[0]      # the quantity range is the colour range of a map
     if np.all(bad):
         ax.text(0.5, 0.5, f"Band {b + 1} has no values", ha="center", va="center", color="0.5",
                 transform=ax.transAxes)
@@ -223,7 +225,11 @@ def draw_map(results, ax, project, pdef, values: np.ndarray | None = None) -> np
     ax.set_ylabel(f"Wavevector $k_y$ ({axis_label})", fontsize=13)
     ax.tick_params(labelsize=11)
     ax.set_aspect("equal")
-    ax.grid(False)
+    if st.grid:
+        ax.grid(True, alpha=0.3)
+    else:
+        ax.grid(False)      # passing line properties would silently re-enable it
+    _zone_limits(ax, project, st, k_scale)
     if st.title:
         ax.set_title(f"{project.name}: {pdef.name} (band {b + 1})")
     matplotlib.pyplot.setp(ax.spines.values(), visible=True)
@@ -245,3 +251,81 @@ def _zone_outline(ax, project, results, i: int, k_scale: float) -> None:
     except Exception:
         return
     ax.plot(*np.vstack([poly, poly[:1]]).T, color="0.5", lw=0.8, zorder=2)
+
+
+def draw_surfaces(results, ax, project, pdef, values: np.ndarray | None = None) -> np.ndarray:
+    """Bands of a wavevector mesh as surfaces ω(kx, ky) in a 3D view: `bands` of them from band `band` up,
+    each a surface over the triangulated k points. `ax` must be a 3D axes. There is nothing to pick in a
+    rotatable 3D view, so the pick table comes back empty."""
+    import matplotlib
+    from matplotlib.tri import Triangulation
+
+    from ..plots import K_UNITS
+    use_plot_style()
+    st = pdef.style
+    if values is None:
+        values = results.values(pdef.quantity)
+    n_outer, _, n_bands = values.shape
+    i = min(max(pdef.at, 0), n_outer - 1)
+    first = min(max(pdef.band, 0), n_bands - 1)
+    last = n_bands if pdef.bands < 1 else min(first + pdef.bands, n_bands)
+    scale, label = quantity_label(project, pdef)
+    k_scale = K_UNITS[st.k_unit]
+    kx, ky = results.k[i][:, 0] / k_scale, results.k[i][:, 1] / k_scale
+    cmap = matplotlib.colormaps[st.colormap]
+    palette = getattr(cmap, "colors", None)
+    drawn = 0
+    for b in range(first, last):
+        z = values[i, :, b] / scale
+        if np.all(np.isnan(z)):
+            continue
+        tri = Triangulation(kx, ky, results.ktris)
+        bad = np.isnan(z)
+        if bad.any():
+            tri.set_mask(bad[results.ktris].any(axis=1))
+        colour = palette[b % len(palette)] if palette else cmap((b - first) / max(last - first - 1, 1))
+        ax.plot_trisurf(tri, np.nan_to_num(z, nan=float(np.nanmin(z))), color=colour, linewidth=0,
+                        antialiased=True, shade=True)
+        drawn += 1
+    if not drawn:
+        ax.text2D(0.5, 0.5, "No values in these bands", ha="center", va="center", color="0.5",
+                  transform=ax.transAxes)
+    axis_label = k_axis_label(st.k_unit, mathtext=True)
+    ax.set_xlabel(f"$k_x$ ({axis_label})", fontsize=11, labelpad=6)
+    ax.set_ylabel(f"$k_y$ ({axis_label})", fontsize=11, labelpad=6)
+    ax.set_zlabel(label, fontsize=11, labelpad=6)
+    ax.tick_params(labelsize=9)
+    ax.view_init(elev=22, azim=-128)
+    (zlo, zhi), _ = plot_ranges(project, pdef, scale)   # the quantity range is the vertical axis here
+    if pdef.quantity.strip() == "freq" and zlo is None:
+        zlo = 0
+    ax.set_zlim(bottom=zlo, top=zhi)
+    _zone_limits(ax, project, st, k_scale)
+    ax.grid(st.grid)
+    if st.title:
+        span = f"band {first + 1}" if last - first == 1 else f"bands {first + 1}–{last}"
+        ax.set_title(f"{project.name}: {pdef.name} ({span})")
+    return np.zeros((0, 5))
+
+
+def _zone_limits(ax, project, style, k_scale: float) -> None:
+    """Apply the kx (x_min, x_max) and ky (ky_min, ky_max) ranges of a plot over the zone. Plain numbers are
+    in the displayed wavevector unit, expressions with units (e.g. 5[1/um]) are SI, as elsewhere."""
+    ev = project.evaluator()
+
+    def value(text):
+        text = str(text).strip()
+        if not text:
+            return None
+        try:
+            v = ev(text)
+        except Exception:
+            return None
+        return v / k_scale if "[" in text else v
+
+    lo, hi = value(style.x_min), value(style.x_max)
+    if lo is not None or hi is not None:
+        ax.set_xlim(left=lo, right=hi)
+    lo, hi = value(style.ky_min), value(style.ky_max)
+    if lo is not None or hi is not None:
+        ax.set_ylim(bottom=lo, top=hi)

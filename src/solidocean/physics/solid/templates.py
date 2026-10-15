@@ -12,7 +12,7 @@ from ...project import Feature, MeshSettings, VariableSweep, Project, Problem
 from ...plots import PlotStyle, ResultPlot
 from ...templates import Template, library_material
 from .model import KMesh, KPath, SolidCondition, SolidPhysics, SolidProblem
-from .plots import band_map, colored_plot, field_plot
+from .plots import band_map, band_surfaces, colored_plot, field_plot
 
 
 def _si(**overrides):
@@ -142,7 +142,7 @@ def zone_crystal() -> Project:
     hole = Feature("cylinder", "Hole", op="subtract",
                    params={"center": ["0", "0", "-t/2"], "axis": ["0", "0", "1"], "radius": "r", "height": "t"})
     return Project(
-        name="Perforated membrane over the Brillouin zone",
+        name="Coherent heat conduction in phononic crystal",
         description="Square lattice of holes in a SiN membrane, with the bands computed over a mesh of the "
                     "irreducible wedge of the zone (coherent heat conduction) instead of along a path. The "
                     "hole fills a fraction pi r^2 / a^2 = 0.7 of the cell",
@@ -151,7 +151,7 @@ def zone_crystal() -> Project:
         objects=[Feature("cell", "Cell", material="SiN", params={"center": ["0", "0", "0"], "height": "t"}), hole],
         mesh=MeshSettings(max_size="a/8", min_size="a/40"), lattice=Lattice(periodic={"x": "a", "y": "a"}),
         solid=SolidPhysics(problem=SolidProblem(type="conductance", num_eigs=12, kmesh=KMesh(n=8))),
-        plots=[band_map(), field_plot()])
+        plots=[band_map(), band_surfaces(), field_plot()])
 
 
 def cantilever() -> Project:
@@ -249,7 +249,7 @@ TEMPLATES = {  # in display order
     "honeycomb": Template("Honeycomb hole-based phononic crystal", honeycomb_crystal, "solid"),
     "pillars": Template("Pillar-based phononic crystal", pillar_crystal, "solid"),
     # solid mechanics: coherent heat conduction (bands over the zone)
-    "zone_crystal": Template("Perforated membrane over the Brillouin zone", zone_crystal, "solid"),
+    "zone_crystal": Template("Coherent heat conduction in phononic crystal", zone_crystal, "solid"),
     # solid mechanics: stationary (loads, prescribed displacements)
     "cantilever": Template("Cantilever under a probe force", cantilever, "solid"),
     "tensile": Template("Tensile test of a crystal bar", tensile, "solid"),

@@ -179,3 +179,126 @@ def test_the_mesh_has_a_panel_and_a_node_in_the_window():
     assert "91 wavevectors" in texts          # the default 12 divisions of a triangular wedge
     w.dirty = False
     w.close()
+
+
+def mesh_results():
+    """A small run over the zone, reused by the plot tests."""
+    p = plate(n=2, num_eigs=6)
+    return p, physics.of(p).solver(p, log=lambda m: None).run()
+
+
+def test_band_map_and_surfaces_draw_from_the_mesh():
+    """Both zone plots draw: the map in 2D with a pickable point per wavevector, the surfaces in a 3D axes
+    with nothing to pick, honouring the band range asked for."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from solidocean.physics.solid.plots import band_map, band_surfaces
+    from solidocean.results.modal import draw
+
+    p, r = mesh_results()
+    fig = plt.figure()
+    ax = fig.add_subplot()
+    table = draw(r, ax, p, band_map(band=1))
+    assert table.shape == (len(r.kred), 5)                 # one pickable point per wavevector
+    assert ax.get_aspect() == 1.0 and ax.collections       # filled contours, equal aspect
+
+    ax3 = fig.add_subplot(projection="3d")
+    assert draw(r, ax3, p, band_surfaces(bands=3)).shape == (0, 5)    # a 3D view has nothing to pick
+    assert len(ax3.collections) == 3                       # one surface per band drawn
+    ax3.clear()
+    draw(r, ax3, p, band_surfaces(band=0, bands=0))         # 0 = every band
+    assert len(ax3.collections) == r.freqs.shape[2]
+    plt.close(fig)
+
+
+def test_zone_plots_need_a_mesh_and_get_3d_axes():
+    """The plots are offered only with a wavevector mesh, and the canvas puts the surfaces in a 3D axes
+    while the map stays in a flat one."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from solidocean.gui.plot_canvas import PlotCanvas
+    from solidocean.physics import of
+    from solidocean.physics.solid.plots import band_map, band_surfaces
+
+    p = plate()
+    spec = of(p)
+    assert spec.plot_unavailable(p, band_map()) == ""
+    p.solid.problem.type = "eigenfrequency"
+    assert "Band maps need" in spec.plot_unavailable(p, band_map())
+    assert "Band surfaces need" in spec.plot_unavailable(p, band_surfaces())
+
+    project, results = mesh_results()
+    canvas = PlotCanvas()
+    canvas.show_results(results, project, band_surfaces(bands=2))
+    app.processEvents()
+    assert canvas.ax.name == "3d" and len(canvas.table) == 0
+    canvas.show_results(results, project, band_map())
+    app.processEvents()
+    assert canvas.ax.name == "rectilinear" and len(canvas.table) == len(results.kred)
+    canvas.deleteLater()
+
+
+def test_zone_plot_ranges_apply_to_the_right_axes():
+    """The quantity range is the vertical axis of the surfaces and the colour scale of a map; kx and ky have
+    a range each, in the displayed wavevector unit unless the expression carries one."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from solidocean.physics.solid.plots import band_map, band_surfaces
+    from solidocean.results.modal import draw
+
+    p, r = mesh_results()
+    top = r.freqs[0].max() / 2e9                       # GHz, half way up the computed range
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    pl = band_surfaces(bands=3)
+    pl.style.y_max, pl.style.x_min, pl.style.x_max = str(top), "0", "4e6[1/m]"
+    pl.style.ky_min, pl.style.ky_max = "-1", "3"
+    draw(r, ax, p, pl)
+    assert ax.get_zlim() == pytest.approx((0.0, top))
+    assert ax.get_xlim() == pytest.approx((0.0, 4.0))   # 4e6 rad/m in the default 1/um
+    assert ax.get_ylim() == pytest.approx((-1.0, 3.0))
+
+    ax2 = fig.add_subplot()
+    pm = band_map(band=1)
+    pm.style.y_min, pm.style.y_max = "1", "9"
+    draw(r, ax2, p, pm)
+    assert ax2.collections[0].get_clim() == pytest.approx((1.0, 9.0))
+    plt.close(fig)
+
+
+def test_zone_plots_offer_only_the_style_that_applies():
+    """The panel drops the rows that do nothing for these plots (lines, single colours, legends; points and
+    the colour bar belong to the map alone) and gives both a ky range."""
+    import os
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QCheckBox, QLabel
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    from solidocean.gui.panels.solid import set_problem_type
+
+    w = MainWindow()
+    w.set_project(templates.create("square"))
+    set_problem_type(w, "conductance")
+    app.processEvents()
+    rows = {}
+    for kind in ("surfaces", "kmap"):
+        index = next(i for i, pl in enumerate(w.project.plots) if pl.kind == kind)
+        w.select_node("plot", index)
+        app.processEvents()
+        panel = w.settings.widget()
+        rows[kind] = (" ".join(lbl.text() for lbl in panel.findChildren(QLabel)),
+                      {b.text() for b in panel.findChildren(QCheckBox)})
+    for kind in ("surfaces", "kmap"):
+        text, checks = rows[kind]
+        assert "ky range" in text and "kx range" in text
+        assert "Lines" not in text and "Colours" not in text
+        assert "Legend" not in checks and "Log" not in checks
+    assert "Points" not in rows["surfaces"][0] and "Colour bar" not in rows["surfaces"][1]
+    assert "Wavevectors" in rows["kmap"][0] and "Colour bar" in rows["kmap"][1]
+    w.dirty = False
+    w.close()

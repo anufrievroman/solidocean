@@ -1,4 +1,5 @@
-"""Matplotlib canvas for dispersion / sweep plots with point picking."""
+"""Matplotlib canvas for dispersion / sweep plots with point picking, and for the 3D band surfaces (a
+rotatable 3D axes, which has nothing to pick)."""
 
 from __future__ import annotations
 
@@ -35,10 +36,13 @@ class PlotCanvas(QWidget):
         self.canvas.mpl_connect("button_press_event", self._on_click)
         self.show_message("No results yet")
 
-    def _fresh_axes(self):
+    # plot kinds drawn in a 3D axes (kx, ky, frequency), rotated with the mouse
+    PROJECTED_3D = ("surfaces",)
+
+    def _fresh_axes(self, projection: str | None = None):
         """Start from an empty figure (removes colour bars of the previous plot); its selection circle goes too."""
         self.figure.clear()
-        self.ax = self.figure.add_subplot()
+        self.ax = self.figure.add_subplot(projection=projection)
         self._marker = self._marked_row = None
 
     def show_message(self, text: str):
@@ -50,7 +54,7 @@ class PlotCanvas(QWidget):
 
     def show_results(self, results, project, pdef, values=None, colors=None, drawer=None):
         self.results = results
-        self._fresh_axes()
+        self._fresh_axes("3d" if pdef.kind in self.PROJECTED_3D else None)
         if drawer is not None:  # e.g. plots of field results
             self.table = drawer(results, self.ax, project, pdef, values)
         else:

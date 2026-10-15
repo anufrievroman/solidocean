@@ -45,6 +45,9 @@ class PlotStyle:
     k_unit: str = "1/cm"        # unit of the wavevector axis: 1/m, 1/cm, 1/mm, 1/um, 1/nm
     x_min: Expr = ""            # x range in the displayed x unit
     x_max: Expr = ""
+    # plots over the Brillouin zone: the ky range (kx is the x range above), in the displayed k unit
+    ky_min: Expr = ""
+    ky_max: Expr = ""
     y_log: bool = False         # logarithmic axes (not for the x axis of a k-path)
     x_log: bool = False
     # band map: number of filled contour levels
@@ -81,12 +84,12 @@ SWEEP_AXES = ("auto", "kpath", "variable")
 # colored: frequency vs sweep with every point coloured by an expression; field: 3D view of the solution
 # (displacement / temperature); time: heat, any expression vs time (transient problems); line: heat, an
 # expression evaluated point by point along a straight line (a cross-section profile); kmap: one band of a
-# wavevector mesh as a map over the Brillouin zone
-PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section", "kmap")
+# wavevector mesh as a map over the Brillouin zone; surfaces: several of its bands as surfaces in 3D
+PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section", "kmap", "surfaces")
 # the type of each kind, shown with plot names: 3D views of the structure, 2D maps (cross-sections), XY plots, and
 # XY plots whose points are coloured by a third value
-PLOT_TYPES = {"field": "3D", "section": "2D", "kmap": "2D", "dispersion": "XY", "quantity": "XY",
-              "time": "XY", "line": "XY", "colored": "XYz"}
+PLOT_TYPES = {"field": "3D", "surfaces": "3D", "section": "2D", "kmap": "2D", "dispersion": "XY",
+              "quantity": "XY", "time": "XY", "line": "XY", "colored": "XYz"}
 
 
 def plot_label(kind: str, text: str) -> str:
@@ -115,7 +118,8 @@ class ResultPlot:
     color_label: str = ""       # colored: colour-bar label; empty = the expression
     style: PlotStyle = field(default_factory=PlotStyle)
     component: str = "|u|"      # field, solid mechanics: |u|, ux, uy, uz or mises
-    band: int = 0               # band map: which band (mode) of the wavevector mesh is mapped
+    band: int = 0               # band map and surfaces: the band (mode) of the wavevector mesh to start at
+    bands: int = 6              # surfaces: how many bands are drawn from `band` up (0 = all of them)
     # line plots: the segment start -> end (expressions), number of points, x axis, time step (-1 = last)
     start: list[str] = field(default_factory=lambda: ["0", "0", "0"])
     end: list[str] = field(default_factory=lambda: ["1[um]", "0", "0"])
