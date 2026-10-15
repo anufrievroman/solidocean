@@ -42,7 +42,7 @@ class ViewArea(QWidget):
         self.modes.currentChanged.connect(lambda n: self.set_mode(MODES[n]))
 
         row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 4, 0)
+        row.setContentsMargins(0, 8, 4, 0)      # a little air above the tabs
         row.setSpacing(2)
         row.addWidget(self.bar)
         row.addStretch(1)
