@@ -138,21 +138,40 @@ def pillar_crystal() -> Project:
 
 # ---- solid mechanics: stationary ---------------------------------------------------
 def zone_crystal() -> Project:
-    """The geometry of a perforated membrane whose ballistic thermal conductance is set by its band
-    structure: a square lattice of holes in low-stress SiN, sampled over the whole Brillouin zone."""
+    """A study of the ballistic thermal conductance of a perforated membrane, complete enough to be read at
+    0.1 K: the bands over the irreducible wedge, the spectra they carry and the conductance they give."""
     hole = Feature("cylinder", "Hole", op="subtract",
                    params={"center": ["0", "0", "-t/2"], "axis": ["0", "0", "1"], "radius": "r", "height": "t"})
     return Project(
         name="Coherent heat conduction in phononic crystal",
-        description="Square lattice of holes in a SiN membrane, with the bands computed over a mesh of the "
-                    "irreducible wedge of the zone (coherent heat conduction) instead of along a path. The "
-                    "hole fills a fraction pi r^2 / a^2 = 0.7 of the cell",
-        variables={"a": "970[nm]", "t": "485[nm]", "r": "0.472*a"},
+        description="Square lattice of holes in a SiN membrane (the hole fills pi r^2 / a^2 = 0.7 of the "
+                    "cell). The bands are computed over a mesh of the irreducible wedge of the Brillouin "
+                    "zone and summed into the density of states, the group velocity, the radiated flux and "
+                    "the ballistic conductance. 60 bands per wavevector keep the set complete past 40 GHz, "
+                    "well above the 19 GHz the occupied phonons reach at 0.1 K. A finer wavevector "
+                    "mesh smooths the spectra; it costs one eigenvalue solve per wavevector",
+        variables={"a": "300[nm]", "t": "150[nm]", "r": "0.472*a"},
         materials=[_lib("SiN")],
         objects=[Feature("cell", "Cell", material="SiN", params={"center": ["0", "0", "0"], "height": "t"}), hole],
         mesh=MeshSettings(max_size="a/8", min_size="a/40"), lattice=Lattice(periodic={"x": "a", "y": "a"}),
-        solid=SolidPhysics(problem=SolidProblem(type="conductance", num_eigs=12, kmesh=KMesh(n=8))),
-        plots=[band_map(), band_surfaces(), spectrum_plot(), conductance_plot(), field_plot()])
+        solid=SolidPhysics(problem=SolidProblem(type="conductance", num_eigs=60, kmesh=KMesh(n=16))),
+        plots=[band_surfaces(bands=8), band_map(),
+               spectrum_plot(spectrum="dos"), spectrum_plot(spectrum="velocity"),
+               _flux_plot(), _conductance_plot(), field_plot()])
+
+
+def _flux_plot() -> ResultPlot:
+    """The spectral heat flux radiated at the temperature the study is aimed at."""
+    plot = spectrum_plot(spectrum="flux")
+    plot.temperature = "0.1[K]"
+    return plot
+
+
+def _conductance_plot() -> ResultPlot:
+    """The conductance over the range the computed bands can speak for (see the plot's own note)."""
+    plot = conductance_plot()
+    plot.t_min, plot.t_max = "0.02[K]", "0.15[K]"
+    return plot
 
 
 def cantilever() -> Project:
