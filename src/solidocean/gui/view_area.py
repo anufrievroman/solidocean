@@ -7,31 +7,13 @@ splitter is what loses its context. The choice lasts for the session; it belongs
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide6.QtWidgets import (
-    QButtonGroup, QHBoxLayout, QSplitter, QTabBar, QToolButton, QVBoxLayout, QWidget,
-)
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout, QSplitter, QTabBar, QVBoxLayout, QWidget
 
 MODES = ("tabs", "side", "stacked")
-MODE_HINTS = {"tabs": "One view at a time", "side": "Both views side by side",
-              "stacked": "Both views, one above the other"}
-
-
-def mode_icon(mode: str, color: QColor, size: int = 15) -> QIcon:
-    """A small drawing of the layout: a frame, split down the middle or across it."""
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setPen(QPen(color, 1.2))
-    painter.drawRect(1, 2, size - 3, size - 5)
-    if mode == "side":
-        painter.drawLine(size // 2, 2, size // 2, size - 3)
-    elif mode == "stacked":
-        painter.drawLine(1, size // 2, size - 2, size // 2)
-    painter.end()
-    return QIcon(pixmap)
+MODE_NAMES = {"tabs": "Single", "side": "Horizontal split", "stacked": "Vertical split"}
+MODE_HINTS = {"tabs": "One view at a time, chosen by the tabs on the left",
+              "side": "Both views, side by side", "stacked": "Both views, one above the other"}
 
 
 class ViewArea(QWidget):
@@ -49,25 +31,20 @@ class ViewArea(QWidget):
             self.bar.addTab(name)
         self.bar.currentChanged.connect(lambda i: self.setCurrentWidget(self._views[i]))
 
-        self.buttons = QButtonGroup(self)
-        self.buttons.setExclusive(True)
+        self.modes = QTabBar()      # the layout, in the same shape as the tabs that choose a view
+        self.modes.setDrawBase(False)
+        for n, mode in enumerate(MODES):
+            self.modes.addTab(MODE_NAMES[mode])
+            self.modes.setTabToolTip(n, MODE_HINTS[mode])
+        self.modes.setCurrentIndex(MODES.index(self._mode))
+        self.modes.currentChanged.connect(lambda n: self.set_mode(MODES[n]))
+
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 4, 0)
         row.setSpacing(2)
         row.addWidget(self.bar)
         row.addStretch(1)
-        color = self.palette().color(self.foregroundRole())
-        for n, mode in enumerate(MODES):
-            button = QToolButton()
-            button.setCheckable(True)
-            button.setAutoRaise(True)
-            button.setIcon(mode_icon(mode, color))
-            button.setIconSize(QSize(15, 15))
-            button.setToolTip(MODE_HINTS[mode])
-            button.setChecked(mode == self._mode)
-            self.buttons.addButton(button, n)
-            row.addWidget(button)
-        self.buttons.idClicked.connect(lambda n: self.set_mode(MODES[n]))
+        row.addWidget(self.modes)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
         self.splitter.setChildrenCollapsible(False)
@@ -127,5 +104,8 @@ class ViewArea(QWidget):
             self.bar.blockSignals(True)
             self.bar.setCurrentIndex(index)
             self.bar.blockSignals(False)
-        for n, mode in enumerate(MODES):
-            self.buttons.button(n).setChecked(mode == self._mode)
+        index = MODES.index(self._mode)
+        if self.modes.currentIndex() != index:
+            self.modes.blockSignals(True)
+            self.modes.setCurrentIndex(index)
+            self.modes.blockSignals(False)
