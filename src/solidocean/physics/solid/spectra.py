@@ -32,14 +32,16 @@ membrane are folded down and crowd together. Above that line states are missing 
 towards zero, which looks like physics and is not: the highest frequency reached somewhere in the zone says
 nothing about where the set stops being complete.
 
-Integrating the flux over frequency gives what the whole band structure carries, against temperature:
+What the whole band structure carries, against temperature, is integrated over the zone as the papers do
+(`transport`, Zen et al. Eq. (1) averaged over the directions of the boundary):
 
-    P(T) = int p(f,T) df            power radiated per unit width of the boundary
-    G(T) = dP/dT = int h f (dn/dT) S sum L / (2 pi^2) df      ballistic thermal conductance
+    P(T) = S sum_j int d^2k h f n(f_j,T) |grad f_j| / (2 pi^2)    power radiated per unit width
+    G(T) = dP/dT                                                   ballistic thermal conductance
 
-Neither needs the mesh again: the contour lengths do not depend on the temperature, so they are summed once
-and every temperature is a quadrature over the same sampled spectrum. Both are truncated at the highest
-computed band, so they are lower bounds once k_B T / h approaches it.
+Every triangle is subdivided and sampled at the centroids of its parts, with no frequency levels, so the
+curve does not depend on how finely the spectra are sampled. The coarea formula makes it the frequency
+integral of the spectral flux, int p(f,T) df, which `transport_over_frequency` keeps as a cross-check. Both
+are truncated where the bands stop being complete, so they are lower bounds once k_B T / h approaches it.
 
 Reference: the methods of Zen et al., Nat. Commun. 5:3435 (2014) (literature/), whose DOS is this sum with
 S = 8, divided by the membrane thickness to read per unit volume, and whose Eq. (1) is P(T).
@@ -235,8 +237,7 @@ def save_table(results, project, pdef, path) -> "Path":
     if pdef.kind == "conductance":
         from ...results.modal import temperatures_of
         temperatures, values = transport(results, pdef.transport, temperatures_of(project, pdef),
-                                         bins=pdef.bins, outer=max(pdef.at, 0), band=pdef.band,
-                                         bands=pdef.bands)
+                                         outer=max(pdef.at, 0), band=pdef.band, bands=pdef.bands)
         header = {"conductance": "thermal conductance [W/(K*m)]", "power": "radiated power [W/m]"}
         with open(path, "w", newline="", encoding="utf-8") as fh:
             writer = csv.writer(fh)
@@ -267,11 +268,13 @@ def d_occupation_dT(freq: np.ndarray, temperature: float) -> np.ndarray:
     return (x / temperature) * np.exp(-x) / np.expm1(-x) ** 2
 
 
-def transport(results, kind: str, temperatures: np.ndarray, bins: int = 200, outer: int = 0,
-              band: int = 0, bands: int = 0, incomplete: bool = False) -> tuple[np.ndarray, np.ndarray]:
-    """(temperatures in K, values) of the radiated power P(T) in W/m or the ballistic thermal conductance
-    G(T) = dP/dT in W/(K m), integrating the heat flux over the computed bands. The contour lengths do not
-    depend on the temperature, so the mesh is summed once for the whole curve."""
+def transport_over_frequency(results, kind: str, temperatures: np.ndarray, bins: int = 200, outer: int = 0,
+                             band: int = 0, bands: int = 0,
+                             incomplete: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """The P(T) or G(T) of `transport`, integrated over frequency instead: the spectral heat flux summed on
+    `bins` levels and integrated by the trapezoid rule. The same integral after a change of variable, kept
+    as a cross-check of `transport`; the quadrature over levels reads low at the lowest temperatures, where
+    few levels fall among the occupied frequencies."""
     if kind not in TRANSPORT:
         raise ValueError(f"unknown quantity '{kind}' (one of {', '.join(TRANSPORT)})")
     temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
@@ -280,6 +283,53 @@ def transport(results, kind: str, temperatures: np.ndarray, bins: int = 200, out
     occupation = bose_einstein if kind == "power" else d_occupation_dT
     values = np.array([np.trapezoid(weight * occupation(levels, float(t)), levels) for t in temperatures])
     return temperatures, values
+
+
+def _subtriangle_centroids(s: int) -> np.ndarray:
+    """Barycentric coordinates (s², 3) of the centroids of the s² equal triangles a triangle divides into."""
+    up = [((i + 1 / 3) / s, (j + 1 / 3) / s) for i in range(s) for j in range(s - i)]
+    down = [((i + 2 / 3) / s, (j + 2 / 3) / s) for i in range(s - 1) for j in range(s - 1 - i)]
+    xy = np.array(up + down)
+    return np.column_stack([1 - xy.sum(axis=1), xy])
+
+
+def transport(results, kind: str, temperatures: np.ndarray, subdivisions: int = 8, outer: int = 0,
+              band: int = 0, bands: int = 0, incomplete: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """(temperatures in K, values) of the radiated power P(T) in W/m or the ballistic thermal conductance
+    G(T) = dP/dT in W/(K m), integrated over the Brillouin zone as Zen et al. (2014), Eq. (1) has it:
+
+        P(T) = S sum_j int d^2k h f n(f_j, T) |grad f_j| / (2 pi^2)
+
+    (|v| / pi = 2 |grad f| after the average over the directions of the boundary). Each band is the plane
+    through its corner frequencies, as for the spectra, and every triangle is divided into `subdivisions`²
+    equal ones, each sampled at its centroid; states above the complete range are left out point by
+    point. The samples do not depend on the temperature, so they are gathered once for the whole curve."""
+    if kind not in TRANSPORT:
+        raise ValueError(f"unknown quantity '{kind}' (one of {', '.join(TRANSPORT)})")
+    temperatures = np.atleast_1d(np.asarray(temperatures, dtype=float))
+    freqs = _bands_of(results, outer, band, bands)
+    top = highest(results, outer, band, bands) if incomplete else complete_to(results, outer, band, bands)
+    if top <= 0:
+        raise NoCompleteRange("the topmost computed band falls to zero somewhere in the zone")
+    k, tris = results.k[outer][:, :2], results.ktris
+    e1, e2 = k[tris[:, 1]] - k[tris[:, 0]], k[tris[:, 2]] - k[tris[:, 0]]
+    area = 0.5 * np.abs(e1[:, 0] * e2[:, 1] - e1[:, 1] * e2[:, 0])
+    bary = _subtriangle_centroids(max(int(subdivisions), 1))
+    samples, weights = [], []
+    for j in range(freqs.shape[1]):
+        values = freqs[:, j]
+        if not np.all(np.isfinite(values)):
+            continue
+        _, _, grad = _planes(k, tris, values)
+        f = values[tris] @ bary.T                                       # (M, Q) at the centroids
+        w = np.broadcast_to((area * grad / len(bary))[:, None], f.shape)
+        keep = (f > 0) & (f <= top)
+        samples.append(f[keep])
+        weights.append(w[keep])
+    f, w = np.concatenate(samples), np.concatenate(weights)
+    weight = multiplicity(results.kred, tris) * H_PLANCK * f * w / (2 * np.pi ** 2)
+    occupation = bose_einstein if kind == "power" else d_occupation_dT
+    return temperatures, np.array([float(np.sum(weight * occupation(f, float(t)))) for t in temperatures])
 
 
 def thermal_frequency(temperature: float) -> float:

@@ -109,6 +109,12 @@ def equations(*blocks: tuple[str, str] | str) -> str:
     return "".join(out)
 
 
+def references(*entries: str) -> str:
+    """The closing paragraph of a Formalism block: its sources on lines of their own, numbered [1], [2] …
+    in the order given, which the text above cites by those numbers."""
+    return "<br>".join(f"[{i}] {entry}" for i, entry in enumerate(entries, 1))
+
+
 def muted_label(text: str) -> QLabel:
     lbl = QLabel(text)
     lbl.setWordWrap(True)

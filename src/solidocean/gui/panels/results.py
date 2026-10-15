@@ -668,8 +668,7 @@ class PlotPanel(Panel):
                              "line is marked."))
 
     def _conductance_rows(self, d):
-        """The heat flux integrated over the bands: which integral, how finely the frequency quadrature is
-        sampled, and a warning when the computed bands do not reach the occupied frequencies."""
+        """The heat flux integrated over the bands: which integral, and a warning when the computed bands do not reach the occupied frequencies."""
         import numpy as np
 
         from ...physics.solid import spectra
@@ -691,12 +690,6 @@ class PlotPanel(Panel):
         which.currentIndexChanged.connect(changed)
         d.addRow("Quantity", which)
         d.addRow(muted_label(TRANSPORT_HELP.get(pl.transport, "")))
-        samples = QSpinBox()
-        samples.setRange(2, 20000)
-        samples.setValue(pl.bins)
-        samples.setToolTip("Frequencies the integral over the bands is sampled at")
-        samples.valueChanged.connect(lambda v: (setattr(pl, "bins", v), self._refresh()))
-        d.addRow("Frequency samples", samples)
         d.addRow("", self._checks((("Carry past the complete range", "show_incomplete"),), on=pl))
         r = self.win.results
         if r is not None and getattr(r, "is_kmesh", False):

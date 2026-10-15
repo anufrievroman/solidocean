@@ -7,7 +7,7 @@ import numpy as np
 from ... import units
 from ...physics.solid.model import SOLID_CONDITION_TITLES
 from ..panels import solid as sp
-from ..panels.common import equations
+from ..panels.common import equations, references
 from .base import PhysicsUI
 from .common import condition_highlights
 
@@ -53,8 +53,8 @@ ZONE_FORMALISM = {
     "velocity": equations(MESH_SUMS,
                           ("v<sub>j</sub>(k) = ∇<sub>k</sub>ω<sub>j</sub>", "The group velocity is the "
                            "gradient of the band itself (k is in rad/m)."),
-                          ("⟨v⟩(ω) = Σ<sub>j,m</sub> L<sub>jm</sub> / Σ<sub>j,m</sub> L<sub>jm</sub> / "
-                           "|∇<sub>k</sub>ω<sub>jm</sub>|", "Averaged over the states at that frequency, "
+                          ("⟨v⟩(ω) = Σ<sub>j,m</sub> L<sub>jm</sub> / Σ<sub>j,m</sub> (L<sub>jm</sub> / "
+                           "|∇<sub>k</sub>ω<sub>jm</sub>|)", "Averaged over the states at that frequency, "
                            "weighted as the density of states weights them — not over the wavevectors."),
                           IN_OMEGA),
     "flux": equations(MESH_SUMS,
@@ -68,20 +68,35 @@ ZONE_FORMALISM = {
                        "irreducible wedge stand for the whole zone, since a flux along one direction could "
                        "not."),
                       IN_OMEGA),
-    "power": equations(("P(T) = ∫ p(ω, T) dω", "The heat flux of the spectrum, integrated over the "
-                        "computed bands: the power radiated per unit length of the boundary."),
-                       ("", "The sum over the mesh does not depend on the temperature, so it is taken once "
-                        "and each temperature is a quadrature over the same sampled spectrum."),
-                       IN_OMEGA),
+    "power": equations(BANDS_OVER_THE_ZONE,
+                       ("P(T) = (S/4π²) Σ<sub>j</sub> ∫ d²k ħω<sub>j</sub> n(ω<sub>j</sub>, T) "
+                        "|∇<sub>k</sub>ω<sub>j</sub>| / π", "The power a convex boundary radiates into the "
+                        "structure per unit of its length: every state of the zone carries ħω with the "
+                        "Bose-Einstein occupation n, at the speed it leaves the boundary. Only states moving "
+                        "away from the boundary count, and averaged over its directions that speed is "
+                        "|v|/π, with v<sub>j</sub> = ∇<sub>k</sub>ω<sub>j</sub>: Eq. (1) of [1], per unit "
+                        "length of the boundary."),
+                       ("", "Every triangle of the mesh is divided into 64 equal ones, sampled at their "
+                        "centroids; states above the complete range are left out. The samples do not depend "
+                        "on the temperature, so they are gathered once for the whole curve. Changing the "
+                        "variable from k to ω turns the same integral into ∫ p(ω, T) dω over the spectral "
+                        "heat flux."),
+                       ("S", "Copies of the meshed region that fill the zone: 8 for the wedge of a square "
+                        "lattice, 12 for a hexagonal one, 1 for the whole zone."),
+                       references("N. Zen, T. A. Puurtinen, T. J. Isotalo, S. Chaudhuri and I. J. Maasilta, Nat. Commun. 5, 3435 (2014)")),
     "conductance": equations(("∂n/∂T = (ħω/k<sub>B</sub>T²) e<sup>x</sup>/(e<sup>x</sup> − 1)²,&nbsp; "
                               "x = ħω/k<sub>B</sub>T", "How the occupation of a mode answers a change of "
                               "temperature."),
-                             ("G(T) = dP/dT = ∫ ħω (∂n/∂T) S Σ<sub>j,m</sub> L<sub>jm</sub>(ω) / 4π³ dω",
+                             ("G(T) = dP/dT = (S/4π²) Σ<sub>j</sub> ∫ d²k ħω<sub>j</sub> "
+                              "(∂n/∂T) |∇<sub>k</sub>ω<sub>j</sub>| / π",
                               "The ballistic thermal conductance per unit length of the boundary: what the "
-                              "band structure carries when nothing scatters. The integral stops where the "
-                              "computed bands stop being complete, so it is a lower bound once "
-                              "k<sub>B</sub>T/ħ approaches that frequency."),
-                             IN_OMEGA),
+                              "band structure carries when nothing scatters [1], and for the unpatterned "
+                              "membrane [2]. The integral is taken over the zone as for the power, "
+                              "and stops where the computed bands stop being complete, so it is a lower bound "
+                              "once k<sub>B</sub>T/ħ approaches that frequency."),
+                             IN_OMEGA,
+                             references("N. Zen, T. A. Puurtinen, T. J. Isotalo, S. Chaudhuri and I. J. Maasilta, Nat. Commun. 5, 3435 (2014)",
+                                        "T. Kühn and I. J. Maasilta, J. Phys.: Conf. Ser. 92, 012082 (2007)")),
 }
 
 

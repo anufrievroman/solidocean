@@ -438,7 +438,7 @@ def test_power_and_conductance_match_the_analytic_low_temperature_laws():
     assert spectra.thermal_frequency(cold[-1]) * 9 < r.freqs.max()      # the bands reach far enough
     for kind, exact in (("power", lambda t: 4 * zeta(3) * kb ** 3 * t ** 3 / (v * h ** 2)),
                         ("conductance", lambda t: 12 * zeta(3) * kb ** 3 * t ** 2 / (v * h ** 2))):
-        _, value = spectra.transport(r, kind, cold, bins=3000, incomplete=True)
+        _, value = spectra.transport(r, kind, cold, subdivisions=16, incomplete=True)
         np.testing.assert_allclose(value, exact(cold), rtol=0.02)
 
 
@@ -447,9 +447,28 @@ def test_the_conductance_is_the_derivative_of_the_power():
     from solidocean.physics.solid import spectra
     r = cone_results(n=40)
     t = np.array([0.0099, 0.0101])
-    _, power = spectra.transport(r, "power", t, bins=2000, incomplete=True)
-    _, conductance = spectra.transport(r, "conductance", np.array([0.01]), bins=2000, incomplete=True)
+    _, power = spectra.transport(r, "power", t, incomplete=True)
+    _, conductance = spectra.transport(r, "conductance", np.array([0.01]), incomplete=True)
     assert (power[1] - power[0]) / (t[1] - t[0]) == pytest.approx(conductance[0], rel=1e-3)
+
+
+def test_the_conductance_over_frequency_equals_the_one_over_the_zone():
+    """The k-space integral of the papers and the frequency integral over contour lengths are one integral
+    after a change of variable: with the same planar bands they agree once both quadratures are fine, and
+    the k-space one matches the analytic law as the frequency one does."""
+    from scipy.special import zeta
+
+    from solidocean.physics.solid import spectra
+    v = 5000.0
+    r = cone_results(n=60, region="full", velocity=v, period=1e-6)
+    t = np.array([0.005, 0.01])
+    _, over_f = spectra.transport_over_frequency(r, "conductance", t, bins=5000, incomplete=True)
+    _, over_k = spectra.transport(r, "conductance", t, subdivisions=16, incomplete=True)
+    np.testing.assert_allclose(over_k, over_f, rtol=1e-3)
+    kb, h = spectra.K_BOLTZMANN, spectra.H_PLANCK
+    np.testing.assert_allclose(over_k, 12 * zeta(3) * kb ** 3 * t ** 2 / (v * h ** 2), rtol=0.02)
+    _, power = spectra.transport(r, "power", t, subdivisions=16, incomplete=True)
+    np.testing.assert_allclose(power, 4 * zeta(3) * kb ** 3 * t ** 3 / (v * h ** 2), rtol=0.02)
 
 
 def test_conductance_plot_draws_over_its_temperature_range():
@@ -515,8 +534,8 @@ def test_carrying_a_spectrum_past_the_ceiling_only_adds_a_sagging_tail():
     np.testing.assert_allclose(np.interp(freq, long_freq, long_dos)[shared], dos[shared], rtol=0.05)
     assert long_dos[-1] < dos[-1]                                # the tail sags towards zero
     warm = np.array([0.4])
-    complete = spectra.transport(r, "conductance", warm, bins=400)[1][0]
-    carried = spectra.transport(r, "conductance", warm, bins=400, incomplete=True)[1][0]
+    complete = spectra.transport(r, "conductance", warm)[1][0]
+    carried = spectra.transport(r, "conductance", warm, incomplete=True)[1][0]
     assert carried > complete                                    # the tail can only add
 
 

@@ -20,7 +20,7 @@ from ...physics.solid.model import (LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_
 from ...project import AXES, Feature
 from ...selection import FACES, selection_text
 from .common import (ERROR_STYLE, ExprEdit, Panel, VectorEdit, equations, field_quantity_rows, muted_label,
-                     outer_labels, pretty_point, selection_box, theme_text)
+                     outer_labels, pretty_point, references, selection_box, theme_text)
 from .problem import SweepPanel, solver_box, sweep_summary
 from .lattice import _lattice_kind, hexagonal_vectors, lattice_mode, use_lattice_cell
 
@@ -383,11 +383,25 @@ PROBLEM_FORMALISM = {
          "Bloch reduction T(k) changes from point to point."),
         ("ω<sub>j</sub>(k), j = 1 … N", "The bands over the zone: at each k the eigenfrequencies in "
          "ascending order, so a band is the j-th lowest surface rather than a branch followed through its "
-         "crossings. Sorting them into branches, and the integrals over the zone that give a conductance, "
-         "come later; what a run produces now is the sampled surfaces themselves."),
+         "crossings (where surfaces cross, the group velocities read low)."),
         ("Mesh of the zone", "Either the irreducible wedge (Γ–X–M for a square lattice, Γ–M–K for a "
          "hexagonal one), which assumes the contents of the cell share the point symmetry of the lattice, "
-         "or the whole zone. Each edge of the region is divided n times."),
+         "or the whole zone. Each edge of the region is divided n times; a wedge counts S times (8 for a "
+         "square lattice, 12 for a hexagonal one)."),
+        ("D(ω) = (S / 4π²) Σ<sub>j,m</sub> L<sub>jm</sub> / |∇<sub>k</sub>ω<sub>jm</sub>|",
+         "Density of states per unit area: over each triangle m a band is the plane through its corner "
+         "frequencies, so the level ω<sub>j</sub>(k) = ω is a segment of length L<sub>jm</sub> and the "
+         "gradient is constant. The group velocity is v<sub>j</sub> = ∇<sub>k</sub>ω<sub>j</sub>."),
+        ("P(T) = (S/4π²) Σ<sub>j</sub> ∫ d²k ħω<sub>j</sub> n(ω<sub>j</sub>, T) |∇<sub>k</sub>ω<sub>j</sub>| / π",
+         "Power a boundary at temperature T radiates into the structure per unit of its length, with the "
+         "Bose-Einstein occupation n = 1/(e<sup>ħω/k<sub>B</sub>T</sup> − 1) and the speed |v|/π at which "
+         "states leave a convex boundary, averaged over its directions, as in Eq. (1) of [1]. Integrated over "
+         "the zone, each triangle divided into 64 sampled at their centroids."),
+        ("G(T) = dP/dT", "The ballistic thermal conductance per unit length of the boundary, with ∂n/∂T in "
+         "place of n. Both stop where the computed bands stop being complete (the lowest value of the "
+         "topmost band over the zone), so they are lower bounds once k<sub>B</sub>T/ħ approaches it: a "
+         "point is reliable up to about a ninth of that frequency."),
+        references("N. Zen, T. A. Puurtinen, T. J. Isotalo, S. Chaudhuri and I. J. Maasilta, Nat. Commun. 5, 3435 (2014)"),
     ),
     "stationary": equations(
         ("K u = f", "The assembled stiffness K and load vector f (surface loads integrated over their faces)."),

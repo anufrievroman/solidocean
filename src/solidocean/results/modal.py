@@ -310,6 +310,11 @@ def draw_surfaces(results, ax, project, pdef, values: np.ndarray | None = None) 
         zlo = 0
     ax.set_zlim(bottom=zlo, top=zhi)
     _zone_limits(ax, project, st, k_scale)
+    # a tall box, so the bands read as a stack of sheets rather than filling a cube; kx and ky keep their
+    # true proportions (a wedge is as wide as it is deep, a rectangular zone is not)
+    wx, wy = np.ptp(ax.get_xlim()), np.ptp(ax.get_ylim())
+    side = max(wx, wy) or 1.0
+    ax.set_box_aspect((wx / side or 1.0, wy / side or 1.0, 2.0))
     ax.grid(st.grid)
     if st.title:
         span = f"band {first + 1}" if last - first == 1 else f"bands {first + 1}–{last}"
@@ -407,9 +412,8 @@ def draw_conductance(results, ax, project, pdef) -> np.ndarray:
     i = min(max(pdef.at, 0), results.freqs.shape[0] - 1)
     wanted = temperatures_of(project, pdef)
     try:
-        temperatures, values = spectra.transport(results, pdef.transport, wanted, bins=pdef.bins, outer=i,
-                                                 band=pdef.band, bands=pdef.bands,
-                                                 incomplete=pdef.show_incomplete)
+        temperatures, values = spectra.transport(results, pdef.transport, wanted, outer=i, band=pdef.band,
+                                                 bands=pdef.bands, incomplete=pdef.show_incomplete)
     except spectra.NoCompleteRange as exc:
         ax.text(0.5, 0.5, "\n".join(_wrap(str(exc))), ha="center", va="center", color="0.5",
                 transform=ax.transAxes)
