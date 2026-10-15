@@ -193,6 +193,14 @@ class ResultPlot:
         if self.kind == "colored":
             d["color_by"] = self.color_by
             d["color_label"] = self.color_label
+        if self.kind in ("surfaces", "kmap", "spectrum", "conductance"):
+            d.update(band=self.band, bands=self.bands)
+        if self.kind in ("spectrum", "conductance"):
+            d.update(bins=self.bins, show_incomplete=self.show_incomplete)
+        if self.kind == "spectrum":
+            d.update(spectrum=self.spectrum, temperature=self.temperature)
+        if self.kind == "conductance":
+            d.update(transport=self.transport, t_min=self.t_min, t_max=self.t_max, t_points=self.t_points)
         d.update({"sweep": self.sweep, "at": self.at, "y_label": self.y_label, "x_label": self.x_label})
         d["style"] = self.style.to_dict(self.kind)
         return self._compact(d)

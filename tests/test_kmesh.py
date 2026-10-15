@@ -139,6 +139,23 @@ def test_kmesh_round_trip(tmp_path):
     assert r.solid.problem.kmesh.enabled is False and r.solid.problem.active_kmesh is None
 
 
+def test_spectrum_and_conductance_plots_round_trip(tmp_path):
+    """The settings of the plots of a wavevector mesh survive the model file: all bands (0) rather than the
+    six a band surface plot defaults to, the spectrum, the flux temperature and the conductance range."""
+    from solidocean.physics.solid.plots import band_map, band_surfaces, conductance_plot, spectrum_plot
+    p = plate(n=5)
+    flux = spectrum_plot(spectrum="flux")
+    flux.temperature, flux.bins, flux.show_incomplete = "0.1[K]", 300, True
+    power = conductance_plot(transport="power")
+    power.t_min, power.t_max, power.t_points = "0.02[K]", "0.15[K]", 40
+    shifted = band_map()
+    shifted.band = 3
+    p.plots = [band_surfaces(bands=8), shifted, spectrum_plot(spectrum="velocity"), flux, power]
+    q = Project.load(p.save(tmp_path / "plots.toml"))
+    for before, after in zip(p.plots, q.plots):
+        assert after == before
+
+
 def test_a_mesh_belongs_to_a_coherent_problem_and_a_plane_lattice():
     """The mesh runs only for a coherent heat conduction problem, which in turn needs one."""
     p = plate()
