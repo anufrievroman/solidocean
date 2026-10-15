@@ -46,6 +46,23 @@ def test_driven_end_displacement(loss):
     assert np.abs(u[:, 1:]).max() < 1e-4 * abs(exact).max()                # uniaxial strain (round-off)
 
 
+@pytest.mark.parametrize("alpha, beta, loss", [(2e8, 0.0, 0.0), (0.0, 5e-12, 0.0), (1e8, 3e-12, 0.02)])
+def test_rayleigh_damping(alpha, beta, loss):
+    """C = alpha M + beta K turns rho omega^2 into rho (omega^2 - i omega alpha) and C11 (1 + i eta) into
+    C11 (1 + i eta + i omega beta): the driven bar of test_driven_end_displacement with that wavenumber."""
+    f, u0 = 1.3e9, 1e-9
+    p = bar([SolidCondition("displacement", ["xmin"], displacement=[f"{u0:g}[m]", "", ""])], f, loss=str(loss))
+    p.solid.problem.rayleigh_alpha, p.solid.problem.rayleigh_beta = f"{alpha:g}[1/s]", f"{beta:g}[s]"
+    assert p.validate() == []
+    x, u = run(p)
+    w = 2 * np.pi * f
+    k = np.sqrt(RHO * (w ** 2 - 1j * w * alpha) / (C11 * (1 + 1j * loss + 1j * w * beta)))
+    exact = u0 * np.cos(k * (L - x)) / np.cos(k * L)
+    assert abs(exact).max() > 2 * u0                                      # still near the resonance
+    assert np.abs(np.angle(exact[np.argmax(x)])) > 0.05                  # and visibly damped
+    np.testing.assert_allclose(u[:, 0], exact, atol=2e-3 * abs(exact).max())
+
+
 def test_end_force_with_fixed_end():
     """Fixed at x = 0, force amplitude F on x = L: u = F sin(k x) / (C11 A k cos(k L))."""
     f, F = 0.7e9, 1e-6
@@ -79,14 +96,18 @@ def test_graded_absorber_gives_a_travelling_wave():
 def test_frequency_problem_input_and_checks(tmp_path):
     p = bar([SolidCondition("displacement", ["xmin"], displacement=["1[nm]", "", ""])], 1e9, loss="0.01",
             eta="0.1 * x / L")
+    p.solid.problem.rayleigh_alpha, p.solid.problem.rayleigh_beta = "1e6[1/s]", "1e-12[s]"
     q = Project.load(p.save(tmp_path / "m.toml"))
     st = q.solid.problem
     assert (st.type, st.frequency, st.loss) == ("frequency", "f", "0.01")
+    assert (st.rayleigh_alpha, st.rayleigh_beta) == ("1e6[1/s]", "1e-12[s]")
     assert q.materials[0].props["eta"] == "0.1 * x / L"
     assert q.validate() == []
     q.variables["f"] = "0[Hz]"
     q.solid.problem.loss = "-1"
+    q.solid.problem.rayleigh_beta = "-1[s]"
     errors = " ".join(q.validate())
     assert "frequency must be positive" in errors and "loss must not be negative" in errors
+    assert "rayleigh_beta must not be negative" in errors
     q.materials[0].props["eta"] = "foo"
     assert any("eta" in e for e in q.validate())

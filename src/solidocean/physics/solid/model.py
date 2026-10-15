@@ -98,6 +98,8 @@ class SolidProblem:
     maxiter: int = 0                 # Lanczos iterations (0 = ARPACK default)
     frequency: Expr = "f"            # frequency domain: the drive frequency (sweep it with a variable)
     loss: Expr = "0"                 # frequency domain: loss factor of every material (added to its own `eta`)
+    rayleigh_alpha: Expr = "0"       # frequency domain: Rayleigh damping C = alpha M + beta K (alpha in 1/s,
+    rayleigh_beta: Expr = "0"        # beta in s), a damping ratio alpha / 2 omega + beta omega / 2 of every mode
 
     def __post_init__(self):
         if isinstance(self.kpath, dict):
@@ -135,7 +137,9 @@ class SolidProblem:
 
     def to_dict(self):
         if self.harmonic:
-            return without_defaults(self, {"type": self.type, "frequency": self.frequency, "loss": self.loss},
+            return without_defaults(self, {"type": self.type, "frequency": self.frequency, "loss": self.loss,
+                                           "rayleigh_alpha": self.rayleigh_alpha,
+                                           "rayleigh_beta": self.rayleigh_beta},
                                     keep=("type", "frequency"))
         d = without_defaults(self, {"type": self.type, "num_eigs": self.num_eigs, "search_freq": self.search_freq,
                                     "k": list(self.k), "tol": self.tol, "maxiter": self.maxiter},
@@ -248,6 +252,9 @@ def validate_settings(project, ev, material_names) -> list[str]:
                 errors.append("solid.problem.frequency must be positive")
             if ev(st.loss) < 0:
                 errors.append("solid.problem.loss must not be negative")
+            for name in ("rayleigh_alpha", "rayleigh_beta"):
+                if ev(getattr(st, name)) < 0:
+                    errors.append(f"solid.problem.{name} must not be negative")
         except Exception as exc:
             errors.append(f"solid.problem: {exc}")
     from ... import fields, materials as mat

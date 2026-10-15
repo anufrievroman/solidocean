@@ -49,9 +49,10 @@ class SolidPanel(Panel):
         ("∇·(C : ∇u) + ρ ω² u = 0", "Eigenfrequency problem: the free vibrations of the structure. Assembled as "
          "(K − ω² M) u = 0 and solved for the lowest ω² by shift-invert Lanczos."),
         ("∇·(C : ∇u) + f = 0", "Stationary problem: the displacement under loads, assembled as K u = f."),
-        ("(K + i K<sub>loss</sub> − ω² M) û = f̂", "Frequency-domain problem: the steady response to a drive at "
-         "ω = 2πf, with the loss factors η of the problem and the materials (K<sub>loss</sub> = Σ η<sub>e</sub> "
-         "K<sub>e</sub>); û and f̂ are complex amplitudes, u(t) = Re(û e<sup>iωt</sup>)."),
+        ("(K + i K<sub>loss</sub> + iω C − ω² M) û = f̂", "Frequency-domain problem: the steady response to a "
+         "drive at ω = 2πf, with the loss factors η of the problem and the materials (K<sub>loss</sub> = Σ "
+         "η<sub>e</sub> K<sub>e</sub>) and Rayleigh damping C = αM + βK; û and f̂ are complex amplitudes, "
+         "u(t) = Re(û e<sup>iωt</sup>)."),
         ("n·(C : ∇u) = 0", "On every face without a condition: traction-free, a free surface."),
         "C is the material's stiffness in the global frame (each material's crystal orientation is applied to "
         "it); u is interpolated with quadratic tetrahedra.",
@@ -353,11 +354,14 @@ PROBLEM_HELP = {
                    "ω(k) per band from which spectral quantities follow. Geometry, mesh and matrices are "
                    "built once and reused at every k point.",
     "frequency": "The harmonic response to loads and prescribed displacements oscillating at one frequency: "
-                 "(K (1 + iη) − ω² M) u = f, the loads and displacements being the amplitudes of the drive. The "
+                 "(K (1 + iη) + iω(αM + βK) − ω² M) u = f, the loads and displacements being the amplitudes of the drive. The "
                  "result is the complex displacement amplitude (use abs(uz) for an amplitude). A loss factor η "
                  "damps it: for every material (below) and per material (property eta, which may depend on x, y, "
-                 "z: graded absorbing regions at the ends of a long structure keep waves from reflecting). Sweep "
-                 "the frequency with a variable (f) in Problem → Variable sweep.",
+                 "z: graded absorbing regions at the ends of a long structure keep waves from reflecting). A loss "
+                 "factor damps every frequency alike (damping ratio η/2); Rayleigh damping C = αM + βK is viscous "
+                 "instead, with a damping ratio α/2ω + βω/2 that falls with frequency through α and rises through "
+                 "β, for fitting a measured Q over a band. Sweep the frequency with a variable (f) in Problem → "
+                 "Variable sweep.",
 }
 
 
@@ -394,13 +398,16 @@ PROBLEM_FORMALISM = {
          "check catches a model that is not held against rigid-body motion (singular K)."),
     ),
     "frequency": equations(
-        ("(K + i K<sub>loss</sub> − ω² M) û = f̂", "At the drive frequency ω = 2πf: K and M as in the "
+        ("(K + i K<sub>loss</sub> + iω C − ω² M) û = f̂", "At the drive frequency ω = 2πf: K and M as in the "
          "eigenfrequency problem, K<sub>loss</sub> = Σ η<sub>e</sub> K<sub>e</sub> with each element's loss factor "
          "(the problem's η plus the material's eta at the element, so it may vary in space). The loads and "
          "prescribed displacements are the amplitudes f̂ and ĝ of the drive."),
+        ("C = α M + β K", "Rayleigh damping: viscous, proportional to mass (α, 1/s) and stiffness (β, s). Every "
+         "mode keeps its shape and gets the damping ratio ζ = α/2ω + βω/2, so two measured ζ₁, ζ₂ at ω₁, ω₂ "
+         "fix α = 2ω₁ω₂(ζ₁ω₂ − ζ₂ω₁)/(ω₂² − ω₁²) and β = 2(ζ₂ω₂ − ζ₁ω₁)/(ω₂² − ω₁²)."),
         ("Tᵀ A T û<sub>r</sub> = Tᵀ (f̂ − A ĝ)", "With A the matrix above and the same constraint "
-         "reduction as a stationary problem: one complex sparse direct solve per frequency. Without loss A is "
-         "singular at an eigenfrequency."),
+         "reduction as a stationary problem: one complex sparse direct solve per frequency. Without loss or "
+         "damping A is singular at an eigenfrequency."),
         ("u(t) = Re(û e<sup>iωt</sup>)", "The complex amplitude û is the result: abs(û) the amplitude, "
          "its argument the phase relative to the drive."),
     ),
@@ -434,6 +441,14 @@ class SolidProblemPanel(Panel):
             loss.setToolTip("Loss factor η of every material: stiffness C (1 + iη); materials may add their own "
                             "(property eta)")
             t.addRow("Loss factor η", loss)
+            alpha = ExprEdit(self.win, lambda: st.rayleigh_alpha, lambda x: setattr(st, "rayleigh_alpha", x or "0"))
+            alpha.setToolTip("Rayleigh damping C = αM + βK, mass-proportional part α (1/s): a damping ratio α/2ω, "
+                             "strongest at low frequencies")
+            t.addRow("Rayleigh α (mass)", alpha)
+            beta = ExprEdit(self.win, lambda: st.rayleigh_beta, lambda x: setattr(st, "rayleigh_beta", x or "0"))
+            beta.setToolTip("Rayleigh damping C = αM + βK, stiffness-proportional part β (s): a damping ratio βω/2, "
+                            "strongest at high frequencies")
+            t.addRow("Rayleigh β (stiffness)", beta)
         elif not st.field_problem:
             n = QSpinBox()
             n.setRange(1, 1000)

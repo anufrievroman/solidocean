@@ -204,7 +204,8 @@ class Solver:
 
     def solve_harmonic(self, ev: Evaluator) -> np.ndarray:
         """Complex displacement amplitude (N, 3) in m of the harmonic response at the problem's frequency:
-        (K (1 + i eta) - omega^2 M) u = f, the loads and prescribed displacements being the amplitudes of the
+        (K (1 + i eta) + i omega (alpha M + beta K) - omega^2 M) u = f, with the loss factors eta and the
+        Rayleigh damping alpha M + beta K, the loads and prescribed displacements being the amplitudes of the
         drive (u(t) = Re(u exp(i omega t)))."""
         m = self.model(ev)
         cons, n = m.constraints, m.mesh.n_nodes
@@ -214,8 +215,10 @@ class Solver:
         root_vals[cons.root[rows], comps] = vals[rows, comps]
         g = np.where(cons.dof_index[cons.root] < 0, root_vals[cons.root], 0.0).ravel()
         f = self.load_vector(m, ev).ravel()
-        omega = 2 * np.pi * ev(self.project.solid.problem.frequency)
-        A = m.K.astype(complex) - omega ** 2 * m.M
+        st = self.project.solid.problem
+        omega = 2 * np.pi * ev(st.frequency)
+        alpha, beta = ev(st.rayleigh_alpha), ev(st.rayleigh_beta)
+        A = m.K * (1 + 1j * omega * beta) - (omega ** 2 - 1j * omega * alpha) * m.M
         if m.K_loss is not None:
             A = A + 1j * m.K_loss
         if cons.n_free == 0:
@@ -226,7 +229,7 @@ class Solver:
         ur = eigen._factorize(Ar, self.project.problem.solver)(rhs)
         if not np.all(np.isfinite(ur)):
             raise ValueError("harmonic solve failed: the drive frequency is (numerically) an eigenfrequency of a "
-                             "lossless model; add a loss factor (solid.problem.loss or a material's eta)")
+                             "lossless model; add a loss factor (solid.problem.loss or a material's eta) or Rayleigh damping")
         return (T @ ur + g).reshape(n, 3)
 
     # ---- solving ---------------------------------------------------------
