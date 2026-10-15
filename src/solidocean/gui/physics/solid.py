@@ -90,13 +90,12 @@ ZONE_FORMALISM = {
                              ("G(T) = dP/dT = (S/4π²) Σ<sub>j</sub> ∫ d²k ħω<sub>j</sub> "
                               "(∂n/∂T) |∇<sub>k</sub>ω<sub>j</sub>| / π",
                               "The ballistic thermal conductance per unit length of the boundary: what the "
-                              "band structure carries when nothing scatters [1], and for the unpatterned "
-                              "membrane [2]. The integral is taken over the zone as for the power, "
-                              "and stops where the computed bands stop being complete, so it is a lower bound "
-                              "once k<sub>B</sub>T/ħ approaches that frequency."),
+                              "band structure carries when nothing scatters [1]. The integral is taken over "
+                              "the zone as for the power, and stops where the computed bands stop being "
+                              "complete, so it is a lower bound once k<sub>B</sub>T/ħ approaches that "
+                              "frequency."),
                              IN_OMEGA,
-                             references("N. Zen, T. A. Puurtinen, T. J. Isotalo, S. Chaudhuri and I. J. Maasilta, Nat. Commun. 5, 3435 (2014)",
-                                        "T. Kühn and I. J. Maasilta, J. Phys.: Conf. Ser. 92, 012082 (2007)")),
+                             references("N. Zen, T. A. Puurtinen, T. J. Isotalo, S. Chaudhuri and I. J. Maasilta, Nat. Commun. 5, 3435 (2014)")),
 }
 
 
