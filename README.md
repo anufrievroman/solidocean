@@ -19,6 +19,9 @@ Essentially, it is a Qt user interface uniting several open-source tools for cre
   displacements and boundary loads.
 - **Frequency domain** problems with the driven response to oscillating loads or displacements, with loss
   factors and absorbing regions.
+- **Coherent heat conduction** at low temperature: the phonon bands over a mesh of the Brillouin zone, the
+  density of states, group velocity and spectral heat flux they carry, and the ballistic thermal conductance
+  that follows from them.
 
 **Heat transfer problems**
 - **Stationary** and **transient** problems with fixed temperature, heat flux, convection and radiation
