@@ -499,7 +499,7 @@ class FeaturePanel(Panel):
 
     def build(self):
         i = self.index
-        up = self.button_row(("Build up to here ◱", lambda: self.win.build_geometry(upto=i)))
+        up = self.button_row(("Build up to this object ◱", lambda: self.win.build_geometry(upto=i)))
         up.itemAt(0).widget().setToolTip("Build the geometry from the first object down to this one; later "
                                          "objects are left out")
         self.button_row(("Enable" if not self.f.enabled else "Bypass", lambda: self.win.toggle_feature(i)),

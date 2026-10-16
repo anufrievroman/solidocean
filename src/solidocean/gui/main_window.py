@@ -476,7 +476,7 @@ class MainWindow(ResultsMixin, QMainWindow):
             menu.addAction("Move up", lambda: self.move_feature(idx, -1))
             menu.addAction("Move down", lambda: self.move_feature(idx, 1))
             menu.addSeparator()
-            menu.addAction("Build up to here", lambda: self.build_geometry(upto=idx))
+            menu.addAction("Build up to this object", lambda: self.build_geometry(upto=idx))
         elif kind == "material":
             menu.addAction("Delete", lambda: self.delete_material(idx))
         elif kind == "objects":
@@ -816,6 +816,10 @@ class MainWindow(ResultsMixin, QMainWindow):
                 self.log(f"Nothing to build up to '{self.project.objects[upto].name}': no solid ('add') "
                          "object before it.")
                 return
+            # the left-out objects take their mesh regions with them: nothing is meshed here, and a
+            # region on an object that is not in the snapshot would fail validation
+            kept = {f.name for f in snap.objects} | {m.name for m in snap.materials}
+            snap.mesh.regions = [r for r in snap.mesh.regions if r.on in kept]
         errors = snap.validate_geometry()
         if errors:
             self.log("Model has errors:\n  " + "\n  ".join(errors))
