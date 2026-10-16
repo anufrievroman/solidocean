@@ -141,14 +141,21 @@ class Feature:
 class MeshRegion:
     """A different maximum element size for one object (one of the objects, or all domains of a material).
     Regions apply in order (a later one wins where they overlap); the rest of the model keeps the mesh's
-    max_size. The mesh stays conforming across interfaces: their elements are graded."""
+    max_size. The mesh stays conforming across interfaces: their elements take the smaller size.
+
+    `grading` overrides the mesh's for this region only, which is how the elements are budgeted: grade
+    tightly around the small feature whose surroundings matter, and leave the large regions at 1 (no
+    grading) so they do not pay for a smooth gradient nobody reads."""
     on: str = ""
     max_size: Expr = "1"
     name: str = ""
+    grading: float | None = None       # None: the mesh's grading
 
     def to_dict(self):
         d = {"name": self.name} if self.name else {}
         d.update(on=self.on, max_size=self.max_size)
+        if self.grading is not None:
+            d["grading"] = self.grading
         return d
 
 
@@ -177,7 +184,11 @@ class MeshSettings:
     def key(self, ev) -> tuple:
         """What determines the mesh (for caching): sizes, order, grading, regions."""
         return (ev(self.max_size), ev(self.min_size), self.order, self.optimize, self.grading,
-                tuple((r.on, ev(r.max_size)) for r in self.regions))
+                tuple((r.on, ev(r.max_size), r.grading) for r in self.regions))
+
+    def grading_of(self, region: MeshRegion) -> float:
+        """A region's grading: its own, or the mesh's where it does not set one."""
+        return self.grading if region.grading is None else region.grading
 
 
 @dataclass
@@ -439,6 +450,9 @@ class Project:
             errors.append("mesh.order must be 1 or 2")
         if not 1 <= self.mesh.grading <= 4:
             errors.append("mesh.grading must be between 1 (no grading) and 4")
+        for r in self.mesh.regions:
+            if r.grading is not None and not 1 <= r.grading <= 4:
+                errors.append(f"mesh region '{r.name or r.on}': grading must be between 1 (no grading) and 4")
         try:
             ev(self.mesh.max_size), ev(self.mesh.min_size)
         except Exception as exc:

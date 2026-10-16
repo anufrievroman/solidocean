@@ -398,3 +398,41 @@ def test_size_grading_in_the_mesh_panel():
     assert w.project.mesh.grading == 1.3 and w.dirty
     w.dirty = False
     w.close()
+
+
+def test_a_mesh_region_can_set_its_own_size_grading():
+    """Per-region grading has three states in the panel: inherit the mesh's, grade at its own rate, or 1 to
+    opt out — which is how elements get spent on the region that needs them and nowhere else."""
+    import time
+    from PySide6.QtWidgets import QApplication, QDoubleSpinBox
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    from solidocean.project import MeshRegion
+    p = templates.create("heat_pad")
+    p.mesh.grading = 1.3
+    p.mesh.regions = [MeshRegion(on=p.objects[0].name, max_size="0.5[um]")]
+    w = MainWindow()
+    w.show()
+    w.set_project(p)
+    deadline = time.time() + 30
+    while w.busy and time.time() < deadline:
+        app.processEvents()
+    w.select_node("mesh_region", 0)
+    app.processEvents()
+    spin, = w.settings.widget().findChildren(QDoubleSpinBox)
+    region = p.mesh.regions[0]
+    assert spin.specialValueText() == "Same as the mesh"
+    assert spin.value() == spin.minimum() and region.grading is None    # starts out inheriting
+    assert p.mesh.grading_of(region) == 1.3
+    spin.setValue(1.0)                                                  # opt out, though the mesh grades
+    app.processEvents()
+    assert region.grading == 1.0 and p.mesh.grading_of(region) == 1.0 and w.dirty
+    spin.setValue(1.15)                                                 # tighter than the mesh
+    app.processEvents()
+    assert region.grading == 1.15 and p.mesh.grading_of(region) == 1.15
+    spin.setValue(spin.minimum())                                       # back to inheriting
+    app.processEvents()
+    assert region.grading is None and p.mesh.grading_of(region) == 1.3
+    w.dirty = False
+    w.close()

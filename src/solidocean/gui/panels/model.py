@@ -717,10 +717,13 @@ class MeshDefaultPanel(Panel):
 
 
 class MeshRegionPanel(Panel):
+    INHERIT = 0.9       # shown as "Same as the mesh"; 1.0 is a real value (this region does not grade)
+
     help = ("A maximum element size for one object: one of the Objects (what is left of it after later objects) or "
             "all domains of a material. Regions apply in order; a later one wins where they overlap. The mesh stays "
             "continuous across the object's interfaces, where the smaller size applies. The size holds inside the "
-            "region and nowhere else; raise the mesh's size grading to let it grow outwards gradually instead.")
+            "region and nowhere else unless it is graded: grading grows it outwards gradually, which is what "
+            "resolves a small feature's surroundings. Set it per region to spend the elements where they count.")
 
     def __init__(self, win, index):
         self.index = index
@@ -747,6 +750,19 @@ class MeshRegionPanel(Panel):
         f.addRow("Maximum element size", ExprEdit(self.win, lambda: r.max_size,
                                                   lambda t: (setattr(r, "max_size", t or "1"),
                                                              self.win.rebuild_tree(refresh_panel=False))))
+        grade = QDoubleSpinBox()
+        grade.setRange(self.INHERIT, 4.0)       # the minimum is the sentinel for "no value of its own"
+        grade.setSingleStep(0.1)
+        grade.setDecimals(2)
+        grade.setSpecialValueText("Same as the mesh")
+        grade.setValue(self.INHERIT if r.grading is None else r.grading)
+        grade.setToolTip("How fast the element size may grow away from this region, overriding the mesh's "
+                         "grading. This is the element budget: grade tightly (1.1 to 1.3) around the small "
+                         "feature whose surroundings carry the physics, and leave the large regions at 1 so "
+                         "they do not pay for a gradient nobody reads.")
+        grade.valueChanged.connect(lambda v: (setattr(r, "grading", None if v <= self.INHERIT else v),
+                                              self.win.mark_dirty()))
+        f.addRow("Size grading", grade)
 
 
 class MeshPanel(Panel):

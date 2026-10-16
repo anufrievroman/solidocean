@@ -101,20 +101,22 @@ def _object_volumes(name: str) -> list[int]:
 GRADING_SAMPLING = 50
 
 
-def _grading_fields(grading: float, by_size: dict[float, list[int]], h_max: float) -> list[int]:
-    """Size fields that let the element size grow away from the regions finer than max_size, one per size:
-    `h + (grading - 1) * distance to the region`, so that neighbouring elements differ by about `grading`.
+def _grading_fields(graded: dict[tuple[float, float], list[int]], h_max: float) -> list[int]:
+    """Size fields that let the element size grow away from the regions finer than max_size, one per
+    (size, grading): `h + (grading - 1) * distance to the region`, so that neighbouring elements differ by
+    about that region's `grading`.
 
     Without them a region's size holds inside it and nowhere else, so the size jumps back to max_size one
     element past its boundary. A small feature's surroundings are then never resolved, however fine the
     feature itself is — and they are resolved differently whenever it moves, so sweeping its position
-    carries mesh noise into the results."""
-    if grading <= 1:
-        return []
+    carries mesh noise into the results.
+
+    Grading each region separately is what keeps that affordable: the ramp around a 100 nm contact is worth
+    its elements, the one around a 20 um region is not."""
     fields = []
-    for h, vols in by_size.items():
-        if h >= h_max:
-            continue                    # the coarsest size: nothing finer to grade away from
+    for (h, grading), vols in graded.items():
+        if grading <= 1 or h >= h_max:
+            continue                    # opted out, or the coarsest size: nothing finer to grade away from
         surfaces = {abs(int(s)) for _, s in gmsh.model.getBoundary([(3, v) for v in vols],
                                                                    oriented=False, combined=False)}
         if not surfaces:
@@ -132,17 +134,22 @@ def _apply_region_sizes(project: Project, ev: Evaluator, L0: float) -> None:
     """Element sizes per object (mesh regions): every volume gets the size of the last region containing it,
     else the mesh's max_size, through constant size fields restricted to the volumes (and their boundaries);
     the smallest applies on shared surfaces, so neighbours stay conforming. A region's size holds inside the
-    region and nowhere else unless `grading` is above 1, which grows it outwards (see _grading_fields)."""
-    regions = project.mesh.regions
-    if not regions:
+    region and nowhere else unless its grading (its own, else the mesh's) is above 1, which grows it
+    outwards (see _grading_fields)."""
+    ms = project.mesh
+    if not ms.regions:
         return
-    size = {int(v): ev(project.mesh.max_size) / L0 for _, v in gmsh.model.getEntities(3)}
-    for r in regions:
+    h_default = ev(ms.max_size) / L0
+    size = {int(v): h_default for _, v in gmsh.model.getEntities(3)}
+    grading = {v: ms.grading for v in size}          # the region that sets a volume's size sets its grading
+    for r in ms.regions:
         for v in _object_volumes(r.on):
-            size[v] = ev(r.max_size) / L0
+            size[v], grading[v] = ev(r.max_size) / L0, ms.grading_of(r)
     by_size: dict[float, list[int]] = {}
+    graded: dict[tuple[float, float], list[int]] = {}
     for v, h in size.items():
         by_size.setdefault(h, []).append(v)
+        graded.setdefault((h, grading[v]), []).append(v)
     fields = []
     for h, vols in by_size.items():
         f = gmsh.model.mesh.field.add("Constant")
@@ -150,7 +157,7 @@ def _apply_region_sizes(project: Project, ev: Evaluator, L0: float) -> None:
         gmsh.model.mesh.field.setNumber(f, "VIn", h)
         gmsh.model.mesh.field.setNumber(f, "IncludeBoundary", 1)
         fields.append(f)
-    fields += _grading_fields(project.mesh.grading, by_size, max(size.values()))
+    fields += _grading_fields(graded, max(size.values()))
     smallest = gmsh.model.mesh.field.add("Min")
     gmsh.model.mesh.field.setNumbers(smallest, "FieldsList", fields)
     gmsh.model.mesh.field.setAsBackgroundMesh(smallest)

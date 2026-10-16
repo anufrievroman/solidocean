@@ -108,3 +108,93 @@ def test_grading_steadies_the_mesh_around_a_feature_that_moves():
     spread_graded = np.nanmean(np.nanstd(graded, axis=0) / np.nanmean(graded, axis=0))
     assert spread_graded < spread_plain, \
         f"grading did not steady the mesh: spread {spread_graded:.3f} vs {spread_plain:.3f}"
+
+
+# ---- per-region grading: the element budget ----------------------------------------------------------
+
+def slab_with_two_spots(mesh_grading=1.0, fine_grading=None, coarse_grading=None):
+    """A slab with a small spot on the left and a much bigger block on the right, each its own region: the
+    case the per-region knob is for, where only the small one's surroundings are worth resolving."""
+    p = Project(
+        materials=[Material("M", dict(MATERIAL))],
+        objects=[Feature("block", "Slab", material="M",
+                         params={"center": ["0", "0", "0"], "size": ["20[um]", "20[um]", "2[um]"]}),
+                 Feature("block", "Spot", material="M",
+                         params={"center": ["-5[um]", "0", "0"], "size": ["0.1[um]", "0.1[um]", "0.1[um]"]}),
+                 Feature("block", "Chunk", material="M",
+                         params={"center": ["5[um]", "0", "0"], "size": ["3[um]", "3[um]", "1[um]"]})],
+        mesh=MeshSettings(max_size="4[um]", grading=mesh_grading,
+                          regions=[MeshRegion(on="Spot", max_size="0.05[um]", grading=fine_grading),
+                                   MeshRegion(on="Chunk", max_size="1[um]", grading=coarse_grading)]))
+    return p
+
+
+def sizes_around(project, centre, radius=0.4e-6, inner=0.0):
+    """Median slab element size in the shell `inner` < r < `radius` around a point (the shell matters: inside
+    a region the size is its own whatever the grading, so only outside it shows), and the element count."""
+    mesh = meshing.generate(project, project.evaluator())
+    corners = mesh.points[mesh.cells[:, :4]]
+    pairs = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
+    h = np.mean([np.linalg.norm(corners[:, a] - corners[:, b], axis=1) for a, b in pairs], axis=0)
+    r = np.linalg.norm(corners.mean(axis=1) - np.asarray(centre), axis=1)
+    sel = mesh.region("Slab") & (r < radius) & (r >= inner)
+    return (float(np.median(h[sel])) if sel.any() else np.nan), mesh.info["n_elements"]
+
+
+SPOT = (-5e-6, 0, 0)
+CHUNK = (5e-6, 0, 0)
+
+
+def test_a_region_without_a_grading_follows_the_mesh():
+    p = slab_with_two_spots(mesh_grading=1.3)
+    assert p.mesh.regions[0].grading is None
+    assert p.mesh.grading_of(p.mesh.regions[0]) == 1.3
+    assert p.mesh.grading_of(MeshRegion(on="Spot", grading=1.1)) == 1.1
+
+
+def test_grading_one_region_leaves_the_other_alone():
+    """The budget: grade around the small feature only, and the big region's surroundings stay coarse."""
+    both = slab_with_two_spots(mesh_grading=1.3)                    # everything grades
+    only_spot = slab_with_two_spots(mesh_grading=1.3, coarse_grading=1.0)   # the big one opts out
+    h_spot_a, n_both = sizes_around(both, SPOT)
+    h_spot_b, n_spot = sizes_around(only_spot, SPOT)
+    # just outside the 3 um chunk, where its grading (not its own size) is what sets the slab
+    h_chunk_a, _ = sizes_around(both, CHUNK, inner=2e-6, radius=3.5e-6)
+    h_chunk_b, _ = sizes_around(only_spot, CHUNK, inner=2e-6, radius=3.5e-6)
+    assert h_spot_b == pytest.approx(h_spot_a, rel=0.35)            # the spot is resolved either way
+    assert h_chunk_b > 1.3 * h_chunk_a                              # but the chunk no longer pays
+    assert n_spot < n_both                                          # which is the saving
+
+
+def test_a_region_can_grade_tighter_than_the_mesh():
+    loose, _ = sizes_around(slab_with_two_spots(mesh_grading=1.5), SPOT)
+    tight, _ = sizes_around(slab_with_two_spots(mesh_grading=1.5, fine_grading=1.15), SPOT)
+    assert tight < loose
+
+
+def test_a_region_can_grade_while_the_mesh_does_not():
+    """Grading only one region, with the mesh's own grading off: the cheapest useful configuration."""
+    off, n_off = sizes_around(slab_with_two_spots(mesh_grading=1.0), SPOT)
+    spot_only, n_spot = sizes_around(slab_with_two_spots(mesh_grading=1.0, fine_grading=1.2), SPOT)
+    assert spot_only < 0.6 * off and n_spot > n_off
+    everything, n_all = sizes_around(slab_with_two_spots(mesh_grading=1.2), SPOT)
+    assert n_spot < n_all                                           # cheaper than grading the whole model
+    assert spot_only == pytest.approx(everything, rel=0.35)         # with the same mesh where it matters
+
+
+def test_per_region_grading_round_trips_and_is_part_of_the_mesh_key(tmp_path):
+    p = slab_with_two_spots(mesh_grading=1.3, fine_grading=1.15, coarse_grading=1.0)
+    assert p.validate_geometry() == []
+    assert p.mesh.regions[0].to_dict()["grading"] == 1.15
+    assert "grading" not in slab_with_two_spots().mesh.regions[0].to_dict()   # omitted when not set
+    q = Project.load(p.save(tmp_path / "m.toml"))
+    assert [r.grading for r in q.mesh.regions] == [1.15, 1.0]
+    ev = q.evaluator()
+    assert q.mesh.key(ev) != slab_with_two_spots(mesh_grading=1.3).mesh.key(ev)
+
+
+def test_a_region_grading_outside_its_range_is_an_error():
+    p = slab_with_two_spots(fine_grading=0.5)
+    assert any("grading" in e and "Spot" in e for e in p.validate_geometry())
+    p.mesh.regions[0].grading = 9.0
+    assert any("grading" in e and "Spot" in e for e in p.validate_geometry())
