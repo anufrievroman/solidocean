@@ -58,6 +58,9 @@ def stylesheet() -> str:
     box_border = "#4a4a4a" if is_dark() else "#d2d2d2"
     box_fill = "rgba(255, 255, 255, 0.035)" if is_dark() else "rgba(0, 0, 0, 0.03)"
     hover = "rgba(255, 255, 255, 0.07)" if is_dark() else "rgba(0, 0, 0, 0.06)"
+    # a toggle that is on (Opaque, Rulers): a grey background behind the normal text, since the native
+    # style also greys the text of a checked tool button, which reads as disabled
+    toggled = "rgba(255, 255, 255, 0.16)" if is_dark() else "rgba(0, 0, 0, 0.13)"
     return f"""
         QTreeWidget#sidebar {{ background: palette(window); border: none; outline: 0; padding: 2px 4px;
                                show-decoration-selected: 0; }}
@@ -81,6 +84,8 @@ def stylesheet() -> str:
                                  color: {muted()}; }}
         QToolButton#logButton:hover {{ color: palette(text); }}
         QToolBar#viewToolbar QToolButton {{ font-size: 13px; padding: 2px 8px; }}
+        QToolBar#viewToolbar QToolButton:checked {{ background: {toggled}; color: palette(text); border: none;
+                                                    border-radius: 4px; }}
         QToolButton#boxZoomButton:checked {{ background: {ACCENT}; color: {ACCENT_TEXT}; border: none;
                                              border-radius: 4px; }}
         QPlainTextEdit#messages {{ background: palette(window); border: none; }}

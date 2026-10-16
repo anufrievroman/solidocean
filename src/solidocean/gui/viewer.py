@@ -293,9 +293,16 @@ class Viewer(QWidget):
 
     def default_view(self):
         self._last_axis_view = None
+        self._isometric()
+        self.plotter.render()
+
+    def _isometric(self):
+        """The isometric view, fitted to the model. pyvista's view_isometric leaves the camera marked as not
+        set, and the first read of `plotter.camera` after that (the zoom buttons) then resets it to the
+        default view, discarding whatever the mouse has done since; marking it set keeps the user's view."""
         self.plotter.view_isometric()
         self.plotter.reset_camera()
-        self.plotter.render()
+        self.plotter.renderer.camera_set = True
 
     show_triad = True  # the small x/y/z orientation axes
 
@@ -345,8 +352,7 @@ class Viewer(QWidget):
         self._update_triad()
         self._update_scale()
         if reset_camera or not self._camera_placed:
-            self.plotter.view_isometric()
-            self.plotter.reset_camera()
+            self._isometric()
             self._camera_placed = True
         self.plotter.render()
 
