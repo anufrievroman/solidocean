@@ -81,6 +81,8 @@ def stylesheet() -> str:
                                  color: {muted()}; }}
         QToolButton#logButton:hover {{ color: palette(text); }}
         QToolBar#viewToolbar QToolButton {{ font-size: 13px; padding: 2px 8px; }}
+        QToolButton#boxZoomButton:checked {{ background: {ACCENT}; color: {ACCENT_TEXT}; border: none;
+                                             border-radius: 4px; }}
         QPlainTextEdit#messages {{ background: palette(window); border: none; }}
         QDockWidget {{ border: none; }}
         QDockWidget::title {{ background: palette(window); border: none; padding: 4px 6px; text-align: left; }}

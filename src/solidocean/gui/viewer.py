@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
-from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QFileDialog, QToolBar, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QRect, Qt, QTimer
+from PySide6.QtWidgets import QFileDialog, QRubberBand, QToolBar, QVBoxLayout, QWidget
 
 from .. import units
 
@@ -122,6 +122,10 @@ class Viewer(QWidget):
         layout.addWidget(self._build_toolbar())
         self.plotter = QtInteractor(self)
         layout.addWidget(self.plotter.interactor)
+        # VTK's own box-zoom rectangle is drawn into the frame buffer and never shows in Qt; draw it with Qt
+        self._band = QRubberBand(QRubberBand.Shape.Rectangle, self.plotter.interactor)
+        self._band_origin = None
+        self.plotter.interactor.installEventFilter(self)
         self._last_axis_view = None
         self.length_unit = units.DEFAULT_LENGTH_UNIT
         self.plotter.set_background(BACKGROUND)
@@ -135,7 +139,7 @@ class Viewer(QWidget):
         for text, tip, fn in (
             ("+", "Zoom in", lambda: self._zoom(1.25)),
             ("−", "Zoom out", lambda: self._zoom(0.8)),
-            ("=", "Zoom to fit the whole model (keeps the view direction)", self.fit),
+            ("⧈", "Zoom to fit the whole model (keeps the view direction)", self.fit),
             (None, None, None),
             ("yz", "The y-z plane (view along x). Click again for the opposite side.", lambda: self.axis_view("x")),
             ("xz", "The x-z plane (view along y). Click again for the opposite side.", lambda: self.axis_view("y")),
@@ -147,6 +151,13 @@ class Viewer(QWidget):
                 continue
             action = tb.addAction(text, fn)
             action.setToolTip(tip)
+            if text == "−":
+                self.box_zoom_action = tb.addAction("⛶")
+                self.box_zoom_action.setCheckable(True)
+                self.box_zoom_action.setToolTip("Box zoom: drag a rectangle with the left mouse button to zoom "
+                                                "into that region (once; then the mouse rotates again)")
+                self.box_zoom_action.toggled.connect(self._box_zoom)
+                tb.widgetForAction(self.box_zoom_action).setObjectName("boxZoomButton")  # accent when on
         tb.addSeparator()
         self.opaque_action = tb.addAction("Opaque")
         self.opaque_action.setCheckable(True)
@@ -200,6 +211,32 @@ class Viewer(QWidget):
     def _zoom(self, factor: float):
         self.plotter.camera.zoom(factor)
         self.plotter.render()
+
+    def _box_zoom(self, on: bool):
+        """One-shot rubber-band zoom: the next left-drag zooms to the box, then the usual rotation returns."""
+        if not on:
+            self.plotter.enable_trackball_style()
+            return
+        self.plotter.enable_zoom_style()
+        # the observer lives on the zoom style, so it goes away when the style is replaced; deferred so that
+        # VTK zooms on this release before the style is switched back
+        self.plotter.iren.add_observer("LeftButtonReleaseEvent",
+                                       lambda *_: QTimer.singleShot(0, lambda: self.box_zoom_action.setChecked(False)))
+
+    def eventFilter(self, obj, event):
+        """Rubber band over the 3D view while box zoom is on; VTK still gets every event and does the zoom."""
+        if obj is self.plotter.interactor and self.box_zoom_action.isChecked():
+            kind = event.type()
+            if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+                self._band_origin = event.position().toPoint()
+                self._band.setGeometry(QRect(self._band_origin, self._band_origin))
+                self._band.show()
+            elif kind == QEvent.Type.MouseMove and self._band_origin is not None:
+                self._band.setGeometry(QRect(self._band_origin, event.position().toPoint()).normalized())
+            elif kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                self._band.hide()
+                self._band_origin = None
+        return super().eventFilter(obj, event)
 
     def fit(self):
         self.plotter.reset_camera()
