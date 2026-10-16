@@ -140,12 +140,15 @@ class HeatSolver:
         key = (mesh_key, interfaces.selection_key(p), props.key(), contacts.key())
         if key == self._key and self._model is not None:
             return self._model
+        t1 = time.perf_counter()
         k_list, rhoc = props.constant()     # temperature-dependent ones at REFERENCE_T, re-assembled per iterate
         K, C = heat.assemble(mesh.points, mesh.cells, mesh.cell_domain, k_list, rhoc, mesh.order)
         volume = (K, C)
         if contacts.items:
             Kc, Cc = contacts.matrices(mesh.n_nodes)
             K, C = K + Kc, C + Cc
+        # a stage a run without a sweep can be seen at: there the solve is one step, so it has no progress
+        self.log(f"Assembly: {K.shape[0]} temperature DOFs [{time.perf_counter() - t1:.1f} s]")
         quad = self._model.quad if self._model is not None and self._model.mesh is mesh else None
         self._model = HeatModel(mesh, K, C, Conductivity(props, mesh.cell_domain), tris, props, owner=owner,
                                 quad=quad, contacts=contacts, volume=volume)
@@ -478,7 +481,7 @@ class HeatSolver:
                 self.log(f"  temperature amplitude: up to {np.abs(T[-1]).max():.6g} K")
             else:
                 self.log(f"  T: {T[-1].min():.6g} .. {T[-1].max():.6g} K")
-            if p.heat.problem.type == "stationary":
+            if p.heat.problem.type != "transient":    # a transient reports its own steps (_step_progress)
                 self.progress(i + 1, len(outer_values))
         info = {"project": p.name, "elapsed_s": round(time.perf_counter() - t_start, 2),
                 "n_dofs": int(self._model.mesh.n_nodes) if self._model else 0}
