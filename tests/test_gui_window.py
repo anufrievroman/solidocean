@@ -373,3 +373,28 @@ def test_a_mode_can_be_shown_from_results_loaded_off_disk(tmp_path):
     assert w._mode is not None and "Mode 2" in w._mode[2]
     w.dirty = False
     w.close()
+
+
+def test_size_grading_in_the_mesh_panel():
+    """mesh.grading is a row of the Mesh panel: 1 reads as off, and an edit reaches the model."""
+    import time
+    from PySide6.QtWidgets import QApplication, QDoubleSpinBox
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    w = MainWindow()
+    w.show()
+    w.set_project(templates.create("heat_pad"))
+    deadline = time.time() + 30
+    while w.busy and time.time() < deadline:
+        app.processEvents()
+    w.select_node("mesh")
+    app.processEvents()
+    spin, = w.settings.widget().findChildren(QDoubleSpinBox)
+    assert spin.value() == 1.0 and (spin.minimum(), spin.maximum()) == (1.0, 4.0)
+    assert spin.specialValueText() == "1 (off)"          # 1 is not a grading, it is no grading
+    spin.setValue(1.3)
+    app.processEvents()
+    assert w.project.mesh.grading == 1.3 and w.dirty
+    w.dirty = False
+    w.close()

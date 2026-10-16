@@ -158,6 +158,10 @@ class MeshSettings:
     min_size: Expr = "0"
     order: int = 2
     optimize: bool = True
+    # how fast the element size may grow away from a region finer than max_size: the ratio between the
+    # sizes of neighbouring elements. 1 keeps a region's size inside it only, so the size jumps back to
+    # max_size at its boundary; 1.2-1.4 grades it smoothly outwards (at the cost of more elements)
+    grading: float = 1.0
     regions: list[MeshRegion] = field(default_factory=list)
 
     def __post_init__(self):
@@ -165,14 +169,14 @@ class MeshSettings:
 
     def to_dict(self):
         d = without_defaults(self, {"max_size": self.max_size, "min_size": self.min_size, "order": self.order,
-                                    "optimize": self.optimize}, keep=("max_size",))
+                                    "optimize": self.optimize, "grading": self.grading}, keep=("max_size",))
         if self.regions:
             d["regions"] = [r.to_dict() for r in self.regions]
         return d
 
     def key(self, ev) -> tuple:
-        """What determines the mesh (for caching): sizes, order, regions."""
-        return (ev(self.max_size), ev(self.min_size), self.order, self.optimize,
+        """What determines the mesh (for caching): sizes, order, grading, regions."""
+        return (ev(self.max_size), ev(self.min_size), self.order, self.optimize, self.grading,
                 tuple((r.on, ev(r.max_size)) for r in self.regions))
 
 
@@ -433,6 +437,8 @@ class Project:
                               "(e.g. periodic in x and y, or a hexagonal lattice)")
         if self.mesh.order not in (1, 2):
             errors.append("mesh.order must be 1 or 2")
+        if not 1 <= self.mesh.grading <= 4:
+            errors.append("mesh.grading must be between 1 (no grading) and 4")
         try:
             ev(self.mesh.max_size), ev(self.mesh.min_size)
         except Exception as exc:

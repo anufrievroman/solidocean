@@ -8,8 +8,9 @@ import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QListWidget, QMenu, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
+    QLabel, QLineEdit, QListWidget, QMenu, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem,
+    QVBoxLayout,
 )
 
 from ... import materials as mat
@@ -718,7 +719,8 @@ class MeshDefaultPanel(Panel):
 class MeshRegionPanel(Panel):
     help = ("A maximum element size for one object: one of the Objects (what is left of it after later objects) or "
             "all domains of a material. Regions apply in order; a later one wins where they overlap. The mesh stays "
-            "continuous across the object's interfaces, where the smaller size applies, and grades away from them.")
+            "continuous across the object's interfaces, where the smaller size applies. The size holds inside the "
+            "region and nowhere else; raise the mesh's size grading to let it grow outwards gradually instead.")
 
     def __init__(self, win, index):
         self.index = index
@@ -819,6 +821,18 @@ class MeshPanel(Panel):
         opt.setChecked(ms.optimize)
         opt.toggled.connect(lambda v: (setattr(ms, "optimize", v), self.win.mark_dirty()))
         f.addRow("Optimize", opt)
+        grade = QDoubleSpinBox()
+        grade.setRange(1.0, 4.0)
+        grade.setSingleStep(0.1)
+        grade.setDecimals(2)
+        grade.setValue(ms.grading)
+        grade.setSpecialValueText("1 (off)")
+        grade.setToolTip("How fast the element size may grow away from a region finer than the maximum: the "
+                         "ratio between the sizes of neighbouring elements. At 1 a region's size holds inside "
+                         "it only and jumps back to the maximum at its boundary, which leaves a small feature's "
+                         "surroundings unresolved; 1.2 to 1.4 grades it smoothly outwards, with more elements.")
+        grade.valueChanged.connect(lambda v: (setattr(ms, "grading", v), self.win.mark_dirty()))
+        f.addRow("Size grading", grade)
         g = self.form("Element sizes")
         for label, node in mesh_nodes(self.p):
             b = QPushButton(label)
@@ -827,7 +841,7 @@ class MeshPanel(Panel):
             g.addRow(b)
         g.addRow(muted_label("The maximum element size of the model, and optionally different ones in some objects "
                              "(mesh regions, e.g. finer in a thin film or near a heater). The mesh stays "
-                             "continuous across their interfaces and grades away from them."))
+                             "continuous across their interfaces, where the smaller size applies."))
         self.button_row(("Add mesh region", self.win.add_mesh_region))
         self.outer.addWidget(muted_label(self.win.mesh_summary()))
         self.button_row(("Export mesh (.msh)…", self.win.export_mesh))

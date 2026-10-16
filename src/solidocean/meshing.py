@@ -96,10 +96,43 @@ def _object_volumes(name: str) -> list[int]:
     return []
 
 
+# sample points per direction on a surface the distance to a graded region is measured from; the distance
+# is accurate to about the surface's extent over this, which only has to be well below the sizes it grades
+GRADING_SAMPLING = 50
+
+
+def _grading_fields(grading: float, by_size: dict[float, list[int]], h_max: float) -> list[int]:
+    """Size fields that let the element size grow away from the regions finer than max_size, one per size:
+    `h + (grading - 1) * distance to the region`, so that neighbouring elements differ by about `grading`.
+
+    Without them a region's size holds inside it and nowhere else, so the size jumps back to max_size one
+    element past its boundary. A small feature's surroundings are then never resolved, however fine the
+    feature itself is — and they are resolved differently whenever it moves, so sweeping its position
+    carries mesh noise into the results."""
+    if grading <= 1:
+        return []
+    fields = []
+    for h, vols in by_size.items():
+        if h >= h_max:
+            continue                    # the coarsest size: nothing finer to grade away from
+        surfaces = {abs(int(s)) for _, s in gmsh.model.getBoundary([(3, v) for v in vols],
+                                                                   oriented=False, combined=False)}
+        if not surfaces:
+            continue
+        distance = gmsh.model.mesh.field.add("Distance")
+        gmsh.model.mesh.field.setNumbers(distance, "SurfacesList", sorted(surfaces))
+        gmsh.model.mesh.field.setNumber(distance, "Sampling", GRADING_SAMPLING)
+        ramp = gmsh.model.mesh.field.add("MathEval")
+        gmsh.model.mesh.field.setString(ramp, "F", f"{h:.17g} + {grading - 1:.17g}*F{distance}")
+        fields.append(ramp)
+    return fields
+
+
 def _apply_region_sizes(project: Project, ev: Evaluator, L0: float) -> None:
     """Element sizes per object (mesh regions): every volume gets the size of the last region containing it,
     else the mesh's max_size, through constant size fields restricted to the volumes (and their boundaries);
-    the smallest applies on shared surfaces, so neighbours stay conforming and the mesh grades away from them."""
+    the smallest applies on shared surfaces, so neighbours stay conforming. A region's size holds inside the
+    region and nowhere else unless `grading` is above 1, which grows it outwards (see _grading_fields)."""
     regions = project.mesh.regions
     if not regions:
         return
@@ -117,6 +150,7 @@ def _apply_region_sizes(project: Project, ev: Evaluator, L0: float) -> None:
         gmsh.model.mesh.field.setNumber(f, "VIn", h)
         gmsh.model.mesh.field.setNumber(f, "IncludeBoundary", 1)
         fields.append(f)
+    fields += _grading_fields(project.mesh.grading, by_size, max(size.values()))
     smallest = gmsh.model.mesh.field.add("Min")
     gmsh.model.mesh.field.setNumbers(smallest, "FieldsList", fields)
     gmsh.model.mesh.field.setAsBackgroundMesh(smallest)
