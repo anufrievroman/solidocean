@@ -9,9 +9,84 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
+
+BAR_WIDTH = 24
+
+
+def _duration(seconds: float) -> str:
+    """A rough human-readable duration: 42s, 3m 07s, 1h 12m."""
+    seconds = int(round(max(seconds, 0)))
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60:02d}s"
+    return f"{seconds // 3600}h {seconds % 3600 // 60:02d}m"
+
+
+class _Reporter:
+    """Where a headless run's messages go: the solver's log lines, and how far it has got — the percentage
+    done with the elapsed and the estimated remaining time (from the average pace so far, so it settles
+    down only after the first few steps).
+
+    On a terminal the progress is a bar on one line that rewrites itself; into a pipe or a log file — what
+    a script or an agent reads — it is about ten plain lines instead, so the progress survives in captured
+    output. A step is a sweep value, or a time step of a transient problem; a single solve reports only
+    once it is done, so a long one shows where it is through its log lines instead."""
+
+    def __init__(self, quiet: bool):
+        self.quiet = quiet
+        self.tty = sys.stdout.isatty()
+        utf8 = (sys.stdout.encoding or "").lower().replace("-", "").startswith("utf8")
+        self.blocks = "█░" if utf8 else "#-"   # a plain bar where the console cannot print block characters
+        self.start = time.perf_counter()
+        self.live = False       # a bar is sitting on the current terminal row, waiting to be overwritten
+        self.last_draw = 0.0
+        self.last_decile = -1   # -1, so the first step reports: on a long run that is the first estimate
+
+    def _end_bar(self):
+        """Take the cursor off the bar's row so the next line does not land on top of it."""
+        if self.live:
+            print("\r\x1b[K", end="", flush=True)
+            self.live = False
+
+    def log(self, msg: str):
+        if self.quiet:
+            return
+        self._end_bar()
+        print(msg, flush=True)
+
+    def error(self, msg: str):
+        self._end_bar()
+        print(msg, file=sys.stderr, flush=True)
+
+    def progress(self, i: int, n: int):
+        if self.quiet or n <= 0:
+            return
+        done = min(max(i, 0), n)
+        elapsed = time.perf_counter() - self.start
+        frac = done / n
+        eta = ""
+        if 0 < done < n and elapsed > 0.5:
+            eta = f", ~{_duration(elapsed * (n - done) / done)} left"
+        text = f"{frac * 100:3.0f}% ({done}/{n}), {_duration(elapsed)} elapsed{eta}"
+        if self.tty:
+            now = time.perf_counter()
+            if done < n and now - self.last_draw < 0.2:    # at most ~5 redraws a second
+                return
+            self.last_draw = now
+            filled = int(round(frac * BAR_WIDTH))
+            bar = self.blocks[0] * filled + self.blocks[1] * (BAR_WIDTH - filled)
+            print(f"\r  {bar} {text}\x1b[K", end="\n" if done == n else "", flush=True)
+            self.live = done < n
+        else:
+            decile = int(frac * 10)
+            if done == n or decile > self.last_decile:     # the first step, each 10%, and the end
+                self.last_decile = decile
+                print(f"  {text}", flush=True)
 
 
 def _parse_set(items: list[str]) -> dict[str, str]:
@@ -24,15 +99,16 @@ def _parse_set(items: list[str]) -> dict[str, str]:
     return out
 
 
-def _run(project, out_dir, log, progress):
+def _run(project, out_dir, rep: _Reporter):
     """Run the project's problem headless and write its results; None on error."""
     from . import physics
     spec = physics.of(project)
     plots = [pl for pl in project.plots if pl.kind != "field" and not spec.plot_unavailable(project, pl)]
+    solver = spec.solver(project, log=rep.log, progress=rep.progress)
     try:     # 3D field views are GUI only
-        results = spec.solver(project, log=log, progress=progress).run([q for pl in plots for q in pl.expressions()])
+        results = solver.run([q for pl in plots for q in pl.expressions()])
     except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        rep.error(f"error: {exc}")
         return None
     return results.write_outputs(project, out_dir, plots)
 
@@ -91,7 +167,8 @@ def main(argv: list[str] | None = None) -> int:
 
     from .project import Project
     
-    log = (lambda msg: None) if args.quiet else print
+    rep = _Reporter(args.quiet)
+    log = rep.log
     try:
         project = Project.load(args.input)
     except Exception as exc:
@@ -116,18 +193,8 @@ def main(argv: list[str] | None = None) -> int:
         log(f"Mesh: {mesh.info['n_elements']} elements, {mesh.n_nodes} nodes -> {out_dir / 'mesh.msh'}")
         return 0
 
-    tty = sys.stdout.isatty()
-
-    def progress(i, n):
-        if args.quiet:
-            return
-        if tty:
-            print(f"\r[{i}/{n}]", end="\n" if i == n else "", flush=True)
-        elif i == n or i % max(n // 10, 1) == 0:  # logs and pipes: about ten lines
-            print(f"[{i}/{n}]", flush=True)
-
     log(f"SolidOcean {__version__}: {project.name} -> {out_dir}")
-    written = _run(project, out_dir, log, progress)
+    written = _run(project, out_dir, rep)
     if written is None:
         return 1
     for path in written:
