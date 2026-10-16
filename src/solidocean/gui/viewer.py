@@ -213,30 +213,71 @@ class Viewer(QWidget):
         self.plotter.render()
 
     def _box_zoom(self, on: bool):
-        """One-shot rubber-band zoom: the next left-drag zooms to the box, then the usual rotation returns."""
-        if not on:
-            self.plotter.enable_trackball_style()
+        """One-shot rubber-band zoom: the next left-drag zooms to the box, then the usual rotation returns.
+        The drag is handled here (see `eventFilter` and `_zoom_to_box`) rather than by VTK's rubber-band
+        zoom style, which rebuilds the camera from the bounds and so jumps once the view has been moved."""
+        if on:
+            self.plotter.interactor.setCursor(Qt.CursorShape.CrossCursor)   # armed: the drag draws a box
             return
-        self.plotter.enable_zoom_style()
-        # the observer lives on the zoom style, so it goes away when the style is replaced; deferred so that
-        # VTK zooms on this release before the style is switched back
-        self.plotter.iren.add_observer("LeftButtonReleaseEvent",
-                                       lambda *_: QTimer.singleShot(0, lambda: self.box_zoom_action.setChecked(False)))
+        self.plotter.interactor.unsetCursor()
+        self._band.hide()
+        self._band_origin = None
 
     def eventFilter(self, obj, event):
-        """Rubber band over the 3D view while box zoom is on; VTK still gets every event and does the zoom."""
+        """The box-zoom drag: a Qt rubber band over the 3D view, and the zoom on release. The events are
+        swallowed while it is on, so VTK does not rotate at the same time."""
         if obj is self.plotter.interactor and self.box_zoom_action.isChecked():
             kind = event.type()
             if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 self._band_origin = event.position().toPoint()
                 self._band.setGeometry(QRect(self._band_origin, self._band_origin))
                 self._band.show()
-            elif kind == QEvent.Type.MouseMove and self._band_origin is not None:
+                return True
+            if kind == QEvent.Type.MouseMove and self._band_origin is not None:
                 self._band.setGeometry(QRect(self._band_origin, event.position().toPoint()).normalized())
-            elif kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                return True
+            if kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                box = QRect(self._band_origin, event.position().toPoint()).normalized() \
+                    if self._band_origin is not None else None
                 self._band.hide()
                 self._band_origin = None
+                self.box_zoom_action.setChecked(False)   # one shot: the mouse rotates again
+                if box is not None:
+                    self._zoom_to_box(box)
+                return True
         return super().eventFilter(obj, event)
+
+    def _zoom_to_box(self, box: QRect):
+        """Zoom into a rectangle of the view: pan the camera so that the box centre is at the centre of the
+        view, then narrow the field of view until the box fills it. The camera's direction, up vector and
+        distance are left alone, so this works the same from any view the user has rotated or zoomed to."""
+        w, h = self.plotter.interactor.width(), self.plotter.interactor.height()   # same units as the box
+        if w <= 0 or h <= 0 or box.width() < 5 or box.height() < 5:
+            return                      # a click or a sliver: nothing sensible to zoom to
+        cam = self.plotter.camera
+        position, focus, up = np.array(cam.position), np.array(cam.focal_point), np.array(cam.up)
+        if not np.all(np.isfinite([position, focus, up])):
+            return                      # no camera to work from (an empty view)
+        view = focus - position
+        distance = float(np.linalg.norm(view))
+        right = np.cross(view, up)
+        if distance == 0 or np.linalg.norm(right) == 0:
+            return                      # degenerate: looking from the focal point, or straight up the up vector
+        view /= distance
+        right /= np.linalg.norm(right)
+        true_up = np.cross(right, view)                 # the on-screen axes, orthonormal
+        # half-extent of the view at the focal plane, in world units
+        half_h = cam.parallel_scale if cam.parallel_projection else distance * np.tan(np.radians(cam.view_angle) / 2)
+        half_w = half_h * w / h
+        # the box centre as a fraction of the half-extents, from the centre of the view (y is up on screen)
+        fx = (box.center().x() - w / 2) / (w / 2)
+        fy = (h / 2 - box.center().y()) / (h / 2)
+        shift = fx * half_w * right + fy * half_h * true_up
+        cam.position = tuple(position + shift)          # a pure pan: both ends move together
+        cam.focal_point = tuple(focus + shift)
+        cam.zoom(min(w / box.width(), h / box.height()))   # fit the box, keeping the aspect ratio
+        self.plotter.renderer.reset_camera_clipping_range()   # the pan changed how far the model is
+        self.plotter.render()
 
     def fit(self):
         self.plotter.reset_camera()
