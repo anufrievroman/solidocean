@@ -26,7 +26,7 @@ import scipy.sparse as sp
 from ... import fields
 from ... import meshing, outputs, selection
 from ...expressions import Evaluator
-from ...fem import heat
+from ...fem import eigen, heat
 from ...geometry import evaluate_features
 from ...results.field import FieldResults
 from ..base import Cancelled, LogFn
@@ -464,7 +464,12 @@ class HeatSolver:
             ev = base.with_overrides({outer_name: val}) if outer_name else base
             if outer_name:
                 self.log(f"{outer_name} = {val:.6g}")
-            times, T = self.solve(ev)
+            try:
+                times, T = self.solve(ev)
+            except eigen.SingularMatrix as exc:      # say which element, which the solver cannot know
+                mesh = self._model.mesh if self._model is not None else None
+                raise ValueError(f"{exc}\n\n{meshing.singular_matrix_help(mesh)}"
+                                 if mesh is not None else str(exc)) from exc
             m = self._model
             temps.append(T)
             meshes[i], kels[i] = m.mesh, m.cond

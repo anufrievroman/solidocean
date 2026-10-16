@@ -34,17 +34,25 @@ def backend(requested: str = "auto") -> str:
     return avail[0]
 
 
+class SingularMatrix(ValueError):
+    """The system matrix could not be factorised. Raised as one type whatever the backend reported, so a
+    caller that knows the mesh can add to it what the solver cannot know: which element is to blame."""
+
+
 def _factorize(A: sp.spmatrix, which: str = "auto"):
     """Return a solve(b) function for sparse A."""
-    if backend(which) == "mumps":
-        import mumps
-        ctx = mumps.Context()
-        real = not np.iscomplexobj(A.data)
-        # MUMPS 'symmetric' means complex-symmetric, so Hermitian matrices use general LU
-        ctx.set_matrix(sp.triu(A, format="coo") if real else A.tocoo(), symmetric=real)
-        ctx.factor()
-        return ctx.solve
-    lu = sla.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A")
+    try:
+        if backend(which) == "mumps":
+            import mumps
+            ctx = mumps.Context()
+            real = not np.iscomplexobj(A.data)
+            # MUMPS 'symmetric' means complex-symmetric, so Hermitian matrices use general LU
+            ctx.set_matrix(sp.triu(A, format="coo") if real else A.tocoo(), symmetric=real)
+            ctx.factor()
+            return ctx.solve
+        lu = sla.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A")
+    except Exception as exc:
+        raise SingularMatrix(f"the system matrix is singular: it could not be factorised ({exc})") from exc
     return lu.solve
 
 

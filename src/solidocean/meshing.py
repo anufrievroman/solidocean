@@ -60,6 +60,45 @@ class Mesh:
         l_rms = np.sqrt(np.mean([np.sum((p[:, a] - p[:, b]) ** 2, axis=1) for a, b in edges], axis=0))
         return 6 * np.sqrt(2) * v / l_rms**3
 
+    def signed_volumes(self) -> np.ndarray:
+        """Signed volume of the corner tets. Negative means the element is inverted (its nodes are wound
+        the wrong way), zero means its four nodes are coplanar; either way it has no usable stiffness."""
+        p = self.points[self.cells[:, :4]]
+        return np.einsum("ij,ij->i", p[:, 1] - p[:, 0],
+                         np.cross(p[:, 2] - p[:, 0], p[:, 3] - p[:, 0])) / 6
+
+    def object_of(self, element: int) -> str:
+        """Name of the object an element belongs to (its material if the object is not known)."""
+        if self.cell_feature is not None and self.cell_feature[element] >= 0:
+            return self.feature_names[self.cell_feature[element]]
+        return self.material_names[self.cell_domain[element]]
+
+    def describe_element(self, element: int) -> str:
+        """One line locating an element: where it is, how big, how flat — for an error a user has to act on."""
+        q, v = self.quality()[element], self.signed_volumes()[element]
+        centre = self.points[self.cells[element, :4]].mean(axis=0)
+        p = self.points[self.cells[element, :4]]
+        edges = [np.linalg.norm(p[a] - p[b]) for a, b in ((0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3))]
+        return (f"element {element} in '{self.object_of(element)}' at "
+                f"({centre[0]:.4g}, {centre[1]:.4g}, {centre[2]:.4g}) m: quality {q:.3g}, volume {v:.3g} m^3, "
+                f"edges {min(edges):.3g} to {max(edges):.3g} m (ratio {max(edges) / max(min(edges), 1e-300):.0f})")
+
+    def quality_by_object(self) -> str:
+        """Element quality per object. The split is the point: elements that are flat because a region is
+        meshed coarser than it is thin are ordinary, and look alike in a single global minimum."""
+        q = self.quality()
+        rows = []
+        names = self.feature_names or self.material_names
+        for name in names:
+            try:
+                sel = self.region(name)
+            except ValueError:
+                continue
+            if sel.any():
+                rows.append(f"  {name:20s} {sel.sum():8d} elements  quality min {q[sel].min():8.2e}  "
+                            f"median {np.median(q[sel]):.3f}  under 0.05: {(q[sel] < 0.05).sum()}")
+        return "\n".join(rows)
+
     def to_pyvista(self):
         import pyvista as pv
         if self.order == 2:
@@ -164,6 +203,58 @@ def _apply_region_sizes(project: Project, ev: Evaluator, L0: float) -> None:
     gmsh.option.setNumber("Mesh.MeshSizeMax", max(size.values()))
 
 
+# A tet this flat has no usable stiffness: its four nodes are coplanar to within rounding, so assembling it
+# puts a singular block into the matrix. Well below anything a coarse-but-deliberate mesh produces — a region
+# meshed much coarser than it is thin gives flat elements of quality ~1e-2, which solve perfectly well.
+DEGENERATE_QUALITY = 1e-6
+
+
+def check_quality(mesh: Mesh) -> None:
+    """Refuse a mesh that cannot be solved, naming the elements. A degenerate tet otherwise reaches the
+    solver and comes back as a bare 'singular matrix', which says nothing about where the problem is.
+
+    Only true degeneracy is an error: flat elements are normal and are left alone (see DEGENERATE_QUALITY)."""
+    volumes = mesh.signed_volumes()
+    quality = mesh.quality()
+    bad = np.flatnonzero((volumes <= 0) | (quality < DEGENERATE_QUALITY) | ~np.isfinite(quality))
+    if not len(bad):
+        return
+    worst = bad[np.argsort(quality[bad])][:5]
+    inverted = int((volumes[bad] < 0).sum())
+    raise ValueError(
+        f"the mesh has {len(bad)} unusable element(s)"
+        + (f" ({inverted} of them inverted)" if inverted else "")
+        + " — their nodes are coplanar, so the system matrix would be singular:\n"
+        + "\n".join("  " + mesh.describe_element(int(i)) for i in worst)
+        + (f"\n  ... and {len(bad) - len(worst)} more" if len(bad) > len(worst) else "")
+        + "\n\nElement quality by object:\n" + mesh.quality_by_object()
+        + "\n\nThis usually means the geometry has a sliver: faces that nearly touch, a zero-thickness "
+          "overlap between two objects, or a size that jumps abruptly at a small feature. Refining the "
+          "object named above, or nudging the geometry so the faces meet cleanly, normally clears it.")
+
+
+def singular_matrix_help(mesh: Mesh, worst: int = 5) -> str:
+    """What to add to a 'singular matrix' when the mesh is at hand: the flattest elements and where they
+    are. A solve can still fail on a mesh that passed check_quality — an element just above the threshold,
+    or a genuinely singular physics — so the report says which of the two it looks like."""
+    quality = mesh.quality()
+    order = np.argsort(quality)[:worst]
+    lines = ["The flattest elements in the mesh were:"]
+    lines += ["  " + mesh.describe_element(int(i)) for i in order]
+    lines.append("")
+    lines.append("Element quality by object:")
+    lines.append(mesh.quality_by_object())
+    lines.append("")
+    if quality[order[0]] < 1e-3:
+        lines.append("Those are flat enough to be the cause: refine the object they are in, or nudge the "
+                     "geometry so its faces meet cleanly rather than nearly touching.")
+    else:
+        lines.append("The mesh itself looks sound, so the matrix is more likely singular for a physical "
+                     "reason: nothing holding the temperature (no fixed value, convection or radiation) or "
+                     "nothing holding the structure against rigid-body motion.")
+    return "\n".join(lines)
+
+
 def generate(project: Project, ev: Evaluator, save_msh: str | Path | None = None) -> Mesh:
     """Build geometry and generate a volume mesh in one gmsh session."""
     with geometry.gmsh_session():
@@ -179,7 +270,9 @@ def generate(project: Project, ev: Evaluator, save_msh: str | Path | None = None
             gmsh.model.mesh.setOrder(2)
         if save_msh:
             gmsh.write(str(save_msh))
-        return _extract(names, order, L0)
+        mesh = _extract(names, order, L0)
+    check_quality(mesh)
+    return mesh
 
 
 def _extract(names: list[str], order: int, L0: float) -> Mesh:
