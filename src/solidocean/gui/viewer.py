@@ -6,7 +6,7 @@ import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
 from PySide6.QtCore import QEvent, QRect, Qt, QTimer
-from PySide6.QtWidgets import QFileDialog, QRubberBand, QToolBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QLabel, QRubberBand, QSlider, QToolBar, QVBoxLayout, QWidget
 
 from .. import units
 
@@ -33,6 +33,9 @@ BC_LEGEND = {"periodic x": "Periodic x", "periodic y": "Periodic y", "periodic z
              "temperature": "Temperature", "flux": "Heat flux", "convection": "Convection",
              "radiation": "Radiation"}
 BC_BLEND = 0.6
+# the opacity slider: at DEFAULT_OPACITY each view draws the structure at the opacity it asks for (plain geometry
+# at this value, more transparent with conditions or a line probe); MIN_OPACITY keeps it from vanishing
+DEFAULT_OPACITY, MIN_OPACITY = 0.75, 0.1
 # horizontal colour bar at the top centre; its title is drawn separately (Viewer._bar_title)
 _BAR = {"title": "", "vertical": False, "position_x": 0.3, "position_y": 0.83, "width": 0.4, "height": 0.06,
         "n_labels": 3, "label_font_size": 11, "font_family": "arial", "color": "black"}
@@ -139,7 +142,7 @@ class Viewer(QWidget):
         for text, tip, fn in (
             ("+", "Zoom in", lambda: self._zoom(1.25)),
             ("−", "Zoom out", lambda: self._zoom(0.8)),
-            ("⧈", "Zoom to fit the whole model (keeps the view direction)", self.fit),
+            ("⛞", "Zoom to fit the whole model (keeps the view direction)", self.fit),
             (None, None, None),
             ("yz", "The y-z plane (view along x). Click again for the opposite side.", lambda: self.axis_view("x")),
             ("xz", "The x-z plane (view along y). Click again for the opposite side.", lambda: self.axis_view("y")),
@@ -159,15 +162,24 @@ class Viewer(QWidget):
                 self.box_zoom_action.toggled.connect(self._box_zoom)
                 tb.widgetForAction(self.box_zoom_action).setObjectName("boxZoomButton")  # accent when on
         tb.addSeparator()
-        self.opaque_action = tb.addAction("Opaque")
-        self.opaque_action.setCheckable(True)
-        self.opaque_action.setToolTip("Draw the structure opaque; by default it is slightly transparent so that "
-                                      "hidden faces (and boundary conditions on them) show through")
-        self.opaque_action.triggered.connect(self._apply_opacity)
-        self.scale_action = tb.addAction("Rulers")
+        tip = ("Opacity of the structure, from nearly transparent to opaque; by default it is slightly "
+               "transparent so that hidden faces (and boundary conditions on them) show through")
+        label = QLabel(" ◑ ")
+        label.setToolTip(tip)
+        tb.addWidget(label)
+        self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.opacity_slider.setRange(round(100 * MIN_OPACITY), 100)
+        self.opacity_slider.setValue(round(100 * DEFAULT_OPACITY))
+        self.opacity_slider.setFixedWidth(90)
+        self.opacity_slider.setObjectName("opacitySlider")   # a small handle (theme.py)
+        self.opacity_slider.setToolTip(tip)
+        self.opacity_slider.valueChanged.connect(self._apply_opacity)
+        tb.addWidget(self.opacity_slider)
+        tb.addSeparator()
+        self.scale_action = tb.addAction("⌗")
         self.scale_action.setCheckable(True)
         self.scale_action.setChecked(False)
-        self.scale_action.setToolTip("Show rulers along the model's bounding box, in the preferred length unit")
+        self.scale_action.setToolTip("Rulers: show rulers along the model's bounding box, in the preferred length unit")
         self.scale_action.triggered.connect(self._toggle_scale)
         save = tb.addAction("Save Image…", self.save_image)
         save.setToolTip("Save the current view as an image")
@@ -338,12 +350,19 @@ class Viewer(QWidget):
         self._camera_placed = False
         self._update_triad()
 
-    def _apply_opacity(self, _on: bool = False):
-        """Opacity of the structure in the geometry and mesh views: the requested one, or 1 if Opaque is on."""
+    def _apply_opacity(self, _value: int = 0):
+        """Opacity of the structure in the geometry and mesh views: the view's own at the slider's default,
+        blended linearly towards 1 above it and towards MIN_OPACITY below, so the slider's ends mean the same
+        in every view."""
         if getattr(self, "_surface", None) is None:
             return
         actor, opacity = self._surface
-        actor.GetProperty().SetOpacity(1.0 if self.opaque_action.isChecked() else opacity)
+        s = self.opacity_slider.value() / 100
+        if s >= DEFAULT_OPACITY:
+            opacity += (1 - opacity) * (s - DEFAULT_OPACITY) / (1 - DEFAULT_OPACITY)
+        else:
+            opacity = MIN_OPACITY + (opacity - MIN_OPACITY) * (s - MIN_OPACITY) / (DEFAULT_OPACITY - MIN_OPACITY)
+        actor.GetProperty().SetOpacity(opacity)
         self.plotter.render()
 
     def _finish(self, reset_camera: bool):

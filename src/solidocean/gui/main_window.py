@@ -33,7 +33,7 @@ from .panels.problem import VariableSweepPanel
 from .plot_canvas import PlotCanvas
 from .view_area import ViewArea
 from .results_view import ResultsMixin
-from .viewer import Viewer
+from .viewer import DEFAULT_OPACITY, Viewer
 from .worker import Task
 
 
@@ -395,7 +395,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         view = view or self._view
         node = self._current_node()
         kind = node[0] if node else ""
-        conditions, opacity, periodic = {}, 0.75, ()   # slightly transparent: inner faces show
+        conditions, opacity, periodic = {}, DEFAULT_OPACITY, ()   # slightly transparent: inner faces show
         if kind in ("physics", "physics_list") or kind in self.ui.highlight_nodes:
             conditions = self.ui.highlights(self.project)
             if self.project.lattice.vectors:

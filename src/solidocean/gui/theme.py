@@ -83,11 +83,16 @@ def stylesheet() -> str:
         QToolButton#logButton {{ font-size: 12px; padding: 0px 6px; border: none; background: transparent;
                                  color: {muted()}; }}
         QToolButton#logButton:hover {{ color: palette(text); }}
-        QToolBar#viewToolbar QToolButton {{ font-size: 13px; padding: 2px 8px; }}
+        QToolBar#viewToolbar QToolButton {{ font-size: 15px; padding: 2px 8px; }}
+        QToolBar#viewToolbar QLabel {{ font-size: 15px; }}
         QToolBar#viewToolbar QToolButton:checked {{ background: {toggled}; color: palette(text); border: none;
                                                     border-radius: 4px; }}
         QToolButton#boxZoomButton:checked {{ background: {ACCENT}; color: {ACCENT_TEXT}; border: none;
                                              border-radius: 4px; }}
+        QSlider#opacitySlider::groove:horizontal {{ height: 4px; background: {grid}; border-radius: 2px; }}
+        QSlider#opacitySlider::sub-page:horizontal {{ background: {muted()}; border-radius: 2px; }}
+        QSlider#opacitySlider::handle:horizontal {{ width: 10px; height: 10px; margin: -3px 0;
+                                                   border-radius: 5px; background: palette(text); }}
         QPlainTextEdit#messages {{ background: palette(window); border: none; }}
         QDockWidget {{ border: none; }}
         QDockWidget::title {{ background: palette(window); border: none; padding: 4px 6px; text-align: left; }}
