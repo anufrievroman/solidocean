@@ -251,7 +251,7 @@ class MainWindow(ResultsMixin, QMainWindow):
             it.setData(0, Qt.ItemDataRole.UserRole, ("material", i))
             items[("material", i)] = it
         for i, f in enumerate(self.project.objects):
-            label = f"{f.name} ({f.type}{', ' + f.array_label if f.arrayed else ''})" + ("  −" if f.op == "subtract" else "")
+            label = f"{f.name} ({f.type}{', ' + f.array_label if f.arrayed else ''})" + (("  −" + (f" from {f.on}" if f.on else "")) if f.op == "subtract" else "")
             if not f.enabled:
                 label += "  (bypassed)"
             it = QTreeWidgetItem(items[("objects", None)], [label])

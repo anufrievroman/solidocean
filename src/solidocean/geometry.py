@@ -3,7 +3,8 @@
 Features are applied in order, painter-style: an ``add`` feature carves its
 volume out of everything before it and becomes a new domain with its own
 material (later features win where they overlap); a ``subtract`` feature
-removes its volume from everything before it. Finally all domains are
+removes its volume from everything before it, or only from one earlier object
+or material (its ``on``). Finally all domains are
 fragmented so the mesh is conforming across material interfaces.
 
 OpenCASCADE uses absolute tolerances (~1e-8), so the model is built in a
@@ -327,9 +328,10 @@ def build(project: Project, ev: Evaluator) -> tuple[float, list[str]]:
         vol = _make_volume(ef, s, vectors)
         if not vol:
             continue
+        target = ef.feature.on if ef.feature.op == "subtract" else ""
         new_domains = []
         for tags, material, fname in domains:
-            if tags:
+            if tags and (not target or target in (fname, material)):
                 try:
                     out, _ = occ.cut(tags, vol, removeObject=True, removeTool=False)
                 except Exception as exc:

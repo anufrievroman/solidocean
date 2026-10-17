@@ -398,6 +398,11 @@ class MaterialPanel(Panel):
         for f in self.p.objects:
             if f.material == old:
                 f.material = new
+            if f.on == old:
+                f.on = new
+        for r in self.p.mesh.regions:
+            if r.on == old:
+                r.on = new
         self.win.mark_dirty()
         self.win.rebuild_tree(("material", self.index))
 
@@ -445,12 +450,14 @@ class ObjectsPanel(Panel):
     title = "Objects"
     action = BUILD_GEOMETRY
     help = ("Objects are applied top to bottom. 'add' creates solid with a material (later objects win where "
-            "they overlap); 'subtract' removes material from everything above it.")
+            "they overlap); 'subtract' removes material from everything above it, or only from the object or "
+            "material chosen in its 'From'.")
 
     def build(self):
         self.list = QListWidget()
         for f in self.p.objects:
             text = (f"{f.name}  ({f.type}, {f.op}{', ' + f.material if f.op == 'add' else ''}"
+                    f"{' from ' + f.on if f.op == 'subtract' and f.on else ''}"
                     f"{', array ' + f.array_label if f.arrayed else ''})")
             self.list.addItem(text + ("  — bypassed" if not f.enabled else ""))
             self.list.item(self.list.count() - 1).setIcon(feature_swatch(self.p, f))
@@ -525,18 +532,29 @@ class FeaturePanel(Panel):
         for m in self.p.materials:
             material.addItem(swatch(colors[m.name]), m.name)
         material.setCurrentText(self.f.material)
-        material.setEnabled(self.f.op == "add")
-        self.field_row(("Operation", op), ("Material", material))
+        target = QComboBox()
+        target.setToolTip("Subtract only from this object, or from every object of this material, above this one; "
+                          "the others keep their volume where they overlap it")
+        target.addItem("Everything above", "")
+        for obj in {o.name: o for o in self.p.objects[:self.index] if o.op == "add"}.values():
+            target.addItem(feature_swatch(self.p, obj), obj.name, obj.name)
+        for m in self.p.materials:
+            target.addItem(swatch(colors[m.name]), f"All {m.name}", m.name)
+        if self.f.on and target.findData(self.f.on) < 0:
+            target.addItem(f"{self.f.on} (missing)", self.f.on)
+        target.setCurrentIndex(max(0, target.findData(self.f.on)))
+        self.field_row(("Operation", op), ("Material", material) if self.f.op == "add" else ("From", target))
 
         def set_op(v):
             self.f.op = v
-            material.setEnabled(v == "add")
             self.win.mark_dirty()
-            self.win.rebuild_tree(("feature", self.index), refresh_panel=False)
+            self.win.rebuild_tree(("feature", self.index))
 
         op.currentTextChanged.connect(set_op)
         material.currentTextChanged.connect(lambda v: (setattr(self.f, "material", v), self.win.mark_dirty(),
                                                        self.win.rebuild_tree(refresh_panel=False)))
+        target.currentIndexChanged.connect(lambda i: (setattr(self.f, "on", target.itemData(i)), self.win.mark_dirty(),
+                                                      self.win.rebuild_tree(refresh_panel=False)))
 
         g = self.form("Variables")
         params = self.f.params
@@ -683,7 +701,14 @@ class FeaturePanel(Panel):
     def _rename(self, edit):
         def fn():
             if edit.text().strip() and edit.text().strip() != self.f.name:
-                self.f.name = edit.text().strip()
+                old, self.f.name = self.f.name, edit.text().strip()
+                if old not in {m.name for m in self.p.materials}:   # subtractions and mesh regions follow it
+                    for o in self.p.objects[self.index + 1:]:
+                        if o.on == old:
+                            o.on = self.f.name
+                    for r in self.p.mesh.regions:
+                        if r.on == old:
+                            r.on = self.f.name
                 self.win.mark_dirty()
                 self.win.rebuild_tree(("feature", self.index))
         return fn
@@ -737,6 +762,7 @@ class MeshRegionPanel(Panel):
         self.button_row(("Delete", lambda: self.win.delete_mesh_region(self.index)))
         f = self.form()
         name = QLineEdit(r.name)
+        name.setPlaceholderText(r.on)   # unnamed: the tree shows the region by its object
         name.editingFinished.connect(lambda: (setattr(r, "name", name.text().strip()), self.win.mark_dirty(),
                                               self.win.rebuild_tree(refresh_panel=False)))
         f.addRow("Name", name)
@@ -744,7 +770,7 @@ class MeshRegionPanel(Panel):
         names = objects(self.p)
         on.addItems(names if r.on in names else names + [r.on])
         on.setCurrentText(r.on)
-        on.currentTextChanged.connect(lambda v: (setattr(r, "on", v), self.win.mark_dirty(),
+        on.currentTextChanged.connect(lambda v: (setattr(r, "on", v), name.setPlaceholderText(v), self.win.mark_dirty(),
                                                  self.win.rebuild_tree(refresh_panel=False)))
         f.addRow("Object", on)
         f.addRow("Maximum element size", ExprEdit(self.win, lambda: r.max_size,

@@ -46,7 +46,7 @@ class Solver:
     def _geometry_key(self, ev: Evaluator):
         p = self.project
         feats = evaluate_features(p, ev)
-        vals = [(f.feature.type, f.feature.op, f.feature.material,
+        vals = [(f.feature.type, f.feature.op, f.feature.material, f.feature.on,
                  tuple((k, np.round(np.atleast_1d(v), 15).tobytes()) for k, v in sorted(f.values.items())))
                 for f in feats]
         mesh = p.mesh.key(ev)

@@ -91,6 +91,7 @@ class Feature:
     material: str = ""
     params: dict[str, Any] = field(default_factory=dict)
     enabled: bool = True  # disabled ("bypassed") features are kept but ignored
+    on: str = ""          # subtract only: from this earlier object or material ("" = from everything before)
 
     def __post_init__(self):
         if self.type not in FEATURE_TYPES:
@@ -119,6 +120,8 @@ class Feature:
         d = {"type": self.type, "name": self.name, "op": self.op}
         if self.op == "add":
             d["material"] = self.material
+        elif self.on:
+            d["on"] = self.on
         if not self.enabled:
             d["enabled"] = False
         d.update(self.params)
@@ -134,7 +137,7 @@ class Feature:
         d = dict(d)
         return cls(type=d.pop("type"), name=d.pop("name", d.get("type", "")),
                    op=d.pop("op", "add"), material=d.pop("material", ""),
-                   enabled=d.pop("enabled", True), params=d)
+                   enabled=d.pop("enabled", True), on=d.pop("on", ""), params=d)
 
 
 @dataclass
@@ -409,11 +412,16 @@ class Project:
         active = [f for f in self.objects if f.enabled]
         if not any(f.op == "add" for f in active):
             errors.append("objects: no enabled solid ('add') objects")
-        for f in active:
+        for i, f in enumerate(self.objects):
+            if not f.enabled:
+                continue
             if f.op not in OPS:
                 errors.append(f"object '{f.name}': op must be one of {OPS}")
             if f.op == "add" and f.material not in names:
                 errors.append(f"object '{f.name}': material '{f.material}' not defined")
+            if f.op == "subtract" and f.on and f.on not in names and f.on not in {g.name for g in self.objects[:i]}:
+                errors.append(f"object '{f.name}': subtracts from '{f.on}', which is neither an object above it "
+                              "nor a material")
             if f.arrayed:
                 try:
                     array_counts(ev.vector(f.params[ARRAY_KEY]), f.name)

@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pytest
 
@@ -156,3 +158,42 @@ def test_loft_three_sections_and_errors():
     p.objects[0].params["sections"] = [_square("a", "0"), bad]
     with pytest.raises(ValueError, match="same number of points"):
         meshing.preview_geometry(p, p.evaluator())
+
+
+def test_subtract_from_one_object_or_material(tmp_path):
+    """A hole through a film on a substrate: `on` cuts only that earlier object (or the objects of that
+    material) and leaves the others whole; empty `on` cuts everything above; unknown targets are reported."""
+    from solidocean.fields import Quadrature
+    film = Feature("block", "Film", material="Au",
+                   params={"center": ["0", "0", "a/2 + a/8"], "size": ["a", "a", "a/4"]})
+    hole = Feature("cylinder", "Hole", op="subtract",
+                   params={"center": ["0", "0", "-a/2"], "radius": "0.3*a", "height": "a + a/4"})
+    a = 1e-6
+    cyl_film, cyl_slab = np.pi * (0.3 * a) ** 2 * a / 4, np.pi * (0.3 * a) ** 2 * a
+    full = a ** 3 + a ** 3 / 4
+
+    def volumes(on):
+        p = slab(film, copy.deepcopy(hole))
+        p.materials.append(Material("Au", {"library": "Au"}))
+        p.objects[2].on = on
+        m = meshing.generate(p, p.evaluator())
+        q = Quadrature.of(m)
+        w = q.weights.sum(axis=1)
+        return q.volume, w[m.region("Film")].sum(), w[m.region("slab")].sum(), p
+
+    v, vf, vs, p = volumes("")
+    assert full - v == pytest.approx(cyl_film + cyl_slab, rel=0.03)
+    for on in ("Film", "Au"):
+        v, vf, vs, p = volumes(on)
+        assert vs == pytest.approx(a ** 3, rel=1e-9)                  # the substrate keeps its volume
+        assert a ** 3 / 4 - vf == pytest.approx(cyl_film, rel=0.03)   # the film has the hole
+    v, vf, vs, p = volumes("slab")
+    assert vf == pytest.approx(a ** 3 / 4, rel=1e-9) and a ** 3 - vs == pytest.approx(cyl_slab, rel=0.03)
+    r = Project.load(p.save(tmp_path / "m.toml"))
+    assert r.objects[2].on == "slab" and "on" not in r.objects[1].to_dict()
+    assert r.validate_geometry() == []
+    r.objects[2].on = "Nowhere"
+    assert any("Nowhere" in e for e in r.validate_geometry())
+    r.objects[2].on = "Film"
+    r.objects[1], r.objects[2] = r.objects[2], r.objects[1]        # the film now comes after the hole
+    assert any("'Film'" in e for e in r.validate_geometry())
