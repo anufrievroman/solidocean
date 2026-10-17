@@ -26,5 +26,12 @@ def run(path: str | None = None) -> int:
     theme.apply_accent(app)
     app.setStyleSheet(theme.stylesheet())
     win = MainWindow(path)
-    win.show()
+    win.remember_geometry = True
+    if win.restore_geometry():
+        win.show()
+    else:
+        win.showMaximized()   # first start; un-maximising gives the default size
+    if not path:   # started without a model: offer the New dialog (Cancel keeps the empty model)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, win.new)
     return app.exec()

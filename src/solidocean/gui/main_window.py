@@ -12,7 +12,7 @@ import threading
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QThreadPool, QTimer
+from PySide6.QtCore import QSettings, QSize, Qt, QThreadPool, QTimer
 from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QDockWidget, QFileDialog, QLabel, QListWidget, QListWidgetItem,
@@ -43,6 +43,7 @@ def new_project() -> Project:
 
 
 class MainWindow(ResultsMixin, QMainWindow):
+    remember_geometry = False   # app.run turns it on, so windows made by the tests never touch the settings
     SECTIONS = [("variables", "Variables"), ("materials", "Materials"), ("objects", "Objects"),
                 ("mesh", "Mesh"), ("physics_list", "Physics"), ("problem", "Problem"), ("results", "Results"),
                 ("output", "Output")]
@@ -737,8 +738,20 @@ class MainWindow(ResultsMixin, QMainWindow):
             return False
         self.project.path = self.used_dir(path)
         return self.save()
+    @staticmethod
+    def _settings() -> QSettings:
+        """Per-computer preferences (window placement), never part of the model."""
+        return QSettings("SolidOcean", "SolidOcean")
+
+    def restore_geometry(self) -> bool:
+        """Size, position and maximised state of the last session; False on a first start."""
+        geometry = self._settings().value("window/geometry")
+        return geometry is not None and self.restoreGeometry(geometry)
+
     def closeEvent(self, event):
         if self._confirm_discard():
+            if self.remember_geometry:
+                self._settings().setValue("window/geometry", self.saveGeometry())
             self.cancel.set()
             self.viewer.plotter.close()
             event.accept()
