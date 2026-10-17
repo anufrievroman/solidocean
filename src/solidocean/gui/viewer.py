@@ -6,7 +6,7 @@ import numpy as np
 import pyvista as pv
 from pyvistaqt import QtInteractor
 from PySide6.QtCore import QEvent, QRect, Qt, QTimer
-from PySide6.QtWidgets import QFileDialog, QLabel, QRubberBand, QSlider, QToolBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QLabel, QRubberBand, QSizePolicy, QSlider, QToolBar, QVBoxLayout, QWidget
 
 from .. import units
 
@@ -174,13 +174,32 @@ class Viewer(QWidget):
         self.opacity_slider.setObjectName("opacitySlider")   # a small handle (theme.py)
         self.opacity_slider.setToolTip(tip)
         self.opacity_slider.valueChanged.connect(self._apply_opacity)
-        tb.addWidget(self.opacity_slider)
+        # the toolbar centres the box, so a top margin of 4 lowers the slider by 2 px, to the icons' line;
+        # the left margin moves it 4 px to the right, away from the ◑
+        box = QWidget()
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(4, 4, 0, 0)
+        lay.addWidget(self.opacity_slider)
+        tb.addWidget(box)
         tb.addSeparator()
         self.scale_action = tb.addAction("⌗")
         self.scale_action.setCheckable(True)
         self.scale_action.setChecked(False)
         self.scale_action.setToolTip("Rulers: show rulers along the model's bounding box, in the preferred length unit")
         self.scale_action.triggered.connect(self._toggle_scale)
+        self.legend_action = tb.addAction("☰")
+        self.legend_action.setCheckable(True)
+        self.legend_action.setChecked(True)
+        self.legend_action.setToolTip("Legend: the list of material and boundary-condition colours, top left")
+        self.legend_action.toggled.connect(self._toggle_legend)
+        self.triad_action = tb.addAction("↗")
+        self.triad_action.setCheckable(True)
+        self.triad_action.setChecked(self.show_triad)
+        self.triad_action.setToolTip("Axes: the small x/y/z orientation axes, bottom left")
+        self.triad_action.toggled.connect(self.set_triad)
+        spacer = QWidget()   # pushes Save Image to the right end
+        spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        tb.addWidget(spacer)
         save = tb.addAction("Save Image…", self.save_image)
         save.setToolTip("Save the current view as an image")
         return tb
@@ -319,7 +338,11 @@ class Viewer(QWidget):
     show_triad = True  # the small x/y/z orientation axes
 
     def set_triad(self, on: bool):
+        """The orientation axes (same as the Axes toolbar toggle)."""
         self.show_triad = on
+        self.triad_action.blockSignals(True)
+        self.triad_action.setChecked(on)
+        self.triad_action.blockSignals(False)
         self._update_triad()
         self.plotter.render()
 
@@ -347,6 +370,7 @@ class Viewer(QWidget):
         """Empty the scene for a new model; the next scene gets the default view."""
         self.plotter.clear()
         self._surface = None
+        self._legend_actors = []   # text actors of the legend (toggled by legend_action)
         self._camera_placed = False
         self._update_triad()
 
@@ -385,9 +409,17 @@ class Viewer(QWidget):
             if cond in active:
                 entries.append((BC_LEGEND[cond], BC_COLORS[cond]))
         # plain coloured labels, top-left (VTK's legend box scales its text and overflows)
+        self._legend_actors = []   # the scene was just cleared
         for i, (label, color) in enumerate(entries):
-            self.plotter.add_text(label, position=(0.012, 0.96 - 0.03 * i), viewport=True,
-                                  font_size=8, color=color, shadow=False)
+            actor = self.plotter.add_text(label, position=(0.012, 0.96 - 0.03 * i), viewport=True,
+                                          font_size=8, color=color, shadow=False)
+            actor.SetVisibility(self.legend_action.isChecked())
+            self._legend_actors.append(actor)
+
+    def _toggle_legend(self, on: bool):
+        for actor in self._legend_actors:
+            actor.SetVisibility(on)
+        self.plotter.render()
 
     def set_line(self, start, end):
         """Overlay a probe line (a line plot's segment) with labelled end points on the current scene."""
