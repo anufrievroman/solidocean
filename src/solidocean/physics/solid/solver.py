@@ -39,6 +39,9 @@ class Solver:
         self.log = log
         self.progress = progress or (lambda i, n: None)
         self.cancel = cancel or threading.Event()
+        # the caller's event, or None when nobody can set one: meshing only pays for a separate
+        # process when there is a cancel button behind it
+        self.mesh_cancel = cancel
         self._model_key = None
         self._model: Model | None = None
 
@@ -94,7 +97,7 @@ class Solver:
             mesh, boundary = old.mesh, old.boundary
         else:
             self.log("Meshing…")
-            mesh = meshing.generate(p, ev)
+            mesh = meshing.generate(p, ev, cancel=self.mesh_cancel)
             boundary = selection.Boundary.of(mesh)
             self.log(f"Mesh: {mesh.info['n_elements']} elements, {mesh.n_nodes} nodes "
                      f"({mesh.n_dofs} DOFs), order {mesh.order} [{time.perf_counter() - t0:.1f} s]")

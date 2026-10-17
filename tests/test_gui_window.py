@@ -436,3 +436,38 @@ def test_a_mesh_region_can_set_its_own_size_grading():
     assert region.grading is None and p.mesh.grading_of(region) == 1.3
     w.dirty = False
     w.close()
+
+
+def test_meshing_can_be_stopped_from_the_toolbar():
+    """A mesh that is taking too long has to be stoppable: the ✕ shows while meshing (it used to appear
+    only for a run), and pressing it kills the mesher instead of waiting for gmsh to come back."""
+    import time
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from solidocean import templates
+    from solidocean.gui.main_window import MainWindow
+    w = MainWindow()
+    w.show()
+    p = templates.create("square")
+    p.mesh.max_size = p.mesh.min_size = "a/80"     # about ten seconds of meshing, far longer than we wait
+    w.set_project(p)
+    deadline = time.time() + 120
+    while w.busy and time.time() < deadline:       # the geometry a new model builds on arrival
+        app.processEvents()
+
+    w.build_mesh()
+    while not w.cancel_button.isVisible() and time.time() < deadline:
+        app.processEvents()
+    assert w.cancel_button.isVisible(), "meshing offered no way to stop it"
+
+    w.cancel_button.click()
+    t0 = time.time()
+    while w.busy and time.time() < deadline:
+        app.processEvents()
+    assert time.time() - t0 < 10, "the mesh ran on after the ✕"
+    assert w.mesh is None, "a cancelled mesh was kept anyway"
+    assert "Cancelled" in w.messages.toPlainText()
+    app.processEvents()                            # the toolbar lays out the hidden widgets
+    assert not w.cancel_button.isVisible()
+    w.dirty = False
+    w.close()

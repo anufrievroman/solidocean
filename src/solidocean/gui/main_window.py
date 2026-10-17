@@ -112,7 +112,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.cancel_button = QToolButton()
         self.cancel_button.setObjectName("cancelButton")
         self.cancel_button.setText("✕")
-        self.cancel_button.setToolTip("Cancel the run (stops after the current step)")
+        self.cancel_button.setToolTip("Stop (meshing at once, a run after the current step)")
         self.cancel_button.setAutoRaise(True)
         self.cancel_button.clicked.connect(self.stop)
         self.cancel_action = tb.addWidget(self.cancel_button)
@@ -782,8 +782,8 @@ class MainWindow(ResultsMixin, QMainWindow):
     def _task_failed(self, msg: str):
         self._task_finished()
         if msg == "Cancelled":
-            self.log("Run cancelled.")
-            self.show_status("Run cancelled", 5000)
+            self.log("Cancelled.")
+            self.show_status("Cancelled", 5000)
         else:
             self.log(f"Error: {msg}")
             self.show_status(msg.splitlines()[0][:120] if msg else "Error", 8000)
@@ -804,7 +804,7 @@ class MainWindow(ResultsMixin, QMainWindow):
     def stop(self):
         if self.busy:
             self.cancel.set()
-            self.log("Stopping after the current step…")
+            self.log("Stopping…")
     # ---- actions --------------------------------------------------------
     def build_geometry(self, *_, upto: int | None = None, show: bool = True):
         """Build the geometry; with `upto` only the features up to and including that one (later ones are
@@ -842,7 +842,7 @@ class MainWindow(ResultsMixin, QMainWindow):
 
         def work(sig):
             t0 = time.perf_counter()
-            mesh = meshing.generate(snap, snap.evaluator())
+            mesh = meshing.generate(snap, snap.evaluator(), cancel=self.cancel)
             sig.log.emit(f"Mesh built in {time.perf_counter() - t0:.1f} s")
             return mesh
 
@@ -853,7 +853,7 @@ class MainWindow(ResultsMixin, QMainWindow):
             if self._current_node() and self._current_node()[0] == "mesh":
                 self.rebuild_tree(("mesh", None))
 
-        self.run_task("Meshing…", work, done)
+        self.run_task("Meshing…", work, done, cancellable=True)
     def mesh_summary(self) -> str:
         m = self.mesh
         if m is None:

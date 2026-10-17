@@ -98,6 +98,9 @@ class HeatSolver:
         self.log = log
         self.progress = progress or (lambda i, n: None)
         self.cancel = cancel or threading.Event()
+        # the caller's event, or None when nobody can set one: meshing only pays for a separate
+        # process when there is a cancel button behind it
+        self.mesh_cancel = cancel
         self._key = self._mesh_key = None
         self._mesh = self._split = None
         self._model: HeatModel | None = None
@@ -120,7 +123,7 @@ class HeatSolver:
         t0 = time.perf_counter()
         if mesh_key != self._mesh_key or self._mesh is None:
             self.log("Meshing…")
-            mesh = meshing.generate(p, ev)
+            mesh = meshing.generate(p, ev, cancel=self.mesh_cancel)
             tris, owner = heat.boundary_faces(mesh.cells, mesh.order, owners=True)
             self._mesh, self._mesh_key = (mesh, tris, owner), mesh_key
             self.log(f"Mesh: {mesh.info['n_elements']} elements, {mesh.n_nodes} nodes (temperature DOFs), "

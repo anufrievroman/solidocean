@@ -21,12 +21,10 @@ from typing import Callable
 
 import numpy as np
 
+from ..errors import Cancelled  # noqa: F401  (re-exported: the physics raise it)
+
 LogFn = Callable[[str], None]
 ProgressFn = Callable[[int, int], None]
-
-
-class Cancelled(Exception):
-    """A run stopped by the user (the cancel event was set)."""
 
 
 class PhysicsSpec:

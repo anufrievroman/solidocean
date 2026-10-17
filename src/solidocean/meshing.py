@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import multiprocessing
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -9,6 +11,7 @@ import gmsh
 import numpy as np
 
 from . import geometry
+from .errors import Cancelled
 from .expressions import Evaluator
 from .project import Project
 
@@ -255,8 +258,21 @@ def singular_matrix_help(mesh: Mesh, worst: int = 5) -> str:
     return "\n".join(lines)
 
 
-def generate(project: Project, ev: Evaluator, save_msh: str | Path | None = None) -> Mesh:
-    """Build geometry and generate a volume mesh in one gmsh session."""
+def generate(project: Project, ev: Evaluator, save_msh: str | Path | None = None,
+             cancel: threading.Event | None = None) -> Mesh:
+    """Build geometry and generate a volume mesh in one gmsh session.
+
+    With a `cancel` event the work runs in a separate process, which is the only way to stop a mesh
+    that is taking too long: `gmsh.model.mesh.generate` is one call into the library and does not come
+    back to Python until it is done, so nothing here can look at the event while it runs. Without the
+    event (the CLI) it runs in this process, as before and without the start-up cost.
+    """
+    if cancel is None:
+        return _generate(project, ev, save_msh)
+    return _generate_apart(project, ev, save_msh, cancel)
+
+
+def _generate(project: Project, ev: Evaluator, save_msh: str | Path | None = None) -> Mesh:
     with geometry.gmsh_session():
         L0, names = geometry.build(project, ev)
         _apply_mesh_options(project, ev, L0)
@@ -273,6 +289,68 @@ def generate(project: Project, ev: Evaluator, save_msh: str | Path | None = None
         mesh = _extract(names, order, L0)
     check_quality(mesh)
     return mesh
+
+
+POLL = 0.05   # s between looks at the cancel event while the mesher process runs
+
+
+def _mesh_in_child(conn, project: Project, ev: Evaluator, save_msh) -> None:
+    """Mesh and send the result back (runs in the spawned process)."""
+    try:
+        mesh = _generate(project, ev, save_msh)
+    except BaseException as exc:
+        try:
+            conn.send(("raise", exc))
+        except Exception:                 # an exception some library raises and pickle cannot carry
+            conn.send(("error", f"{type(exc).__name__}: {exc}"))
+    else:
+        conn.send(("mesh", mesh))
+    finally:
+        conn.close()
+
+
+def _stop(proc) -> None:
+    proc.terminate()
+    proc.join(timeout=2)
+    if proc.is_alive():                   # stuck deep in the library and deaf to SIGTERM
+        proc.kill()
+        proc.join(timeout=2)
+
+
+def _generate_apart(project: Project, ev: Evaluator, save_msh, cancel: threading.Event) -> Mesh:
+    """Mesh in a process we can kill, watching the cancel event while it works."""
+    # spawn, never fork: this process holds a gmsh session and (in the GUI) Qt, and a forked child
+    # inherits their threads and locks
+    ctx = multiprocessing.get_context("spawn")
+    ours, theirs = ctx.Pipe(duplex=False)
+    proc = ctx.Process(target=_mesh_in_child, args=(theirs, project, ev, save_msh), daemon=True)
+    proc.start()
+    theirs.close()        # the child holds the only sending end now, so the pipe ends when it dies
+    try:
+        while True:
+            if cancel.is_set():        # asked first: a mesh that lands as the user gives up is not wanted
+                _stop(proc)
+                raise Cancelled("meshing cancelled")
+            if ours.poll(POLL):
+                break
+        try:
+            what, payload = ours.recv()
+        except EOFError:
+            proc.join(timeout=2)
+            raise ValueError(
+                f"meshing failed: the mesher process stopped without a mesh (exit code {proc.exitcode}); "
+                "a program that meshes with a cancel event must be safe to import, i.e. do its work "
+                'under `if __name__ == "__main__":`') from None
+    finally:
+        ours.close()
+        proc.join(timeout=2)      # it exits on its own once it has sent the mesh
+        if proc.is_alive():
+            _stop(proc)
+    if what == "raise":
+        raise payload
+    if what == "error":
+        raise ValueError(payload)
+    return payload
 
 
 def _extract(names: list[str], order: int, L0: float) -> Mesh:

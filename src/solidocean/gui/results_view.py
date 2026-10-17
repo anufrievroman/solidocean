@@ -69,6 +69,7 @@ class ResultsMixin:
 
         def work(sig):
             solver.log, solver.progress, solver.cancel = sig.log.emit, sig.progress.emit, self.cancel
+            solver.mesh_cancel = self.cancel        # ✕ stops the meshing step too
             if self.field_problem:
                 return solver.run(quantities)
             return solver.run(quantities, store_modes=True)
@@ -215,6 +216,7 @@ class ResultsMixin:
             solver.log = sig.log.emit
             solver.progress = sig.progress.emit
             solver.cancel = self.cancel
+            solver.mesh_cancel = self.cancel
             return solver.run(quantities=exprs, store_modes=False)
 
         def done(res):
@@ -544,8 +546,9 @@ class ResultsMixin:
             return
         self.used_dir(path)
         snap = copy.deepcopy(self.project)
-        self.run_task("Exporting mesh…", lambda sig: meshing.generate(snap, snap.evaluator(), save_msh=path),
-                      lambda mesh: self.log(f"Wrote {path}"))
+        self.run_task("Exporting mesh…",
+                      lambda sig: meshing.generate(snap, snap.evaluator(), save_msh=path, cancel=self.cancel),
+                      lambda mesh: self.log(f"Wrote {path}"), cancellable=True)
     def export_animation(self):
         if self._view != "mode" or self._mode is None:
             self.log("Show a displacement field first.")
