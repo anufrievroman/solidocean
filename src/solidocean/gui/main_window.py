@@ -60,6 +60,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.busy = False
         self._stashed_plots = {}   # plots of the other physics, kept while switching back and forth
         self._last_dir = Path.home()   # where file dialogs open while the model has no file of its own
+        self._new_dialog = None   # the New dialog while it is open (a file opened from Finder closes it)
         self.init_results_state()
         self.current_plot = 0
         self._view = None
@@ -628,7 +629,7 @@ class MainWindow(ResultsMixin, QMainWindow):
             return
         from PySide6.QtWidgets import QButtonGroup
         from .. import templates
-        dlg = QDialog(self)
+        dlg = self._new_dialog = QDialog(self)
         dlg.setWindowTitle("New model")
         lay = QVBoxLayout(dlg)
         lay.addWidget(QLabel("Physics"))
@@ -661,7 +662,9 @@ class MainWindow(ResultsMixin, QMainWindow):
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
         lay.addWidget(buttons)
-        if dlg.exec() != QDialog.DialogCode.Accepted or lst.currentItem() is None:
+        accepted = dlg.exec() == QDialog.DialogCode.Accepted
+        self._new_dialog = None
+        if not accepted or lst.currentItem() is None:
             return
         key = lst.currentItem().data(Qt.ItemDataRole.UserRole)
         t = templates.all_templates()[key]
@@ -715,6 +718,13 @@ class MainWindow(ResultsMixin, QMainWindow):
             return
         path, _ = QFileDialog.getOpenFileName(self, "Open model", self.start_dir(), "SolidOcean model (*.toml)")
         if path:
+            self.open_file(self.used_dir(path))
+    def open_requested(self, path):
+        """A model double-clicked in Finder (or dropped on the Dock icon), which reaches the running app as an
+        event rather than an argument: it replaces the New dialog of a fresh start, or the current model."""
+        if self._new_dialog is not None:
+            self._new_dialog.reject()
+        if self._confirm_discard():
             self.open_file(self.used_dir(path))
     def open_file(self, path):
         try:

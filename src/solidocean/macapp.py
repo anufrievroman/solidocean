@@ -20,6 +20,9 @@ from . import __version__
 
 APP_NAME = "SolidOcean"
 BUNDLE_ID = "org.solidocean.SolidOcean"
+TOML_UTI = "io.toml"   # macOS has no system type for TOML; this is the identifier other apps declare too
+LSREGISTER = ("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework"
+              "/Support/lsregister")
 ICON_PNG = Path(__file__).parent / "gui" / "resources" / "icon.png"
 
 LAUNCHER = """#!/bin/bash
@@ -77,8 +80,23 @@ def install_app(dest_dir: str | Path) -> Path:
         "CFBundleVersion": __version__,
         "NSHighResolutionCapable": True,
         "LSMinimumSystemVersion": "11.0",
+        # SolidOcean can open .toml files: it is listed under Open With, and is their default only where no
+        # other app has claimed them (Get Info -> Open with -> Change All makes it so)
+        "UTImportedTypeDeclarations": [{
+            "UTTypeIdentifier": TOML_UTI,
+            "UTTypeDescription": "TOML document",
+            "UTTypeConformsTo": ["public.plain-text"],
+            "UTTypeTagSpecification": {"public.filename-extension": ["toml"]},
+        }],
+        "CFBundleDocumentTypes": [{
+            "CFBundleTypeName": "SolidOcean model",
+            "CFBundleTypeRole": "Editor",
+            "LSItemContentTypes": [TOML_UTI],
+            "LSHandlerRank": "Default",
+        }],
     }
     (app / "Contents" / "Info.plist").write_bytes(plistlib.dumps(plist))
-    # make Finder/Launch Services notice the new bundle and icon
+    # make Finder/Launch Services notice the new bundle, its icon and the document types it opens
     subprocess.run(["touch", str(app)], check=False)
+    subprocess.run([LSREGISTER, "-f", str(app)], check=False, capture_output=True)
     return app

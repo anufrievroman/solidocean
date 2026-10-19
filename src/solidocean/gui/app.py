@@ -12,6 +12,21 @@ APP_NAME = "SolidOcean"
 ICON = Path(__file__).parent / "resources" / "icon.png"
 
 
+def file_open_filter(win, parent):
+    """macOS hands a document double-clicked in Finder (the bundle declares .toml, macapp.py) to the running
+    app as a QFileOpenEvent, both at start-up and while it runs, never in argv."""
+    from PySide6.QtCore import QEvent, QObject
+
+    class Filter(QObject):
+        def eventFilter(self, obj, event):
+            if event.type() == QEvent.Type.FileOpen and event.file():
+                win.open_requested(event.file())
+                return True
+            return super().eventFilter(obj, event)
+
+    return Filter(parent)
+
+
 def run(path: str | None = None) -> int:
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
@@ -31,7 +46,9 @@ def run(path: str | None = None) -> int:
         win.show()
     else:
         win.showMaximized()   # first start; un-maximising gives the default size
+    app.installEventFilter(file_open_filter(win, app))
     if not path:   # started without a model: offer the New dialog (Cancel keeps the empty model)
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(0, win.new)
+        # unless a file opened from Finder came first (its event arrives once the loop runs)
+        QTimer.singleShot(0, lambda: win.project.path is None and win.new())
     return app.exec()
