@@ -117,8 +117,9 @@ def _linear_grid(mesh: Mesh) -> pv.UnstructuredGrid:
 
 
 class Viewer(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, win=None):
         super().__init__(parent)
+        self.win = win   # the main window, for the folder a save dialog opens in (None in tests)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -233,9 +234,17 @@ class Viewer(QWidget):
         self.plotter.render()
 
     def save_image(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Save image", "structure.png",
+        """The dialog offers the model file's own name, in the folder its other files go to
+        (`results_start`); a bare file name would offer the folder the program was started in — "/"
+        when it was started from the Dock."""
+        model = self.win.project.path if self.win else None
+        name = f"{model.stem}.png" if model else "structure.png"
+        start = self.win.results_start(name) if self.win else name
+        path, _ = QFileDialog.getSaveFileName(self, "Save image", start,
                                               "PNG image (*.png);;JPEG image (*.jpg)")
         if path:
+            if self.win:
+                self.win.used_dir(path)
             # exactly what is on screen (already full Retina resolution); scaling would shrink the text
             self.plotter.screenshot(path)
 

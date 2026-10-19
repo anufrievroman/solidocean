@@ -187,7 +187,7 @@ def test_output_panel_edits_the_model_and_saves_a_run(tmp_path):
     w.close()
 
 
-def test_file_dialogs_start_next_to_the_model(tmp_path):
+def test_file_dialogs_start_next_to_the_model(tmp_path, monkeypatch):
     """File dialogs open in the model's own folder (results dialogs in its results folder), never in the
     directory the program happened to be started from."""
     from PySide6.QtWidgets import QApplication
@@ -204,9 +204,20 @@ def test_file_dialogs_start_next_to_the_model(tmp_path):
     assert w.results_start("dispersion.csv") == str(tmp_path / "dispersion.csv")   # no results folder yet
     (tmp_path / "slab").mkdir()
     assert w.results_start("dispersion.csv") == str(tmp_path / "slab" / "dispersion.csv")
+    asked = []                                                # the 3D view's "Save Image..." too
+    monkeypatch.setattr("PySide6.QtWidgets.QFileDialog.getSaveFileName",
+                        lambda *a, **k: (asked.append(a[2]), ("", ""))[1])
+    w.viewer.save_image()
+    w.save_as()                                               # both offer the model file's own name
+    assert asked == [str(tmp_path / "slab" / "slab.png"), str(tmp_path / "slab.toml")]
     w.used_dir(tmp_path / "elsewhere" / "other.toml")          # remembered while a model has no file
     w.set_project(templates.create("square"))
     assert w.start_dir() == str(pathlib.Path.home())           # that folder does not exist: home
+    asked.clear()                                              # no file yet: the model's title, "structure"
+    w.viewer.save_image()
+    w.save_as()
+    assert asked == [str(pathlib.Path.home() / "structure.png"),
+                     str(pathlib.Path.home() / f"{w.project.name}.toml")]
     w.dirty = False
     w.close()
 

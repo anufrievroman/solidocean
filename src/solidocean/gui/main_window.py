@@ -141,7 +141,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         # fit panels to the width (wrap text) instead of scrolling sideways
         self.settings.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        self.viewer = Viewer()
+        self.viewer = Viewer(win=self)
         self.plot = PlotCanvas()
         self.plot.picked.connect(self.pick_mode)
         self.plot.deselected.connect(self.deselect)
@@ -732,7 +732,9 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.log(f"Saved {self.project.path}")
         return True
     def save_as(self) -> bool:
-        path, _ = QFileDialog.getSaveFileName(self, "Save model", self.start_dir(f"{self.project.name}.toml"),
+        # the file's own name, so saving a copy does not silently rename the model to its title
+        name = self.project.path.name if self.project.path else f"{self.project.name}.toml"
+        path, _ = QFileDialog.getSaveFileName(self, "Save model", self.start_dir(name),
                                               "SolidOcean model (*.toml)")
         if not path:
             return False
