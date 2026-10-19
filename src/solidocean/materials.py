@@ -84,8 +84,11 @@ def depends_on_T(expr) -> bool:
 
 # display colours of materials (GUI): the automatic ones, in the order materials are added, are also the
 # choices offered for picking one. The first two are from the icon's palette (sea foam, sand); the first is
-# also the interface's accent colour (gui/theme.py).
-DEFAULT_COLORS = ["#9adcd2", "#e9d8a6", "#8fa8c8", "#d9a066", "#c97f9f", "#b0a3d4", "#d4cf7a"]
+# also the interface's accent colour (gui/theme.py). Later colours are only ever appended, so the materials
+# of an existing model keep the colours they had; they stay in the same soft, half-saturated register, and
+# where two of them share a hue (the two teals, the two warm reds) they are told apart by lightness.
+DEFAULT_COLORS = ["#9adcd2", "#e9d8a6", "#8fa8c8", "#d9a066", "#c97f9f", "#b0a3d4", "#d4cf7a",
+                  "#e3a393", "#a9c97f", "#86c6dc", "#b07fc4", "#6cbf96", "#c3b5a4", "#5f93a3", "#a87a5f"]
 COLOR_CHOICES = {"Default": DEFAULT_COLORS}
 
 

@@ -101,9 +101,15 @@ class ResultsMixin:
         if r.outer_name:
             parts.append(f"variable sweep over {r.outer_name} ({n_outer} values)")
         if r.is_kpath:
-            parts.append(f"k-path {'–'.join(pretty_point(lbl) for _, lbl in r.ticks)} ({n_inner} points)")
+            parts.append(f"k-path {'–'.join(pretty_point(lbl) for _, lbl in r.ticks)} ({n_inner} points)"
+                         if r.ticks else f"{n_inner} wavevectors")
         if r.is_kmesh:
             parts.append(f"wavevector mesh ({n_inner} points, {len(r.ktris)} triangles)")
+        if r.fourier is not None:
+            from ..physics.solid.fourier import degeneracies
+            n_degenerate = int((degeneracies(r.freqs) > 1).sum())
+            parts.append(f"Fourier components at {r.fourier.shape[3]} reciprocal vectors"
+                         + (f" ({n_degenerate} degenerate modes, basis-dependent)" if n_degenerate else ""))
         if r.info.get("elapsed_s") is not None:
             parts.append(f"{r.info['elapsed_s']} s")
         return "; ".join(parts) + "."

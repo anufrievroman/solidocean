@@ -105,7 +105,7 @@ class SolidUI(PhysicsUI):
     problem_panel = sp.SolidProblemPanel
     field_panel = sp.DisplacementPanel
     node_panels = {"periodicity": sp.PeriodicityPanel, "symmetry": sp.SymmetryPanel, "kpath": sp.KPathPanel,
-                   "kmesh": sp.KMeshPanel}
+                   "kmesh": sp.KMeshPanel, "fourier": sp.FourierPanel}
     indexed_panels = {"solid_cond": sp.SolidConditionPanel}
     highlight_nodes = ("periodicity", "symmetry", "solid_cond")
 
@@ -128,7 +128,8 @@ class SolidUI(PhysicsUI):
         elif st.coherent:
             keys = (("sweep", "Variable sweep"), ("kmesh", "Wavevector mesh"))
         else:
-            keys = (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"))
+            keys = (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"),
+                    ("fourier", "Fourier components"))
         return [(f"{label} ({summary[key]})" if summary[key] else label, (key, None), not summary[key])
                 for key, label in keys]
 
@@ -144,6 +145,10 @@ class SolidUI(PhysicsUI):
         elif kind == "kmesh":
             km = win.project.solid.problem.kmesh
             menu.addAction("Disable" if km is not None and km.enabled else "Enable", lambda: self.toggle_kmesh(win))
+        elif kind == "fourier":
+            fo = win.project.solid.problem.fourier
+            menu.addAction("Disable" if fo is not None and fo.enabled else "Enable",
+                           lambda: self.toggle_fourier(win))
 
     @staticmethod
     def toggle_kpath(win):
@@ -162,6 +167,16 @@ class SolidUI(PhysicsUI):
         st.kmesh.enabled = not st.kmesh.enabled
         win.mark_dirty()
         win.rebuild_tree(("kmesh", None))
+
+    @staticmethod
+    def toggle_fourier(win):
+        st = win.project.solid.problem
+        if st.fourier is None:
+            st.fourier = sp.default_fourier(win.project)
+        else:
+            st.fourier.enabled = not st.fourier.enabled
+        win.mark_dirty()
+        win.rebuild_tree(("fourier", None))
 
     def delete_node(self, win, kind, index):
         if kind != "solid_cond":

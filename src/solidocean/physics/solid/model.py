@@ -52,14 +52,28 @@ class SolidCondition:
 
 @dataclass
 class KPath:
+    """Wavevector sweep of an eigenfrequency problem, in reduced coordinates (fractions of the reciprocal
+    lattice vectors). Either a path through named high-symmetry points, divided into `n` points per segment
+    (`mode = "path"`), or exactly the wavevectors listed in `k` (`mode = "list"`, one solve each), for
+    directions that are not round fractions of the zone."""
     # named points in reduced coordinates (fractions of reciprocal lattice vectors)
     points: dict[str, list[float]] = field(default_factory=lambda: {"G": [0, 0, 0], "X": [0.5, 0, 0]})
     path: list[str] = field(default_factory=lambda: ["G", "X"])
     n: int = 20  # points per segment
     enabled: bool = True  # disabled sweeps are kept in the file but not run
+    mode: str = "path"    # path (points + path + n) | list (the wavevectors of `k`, one solve each)
+    # mode "list": the wavevectors themselves, reduced coordinates (expressions allowed)
+    k: list[list[Expr]] = field(default_factory=list)
 
     def to_dict(self):
-        d = {"points": dict(self.points), "path": list(self.path), "n": self.n}
+        """Both halves are kept: whichever mode is active, a path the user built and a list they typed
+        survive switching between them. The unused one is left out only while it is still the default."""
+        default = KPath()
+        d = {} if self.mode == "path" else {"mode": self.mode}
+        if self.mode == "path" or (self.points, self.path, self.n) != (default.points, default.path, default.n):
+            d.update(points=dict(self.points), path=list(self.path), n=self.n)
+        if self.k:
+            d["k"] = [list(p) for p in self.k]
         if not self.enabled:
             d["enabled"] = False
         return d
@@ -83,6 +97,22 @@ class KMesh:
 
 
 @dataclass
+class Fourier:
+    """Fourier components of the mode fields over the unit cell ([solid.problem.fourier]): for every mode,
+    the complex amplitudes of its plane-wave components at the reciprocal vectors G = h1 b1 + h2 b2 + h3 b3
+    with |h_i| <= orders[i]. Written to the run folder (fourier.csv, results.npz); see
+    physics/solid/fourier.py for the definition and the normalisation."""
+    orders: list[int] = field(default_factory=lambda: [1, 1, 0])   # per reciprocal vector; 0 = that one only
+    enabled: bool = True             # disabled components are kept in the file but not computed
+
+    def to_dict(self):
+        d = {"orders": [int(o) for o in self.orders]}
+        if not self.enabled:
+            d["enabled"] = False
+        return d
+
+
+@dataclass
 class SolidProblem:
     """Problem of solid mechanics: eigenfrequencies (modes, phonon dispersion along a k-path), the stationary
     response to loads, the harmonic (frequency-domain) response to loads and displacements oscillating at a
@@ -94,6 +124,7 @@ class SolidProblem:
     k: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])   # Bloch wave vector (rad/m) without k-path
     kpath: KPath | None = None       # wavevector sweep (inner loop of a variable sweep)
     kmesh: KMesh | None = None       # wavevector mesh (coherent heat conduction)
+    fourier: Fourier | None = None   # Fourier components of the mode fields over the cell
     tol: float = 0.0                 # relative eigenvalue tolerance (0 = machine precision)
     maxiter: int = 0                 # Lanczos iterations (0 = ARPACK default)
     frequency: Expr = "f"            # frequency domain: the drive frequency (sweep it with a variable)
@@ -106,6 +137,8 @@ class SolidProblem:
             self.kpath = KPath(**self.kpath)
         if isinstance(self.kmesh, dict):
             self.kmesh = KMesh(**self.kmesh)
+        if isinstance(self.fourier, dict):
+            self.fourier = Fourier(**self.fourier)
 
     @property
     def stationary(self) -> bool:
@@ -135,6 +168,12 @@ class SolidProblem:
         km = self.kmesh
         return km if km and km.enabled and self.coherent else None
 
+    @property
+    def active_fourier(self) -> "Fourier | None":
+        """The Fourier components to compute: modes are needed, so only an eigenfrequency problem has them."""
+        fo = self.fourier
+        return fo if fo and fo.enabled and self.type == "eigenfrequency" else None
+
     def to_dict(self):
         if self.harmonic:
             return without_defaults(self, {"type": self.type, "frequency": self.frequency, "loss": self.loss,
@@ -148,6 +187,8 @@ class SolidProblem:
             d["kpath"] = self.kpath.to_dict()
         if self.kmesh:
             d["kmesh"] = self.kmesh.to_dict()
+        if self.fourier:
+            d["fourier"] = self.fourier.to_dict()
         return d
 
 
@@ -191,6 +232,8 @@ class SolidPhysics:
         return out
 
 
+KPATH_MODES = ("path", "list")       # a path through named points, or exactly the listed wavevectors
+MAX_FOURIER_VECTORS = 2000           # reciprocal vectors the Fourier components may be asked for
 PROBLEM_TYPES = ("eigenfrequency", "stationary", "frequency", "conductance")
 PROBLEM_TITLES = {"eigenfrequency": "Eigenfrequency", "stationary": "Stationary", "frequency": "Frequency domain",
                   "conductance": "Coherent heat conduction"}
@@ -279,10 +322,24 @@ def validate_settings(project, ev, material_names) -> list[str]:
     if kp:
         if not project.lattice.is_periodic:
             errors.append("solid.problem.kpath needs a periodic lattice ([lattice])")
-        for p in kp.path:
-            if p not in kp.points:
-                errors.append(f"solid.problem.kpath: point '{p}' not defined")
+        if kp.mode not in KPATH_MODES:
+            errors.append(f"solid.problem.kpath.mode must be one of {', '.join(KPATH_MODES)}")
+        elif kp.mode == "list":
+            if not kp.k:
+                errors.append("solid.problem.kpath: the list of wavevectors is empty (add one, or follow a "
+                              "path with mode = \"path\")")
+            for n, point in enumerate(kp.k):
+                try:
+                    if len(ev.vector(point)) != 3:
+                        errors.append(f"solid.problem.kpath: wavevector {n + 1} needs 3 reduced coordinates")
+                except Exception as exc:
+                    errors.append(f"solid.problem.kpath: wavevector {n + 1}: {exc}")
+        else:
+            for p in kp.path:
+                if p not in kp.points:
+                    errors.append(f"solid.problem.kpath: point '{p}' not defined")
     errors += _check_kmesh(project, ev)
+    errors += _check_fourier(project, ev)
     return errors
 
 
@@ -314,4 +371,42 @@ def _check_kmesh(project, ev) -> list[str]:
         if kind not in lat.WEDGES:
             errors.append(f"solid.problem.kmesh: a {kind} lattice has no standard irreducible wedge; mesh the "
                           f"whole zone instead (region = \"full\")")
+    return errors
+
+
+def _check_fourier(project, ev) -> list[str]:
+    """Problems with the Fourier components of the modes: the orders are whole numbers, they may only be
+    asked for along periodic directions, and the grid stays within MAX_FOURIER_VECTORS."""
+    from ... import lattice as lat
+    st = project.solid.problem
+    fo = st.fourier
+    if fo is None:
+        return []
+    errors = []
+    bad = "solid.problem.fourier.orders needs 3 whole numbers >= 0 (the highest order along b1, b2, b3)"
+    try:
+        if len(fo.orders) != 3 or any(float(o) < 0 or float(o) != int(o) for o in fo.orders):
+            return [bad]
+    except (TypeError, ValueError):
+        return [bad]
+    count = 1
+    for o in fo.orders:
+        count *= 2 * int(o) + 1
+    if count > MAX_FOURIER_VECTORS:
+        errors.append(f"solid.problem.fourier: {count} reciprocal vectors is more than {MAX_FOURIER_VECTORS}; "
+                      f"lower the orders")
+    if not st.active_fourier:
+        return errors
+    if not project.lattice.is_periodic:
+        return errors + ["solid.problem.fourier needs a periodic lattice ([lattice]): the components are over "
+                         "the unit cell"]
+    try:
+        recip = lat.reciprocal(lat.slots(project.lattice, ev))
+    except Exception as exc:
+        return errors + [f"solid.problem.fourier: {exc}"]
+    names = ["a1", "a2", "a3"] if project.lattice.vectors else ["x", "y", "z"]
+    for i, b in enumerate(recip):
+        if b is None and int(fo.orders[i]) != 0:
+            errors.append(f"solid.problem.fourier: order {int(fo.orders[i])} along b{i + 1}, but the lattice is "
+                          f"not periodic along {names[i]}; that order must be 0")
     return errors

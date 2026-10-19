@@ -42,10 +42,18 @@ class ModalResults:
     # vectors scale with it), so the connectivity is stored once.
     ktris: np.ndarray | None = None
     kred: np.ndarray | None = None
+    # Fourier components of the fields of every mode over the unit cell (fourier.py), when the problem asks
+    # for them: (n_outer, n_inner, n_eigs, n_G, n_fields) complex, the integer orders of the reciprocal
+    # vectors (n_G, 3) and the vectors themselves (n_outer, n_G, 3) rad/m (a swept lattice scales them).
+    fourier: np.ndarray | None = None
+    fourier_orders: np.ndarray | None = None
+    fourier_g: np.ndarray | None = None
 
     @property
     def is_kpath(self) -> bool:
-        return bool(self.ticks)
+        """The inner axis sweeps the wavevector: a k-path or a list of wavevectors (a mesh of the zone is its
+        own kind, and a single solve has no inner axis). `ticks` names its points, a list has none."""
+        return self.freqs.shape[1] > 1 and not self.is_kmesh
 
     @property
     def is_kmesh(self) -> bool:
@@ -108,6 +116,8 @@ class ModalResults:
             npz_path = directory / "results.npz"
             names = list(self.quantities)
             mesh = {"ktris": self.ktris, "kred": self.kred} if self.is_kmesh else {}
+            if self.fourier is not None:
+                mesh.update(fourier=self.fourier, fourier_orders=self.fourier_orders, fourier_g=self.fourier_g)
             np.savez(npz_path, freqs=self.freqs, k=self.k, x=self.x, outer_values=self.outer_values, **mesh,
                      **{f"q{n}": self.quantities[q] for n, q in enumerate(names)},
                      meta=json.dumps({"x_label": self.x_label, "ticks": self.ticks, "quantities": names,
@@ -139,6 +149,10 @@ class ModalResults:
                 if path in written:      # a plot named like the frequencies file
                     path = directory / f"{slug(pl.name)}_{slug(extra)}.csv"
                 written.append(self.save_table(path, extra))
+            if self.fourier is not None:
+                from . import fourier as fourier_mod
+                written.append(fourier_mod.save_csv(self, project, directory / "fourier.csv"))
+                written.append(fourier_mod.save_degeneracy_csv(self, directory / "fourier_degeneracy.csv"))
         if out.wants("model"):
             written += outputs.write_record(project, directory, self)
         return written
@@ -150,7 +164,8 @@ class ModalResults:
         quantities = {q: d[f"q{n}"] for n, q in enumerate(meta.get("quantities", []))}
         return cls(d["freqs"], d["k"], d["x"], meta["x_label"], [tuple(t) for t in meta["ticks"]],
                    meta["outer_name"], d["outer_values"], meta["info"], quantities,
-                   ktris=d["ktris"] if "ktris" in d else None, kred=d["kred"] if "kred" in d else None)
+                   ktris=d["ktris"] if "ktris" in d else None, kred=d["kred"] if "kred" in d else None,
+                   **{n: d[n] for n in ("fourier", "fourier_orders", "fourier_g") if n in d})
 
 
 class NeedsModes(Exception):
@@ -191,13 +206,20 @@ def _scalars(ev: Evaluator, f: float, k: np.ndarray, b: int) -> dict:
 
 
 def kpath_vectors(project, ev: Evaluator):
-    """k vectors (n, 3), cumulative path length (n,), ticks for the configured path."""
+    """k vectors (n, 3), cumulative path length (n,), ticks for the configured wavevector sweep: the points
+    of the named path, or exactly the listed wavevectors (which have no named ticks)."""
     from ... import lattice as lat
     kp = project.solid.problem.active_kpath
     recip = lat.reciprocal(lat.slots(project.lattice, ev))
 
     def k_of(reduced):
         return sum((r * b for r, b in zip(reduced, recip) if b is not None), np.zeros(3))
+
+    if kp.mode == "list":
+        ks = [k_of(ev.vector(point)) for point in kp.k]
+        xs = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(ks, axis=0), axis=1))]) if len(ks) > 1 \
+            else np.zeros(len(ks))
+        return np.array(ks), xs, []
 
     corners = [k_of(np.asarray(kp.points[name], dtype=float)) for name in kp.path]
     ks, xs, ticks = [corners[0]], [0.0], [(0.0, kp.path[0])]
@@ -262,23 +284,35 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
     step = 0
     x, x_label, ticks = np.zeros(1), "", []
     kred, ktris = None, None
+    fo = p.solid.problem.active_fourier
+    fcoef = forders = fg = None
+    if fo:
+        from . import fourier as fourier_mod
+        forders = fourier_mod.orders_grid(fo.orders)        # the same orders at every value of the sweep
+        fcoef = np.full((len(outer_values), n_inner, n_eigs, len(forders), len(fourier_mod.FIELDS)),
+                        np.nan, dtype=complex)
+        fg = np.zeros((len(outer_values), len(forders), 3))
+        solver.log(f"Fourier components of every mode at {len(forders)} reciprocal vectors")
     for i, val in enumerate(outer_values):
         ev = base.with_overrides({outer_name: val}) if outer_name else base
         if outer_name:
             solver.log(f"{outer_name} = {val:.6g}")
         if p.solid.problem.active_kpath:
             ks, x, ticks = kpath_vectors(p, ev)
-            x_label = "k path [rad/m]"
+            # a list of wavevectors has the same coordinate (the distance travelled in k space) but no path
+            x_label = "k path [rad/m]" if ticks else "wavevector [rad/m]"
         elif p.solid.problem.active_kmesh:
             ks, kred, ktris = kmesh_vectors(p, ev)
             x, x_label = np.arange(len(ks), dtype=float), "k point"
         else:
             ks = solver.k_of(ev)[None]
             x, x_label = np.zeros(1), "k"
+        if fo:
+            fg[i] = fourier_mod.vectors(p, ev, fo.orders)[1]
         for j, k in enumerate(ks):
             if solver.cancel.is_set():
                 raise Cancelled()
-            if keep or field_qs:
+            if keep or field_qs or fo:
                 f, u = solver.solve_point(ev, k, modes=True)
                 mesh = solver._model.mesh
                 meshes[i], cels[i] = mesh, solver._model.cel
@@ -289,7 +323,7 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
                 if keep:
                     modes[(i, j)] = u.astype(np.complex64)
                 quad = None
-                if field_qs:
+                if field_qs or fo:
                     quad = solver.__dict__.setdefault("_quad", {}).get(id(mesh))
                     if quad is None:
                         quad = solver._quad[id(mesh)] = fields.Quadrature.of(mesh)
@@ -297,6 +331,9 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
                 f, u, quad = solver.solve_point(ev, k), None, None
             freqs[i, j, :len(f)] = f
             kvecs[i, j] = k
+            if fo:
+                normalised = [fourier_mod.mass_normalise(u[b], solver._model.M) for b in range(len(f))]
+                fcoef[i, j, :len(f)] = fourier_mod.components(quad, normalised, solver._model.cel, k, fg[i])
             for q in quantities:
                 for b in range(len(f)):
                     ub = solid_fields.normalise(u[b], quad) if q in field_qs else None
@@ -311,6 +348,15 @@ def run(solver, quantities=(), store_modes: bool = False) -> ModalResults:
     info = {"project": p.name, "elapsed_s": round(time.perf_counter() - t_start, 2),
             "n_dofs": int(solver._model.constraints.n_free) if solver._model else 0,
             "outer_dim": list(outer_dim) if outer_dim else None}
+    if fo:
+        info["fourier"] = {"orders": [int(o) for o in fo.orders], "vectors": len(forders),
+                           "fields": list(fourier_mod.FIELDS), "normalisation": fourier_mod.NORMALISATION,
+                           "degeneracy_tol": fourier_mod.DEGENERACY_TOL}
+        groups = fourier_mod.degeneracies(freqs)
+        n_degenerate = int(np.count_nonzero(groups > 1))
+        if n_degenerate:
+            solver.log(f"{n_degenerate} of {groups.size} modes are degenerate: the components of a degenerate "
+                       f"mode depend on the basis the eigensolver picked, only their sum over the group does not")
     solver.log(f"Done in {info['elapsed_s']} s")
     return ModalResults(freqs, kvecs, x, x_label, ticks, outer_name, outer_values, info, qvals,
-                   modes if keep else {}, meshes, cels, ktris, kred)
+                   modes if keep else {}, meshes, cels, ktris, kred, fcoef, forders, fg)

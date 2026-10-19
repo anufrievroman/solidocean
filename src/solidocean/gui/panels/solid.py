@@ -15,8 +15,8 @@ from PySide6.QtWidgets import (
 
 from ... import units
 from .. import theme
-from ...physics.solid.model import (LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_TITLES, KMesh, KPath,
-                                    SolidCondition)
+from ...physics.solid.model import (LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_TITLES, Fourier, KMesh,
+                                    KPath, SolidCondition)
 from ...project import AXES, Feature
 from ...selection import FACES, selection_text
 from .common import (ERROR_STYLE, ExprEdit, Panel, VectorEdit, equations, field_quantity_rows, muted_label,
@@ -143,8 +143,11 @@ class PeriodicityPanel(Panel):
             ph.vectors = [list(v) for v in vecs]
         for ax in ph.periodic_axes():
             clear_face_conditions(self.win, ax)
-        if self.p.solid.problem.kpath is not None:  # the old path's points belong to the old lattice
-            self.p.solid.problem.kpath = default_kpath(self.p, enabled=self.p.solid.problem.kpath.enabled)
+        old = self.p.solid.problem.kpath
+        if old is not None:        # the old path's named points belong to the old lattice; a list is the
+            kp = default_kpath(self.p, enabled=old.enabled)      # user's own and is kept as it is
+            kp.mode, kp.k = old.mode, [list(v) for v in old.k]
+            self.p.solid.problem.kpath = kp
         self.win.physics_changed()
         self.win.rebuild_tree(("periodicity", None))
 
@@ -285,6 +288,36 @@ def default_kmesh(project, enabled: bool = True) -> KMesh:
     return KMesh(n=12, region="irreducible" if kind in lat.WEDGES else "full", enabled=enabled)
 
 
+def default_fourier(project, enabled: bool = True) -> Fourier:
+    """First-order components along every periodic direction of the lattice, none along the others."""
+    from ... import lattice as lat
+    try:
+        slots = lat.slots(project.lattice, project.evaluator())
+    except Exception:
+        slots = [None, None, None]
+    return Fourier(orders=[1 if v is not None else 0 for v in slots], enabled=enabled)
+
+
+def fourier_labels(project) -> list[tuple[str, bool]]:
+    """Label of each reciprocal vector ('b1 (x)', 'b2 (a2)') and whether the lattice is periodic along it."""
+    from ... import lattice as lat
+    try:
+        slots = lat.slots(project.lattice, project.evaluator())
+    except Exception:
+        slots = [None, None, None]
+    axes = ("a1", "a2", "a3") if project.lattice.vectors else AXES
+    return [(f"b{i + 1} ({axes[i]})" + ("" if v is not None else ", not periodic"), v is not None)
+            for i, v in enumerate(slots)]
+
+
+def fourier_count(fo: Fourier) -> int:
+    """Reciprocal vectors the grid of orders holds."""
+    count = 1
+    for o in fo.orders:
+        count *= 2 * int(o) + 1
+    return count
+
+
 def kmesh_counts(project, km: KMesh) -> tuple[int, int] | None:
     """(points, triangles) the mesh would hold, or None if the lattice cannot carry one."""
     from ... import lattice as lat
@@ -305,16 +338,10 @@ def accent_fill():
     return ListedColormap([theme.ACCENT])
 
 
-def zone_sketch(outer, recip, draw, height: int = 190):
-    """A small drawing of the 2D Brillouin zone in the app's own colours, with `draw(ax)` putting the
-    wavevectors on top of it. The canvas is added to `outer`; nothing happens if the lattice has no plane."""
-    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-    from matplotlib.figure import Figure
-
+def paint_zone(ax, recip, draw):
+    """The zone and what `draw(ax)` puts on it, onto a fresh axes."""
     from ... import lattice as lat
-    fig = Figure(figsize=(2.6, 2.4), layout="constrained")
-    fig.patch.set_alpha(0)
-    ax = fig.add_subplot()
+    ax.clear()
     ax.set_aspect("equal")
     ax.axis("off")
     zone = lat.brillouin_zone_2d(*recip)
@@ -322,20 +349,48 @@ def zone_sketch(outer, recip, draw, height: int = 190):
     ax.fill(poly[:, 0], poly[:, 1], color=theme.SHORE[4], alpha=0.2 if not theme.is_dark() else 0.3)
     ax.plot(poly[:, 0], poly[:, 1], color=theme.shore_line(), lw=1.1)
     draw(ax)
+
+
+def zone_sketch(outer, recip, draw, height: int = 190):
+    """A small drawing of the 2D Brillouin zone in the app's own colours, with `draw(ax)` putting the
+    wavevectors on top of it. The canvas is added to `outer` and returned, so that a panel can repaint it
+    (`update_sketch`) while the user edits instead of waiting for the panel to be rebuilt."""
+    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+    from matplotlib.figure import Figure
+
+    fig = Figure(figsize=(2.6, 2.4), layout="constrained")
+    fig.patch.set_alpha(0)
+    paint_zone(fig.add_subplot(), recip, draw)
     canvas = FigureCanvasQTAgg(fig)
     canvas.setFixedHeight(height)
     canvas.setStyleSheet("background: transparent;")
     outer.addWidget(canvas)
+    return canvas
+
+
+def update_sketch(canvas, recip, draw):
+    """Draw a zone sketch again, in place: the wavevectors move as they are edited."""
+    if canvas is None:
+        return
+    paint_zone(canvas.figure.axes[0], recip, draw)
+    canvas.draw_idle()
 
 
 def problem_summary(project) -> dict[str, str]:
     """Short text per problem node (empty string = inactive)."""
     st = project.solid.problem
-    kp, km = st.active_kpath, st.active_kmesh
+    kp, km, fo = st.active_kpath, st.active_kmesh, st.active_fourier
     counts = kmesh_counts(project, km) if km else None
+    if not kp:
+        kpath = ""
+    elif kp.mode == "list":
+        kpath = f"{len(kp.k)} wavevector{'s' if len(kp.k) != 1 else ''}"
+    else:
+        kpath = "–".join(pretty_point(p) for p in kp.path)
     return {**sweep_summary(project.problem), "problem_type": PROBLEM_TITLES.get(st.type, st.type),
-            "kpath": "–".join(pretty_point(p) for p in kp.path) if kp else "",
-            "kmesh": (f"{counts[0]} points" if counts else f"{km.region}, n = {km.n}") if km else ""}
+            "kpath": kpath,
+            "kmesh": (f"{counts[0]} points" if counts else f"{km.region}, n = {km.n}") if km else "",
+            "fourier": f"{fourier_count(fo)} vectors" if fo else ""}
 
 
 PROBLEM_HELP = {
@@ -481,7 +536,8 @@ class SolidProblemPanel(Panel):
         elif st.coherent:
             nodes = (("sweep", "Variable sweep"), ("kmesh", "Wavevector mesh"))
         else:
-            nodes = (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"))
+            nodes = (("sweep", "Variable sweep"), ("kpath", "Wavevector sweep"),
+                     ("fourier", "Fourier components"))
         for key, label in nodes:
             b = QPushButton(f"{label}: {summary[key] or 'off'}")
             b.setStyleSheet("text-align: left; padding: 4px 8px;")
@@ -522,9 +578,11 @@ class SolidProblemPanel(Panel):
 
 class KPathPanel(SweepPanel):
     title = "Wavevector sweep"
-    help = ("Inner loop: the Bloch wavevector follows a path through the Brillouin zone, giving the phonon "
-            "dispersion. Points are in reduced coordinates: fractions of the reciprocal lattice vectors "
-            "b1, b2, b3 (b_i · a_j = 2π δ_ij; for a rectangular cell b = 2π/period along each axis).")
+    help = ("Inner loop: the Bloch wavevector follows a path through the Brillouin zone (the phonon "
+            "dispersion), or takes exactly the values of a list — for the directions of an experiment, which "
+            "are not round fractions of the zone. Both are in reduced coordinates: fractions of the "
+            "reciprocal lattice vectors b1, b2, b3 (b_i · a_j = 2π δ_ij; for a rectangular cell "
+            "b = 2π/period along each axis).")
     attr = "kpath"
 
     def holder(self):
@@ -537,6 +595,19 @@ class KPathPanel(SweepPanel):
         self.enable_box("Enable wavevector sweep", kp)
         if not self.p.lattice.is_periodic:
             self.outer.addWidget(muted_label("No periodic axes yet: enable Periodicity under Solid Mechanics."))
+        f = self.form()
+        mode = QComboBox()
+        mode.addItem("Path through the zone", "path")
+        mode.addItem("List of wavevectors", "list")
+        mode.setCurrentIndex(max(0, mode.findData(kp.mode)))
+        mode.currentIndexChanged.connect(
+            lambda i: (setattr(kp, "mode", mode.itemData(i)), self.changed(),
+                       self.win.rebuild_tree(("kpath", None))))
+        f.addRow("Wavevectors", mode)
+        if kp.mode == "list":
+            self._list_box(kp)
+            self._bz_sketch()
+            return
         box = QGroupBox("High-symmetry points")
         bl = QVBoxLayout(box)
         self.ktable = QTableWidget(0, 4)
@@ -565,7 +636,7 @@ class KPathPanel(SweepPanel):
         path = QLineEdit(", ".join(kp.path))
         path.setToolTip("Point names from the table, separated by commas")
         path.editingFinished.connect(lambda: (setattr(kp, "path", [s.strip() for s in path.text().split(",") if s.strip()]),
-                                              self.changed()))
+                                              self.changed(), self._update_sketch()))
         row.addWidget(path, 1)
         row.addWidget(QLabel("with"))
         npts = QSpinBox()
@@ -577,6 +648,54 @@ class KPathPanel(SweepPanel):
         self.outer.addLayout(row)
         self._bz_sketch()  # the Brillouin-zone sketch last, below all settings
 
+    def _list_box(self, kp):
+        """The explicit wavevectors: one row each, in reduced coordinates (expressions allowed)."""
+        box = QGroupBox("Wavevectors")
+        bl = QVBoxLayout(box)
+        self.ktable = QTableWidget(0, 3)
+        self.ktable.setHorizontalHeaderLabels(["b1", "b2", "b3"])
+        self.ktable.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.ktable.setMaximumHeight(220)
+        for point in kp.k:
+            self._add_kvector(point)
+        self.ktable.itemChanged.connect(self._sync_kvectors)
+        bl.addWidget(self.ktable)
+        brow = QHBoxLayout()
+        for text, fn in (("Add wavevector", lambda: self._add_kvector(["0", "0", "0"]) or self._sync_kvectors()),
+                         ("Remove wavevector", self._remove_kvector)):
+            b = QPushButton(text)
+            b.clicked.connect(fn)
+            brow.addWidget(b)
+        brow.addStretch(1)
+        bl.addLayout(brow)
+        bl.addWidget(muted_label("One eigenvalue solve per wavevector, per value of the variable sweep. "
+                                 "Expressions are allowed, so an angle can be swept: "
+                                 "0.4*cos(th[deg]), 0.4*sin(th[deg]), 0."))
+        self.outer.addWidget(box)
+
+    def _add_kvector(self, point):
+        self.ktable.blockSignals(True)
+        r = self.ktable.rowCount()
+        self.ktable.insertRow(r)
+        for c in range(3):
+            self.ktable.setItem(r, c, QTableWidgetItem(str(point[c]) if c < len(point) else "0"))
+        self.ktable.blockSignals(False)
+
+    def _remove_kvector(self):
+        r = self.ktable.currentRow()
+        if r >= 0:
+            self.ktable.removeRow(r)
+            self._sync_kvectors()
+
+    def _sync_kvectors(self, *_):
+        points = []
+        for r in range(self.ktable.rowCount()):
+            items = [self.ktable.item(r, c) for c in range(3)]
+            points.append([(it.text().strip() or "0") if it is not None else "0" for it in items])
+        self._draft.k = points
+        self.changed()
+        self._update_sketch()
+
     def _standard_path(self):
         std = default_kpath(self.p, enabled=self._draft.enabled)
         self._draft.points, self._draft.path = std.points, std.path
@@ -584,8 +703,10 @@ class KPathPanel(SweepPanel):
         self.win.rebuild_tree(("kpath", None))
 
     def _bz_sketch(self):
-        """Small drawing of the 2D Brillouin zone with the high-symmetry points and the path."""
+        """Small drawing of the 2D Brillouin zone with the wavevectors of the sweep on it. The canvas is
+        kept so that edits can repaint it in place (`_update_sketch`)."""
         from ... import lattice as lat
+        self._sketch = self._recip = self._zone = None
         try:
             recip = lat.reciprocal(lat.slots(self.p.lattice, self.p.evaluator()))
         except Exception:
@@ -593,26 +714,42 @@ class KPathPanel(SweepPanel):
         b = [v for v in recip if v is not None]
         if len(b) < 2 or abs(b[0][2]) > 0 or abs(b[1][2]) > 0:
             return
+        self._recip, self._zone = recip, (b[0], b[1])
+        self._sketch = zone_sketch(self.outer, self._zone, self._draw_wavevectors)
+
+    def _update_sketch(self):
+        """Draw the sketch again where it is, so a wavevector moves as it is typed or added."""
+        if getattr(self, "_sketch", None) is not None:
+            update_sketch(self._sketch, self._zone, self._draw_wavevectors)
+
+    def _draw_wavevectors(self, ax):
+        """The sweep on the zone: the named points with the path through them, or the listed wavevectors.
+        Read afresh at every repaint; an entry that does not (yet) evaluate is left out rather than
+        emptying the sketch while it is being typed."""
         kp = self._draft
 
-        def pos(name):
-            r = kp.points[name]
-            return sum((ri * bi for ri, bi in zip(r, recip) if bi is not None), np.zeros(3))[:2]
+        def pos(reduced):
+            return sum((r * b for r, b in zip(reduced, self._recip) if b is not None), np.zeros(3))[:2]
 
-        def draw(ax):
-            path = [pos(n) for n in kp.path if n in kp.points]
-            if len(path) > 1:
-                xy = np.array(path)
-                ax.plot(xy[:, 0], xy[:, 1], color=theme.ACCENT, lw=3.0, solid_capstyle="round", zorder=2)
-                ax.plot(xy[:, 0], xy[:, 1], color=theme.shore_line(), lw=1.0, solid_capstyle="round",
-                        zorder=3)
-            for name in kp.points:
-                x, y = pos(name)
-                ax.plot(x, y, "o", color=theme.shore_mark(), ms=3.4, zorder=4)
-                ax.annotate(pretty_point(name), (x, y), textcoords="offset points", xytext=(4, 3), fontsize=9,
-                            color=theme_text())
-
-        zone_sketch(self.outer, (b[0], b[1]), draw)
+        if kp.mode == "list":
+            ev = self.p.evaluator()
+            for point in kp.k:
+                try:
+                    x, y = pos(ev.vector(point))
+                except Exception:
+                    continue
+                ax.plot(x, y, "o", color=theme.ACCENT, ms=5, zorder=4)
+            return
+        path = [pos(kp.points[n]) for n in kp.path if n in kp.points]
+        if len(path) > 1:
+            xy = np.array(path)
+            ax.plot(xy[:, 0], xy[:, 1], color=theme.ACCENT, lw=3.0, solid_capstyle="round", zorder=2)
+            ax.plot(xy[:, 0], xy[:, 1], color=theme.shore_line(), lw=1.0, solid_capstyle="round", zorder=3)
+        for name in kp.points:
+            x, y = pos(kp.points[name])
+            ax.plot(x, y, "o", color=theme.shore_mark(), ms=3.4, zorder=4)
+            ax.annotate(pretty_point(name), (x, y), textcoords="offset points", xytext=(4, 3), fontsize=9,
+                        color=theme_text())
 
     def _add_kpoint(self, name, vec):
         self.ktable.blockSignals(True)
@@ -639,6 +776,7 @@ class KPathPanel(SweepPanel):
                 continue
         self._draft.points = pts
         self.changed()
+        self._update_sketch()
 
 
 class KMeshPanel(SweepPanel):
@@ -716,6 +854,52 @@ class KMeshPanel(SweepPanel):
                 ax.set_title(f"n = {shown.n} shown", fontsize=8, color=theme_text())
 
         zone_sketch(self.outer, (recip[0], recip[1]), draw)
+
+
+class FourierPanel(SweepPanel):
+    title = "Fourier components"
+    help = ("For every mode, the complex amplitudes of its plane-wave components over the unit cell: "
+            "ŝ(G) = (1/V) ∫ f(r) e^{−i(k+G)·r} dV for the three displacement components and the six strains, "
+            "at the reciprocal vectors G = h₁b₁ + h₂b₂ + h₃b₃ of a grid of orders. They go to the run folder "
+            "(fourier.csv, results.npz), not to a plot.")
+    attr = "fourier"
+
+    def holder(self):
+        return self.p.solid.problem
+
+    def build(self):
+        st = self.p.solid.problem
+        self._draft = st.fourier or default_fourier(self.p)
+        fo = self._draft
+        self.enable_box("Write the Fourier components of every mode", fo)
+        if not self.p.lattice.is_periodic:
+            self.outer.addWidget(muted_label("No periodic axes yet: the components are over the unit cell of "
+                                             "a lattice (enable Periodicity under Solid Mechanics)."))
+        f = self.form("Orders of the reciprocal vectors")
+        for i, (label, periodic) in enumerate(fourier_labels(self.p)):
+            n = QSpinBox()
+            n.setRange(0, 20)
+            n.setValue(int(fo.orders[i]))
+            n.setEnabled(periodic)
+            n.setToolTip("Highest order |h| along this reciprocal vector; 0 keeps only h = 0. A direction "
+                         "that is not periodic has no reciprocal vector and stays at 0.")
+            n.valueChanged.connect(lambda v, i=i: (self._set_order(i, v), self.changed(),
+                                                   self.win.rebuild_tree(("fourier", None))))
+            f.addRow(label, n)
+        self.outer.addWidget(muted_label(
+            f"{fourier_count(fo)} reciprocal vectors × 9 fields per mode. Modes are mass-normalised "
+            f"(∫ρ|u|² dV = 1 over the cell, phase rotated so that Σ u·u > 0), which is what makes the "
+            f"components of different modes comparable."))
+        self.outer.addWidget(muted_label(
+            "Where modes are degenerate their eigenvectors are an arbitrary basis of the subspace, so the "
+            "components of one of them mean nothing while their sum over the group does: the run flags "
+            "those modes in fourier_degeneracy.csv."))
+
+    def _set_order(self, i: int, value: int):
+        orders = [int(o) for o in self._draft.orders]
+        orders += [0] * (3 - len(orders))
+        orders[i] = int(value)
+        self._draft.orders = orders
 
 
 class DisplacementPanel(Panel):
