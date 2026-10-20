@@ -77,3 +77,26 @@ def test_mesh_regions_round_trip_and_checks(tmp_path):
     errors = " ".join(q.validate_geometry())
     assert "unknown object 'Nope'" in errors and "max_size must be positive" in errors
     assert "regions" not in two_blocks().mesh.to_dict()                # files without regions are unchanged
+
+
+def test_saved_mesh_is_in_metres(tmp_path):
+    """mesh.msh holds SI coordinates (the geometry is built in a unit L0 for the OCC tolerances, but the file
+    is scaled back), and saving it leaves the mesh in memory as it was."""
+    import gmsh
+    from solidocean import meshing, templates
+    p = templates.create("heat_bar")
+    ev = p.evaluator()
+    path = tmp_path / "mesh.msh"
+    mesh = meshing.generate(p, ev, save_msh=path)
+    assert mesh.length_scale != 1.0                         # the case that used to go wrong
+    gmsh.initialize(interruptible=False)
+    try:
+        gmsh.open(str(path))
+        _, coords, _ = gmsh.model.mesh.getNodes()
+    finally:
+        gmsh.finalize()
+    pts = coords.reshape(-1, 3)
+    np.testing.assert_allclose(pts.min(axis=0), mesh.points.min(axis=0), rtol=1e-9, atol=1e-15)
+    np.testing.assert_allclose(pts.max(axis=0), mesh.points.max(axis=0), rtol=1e-9, atol=1e-15)
+    again = meshing.generate(p, ev)
+    np.testing.assert_allclose(again.points, mesh.points)

@@ -284,8 +284,12 @@ def _generate(project: Project, ev: Evaluator, save_msh: str | Path | None = Non
         order = project.mesh.order
         if order == 2:
             gmsh.model.mesh.setOrder(2)
-        if save_msh:
-            gmsh.write(str(save_msh))
+        if save_msh:      # in metres, like every file we write: gmsh scales only what it saves
+            gmsh.option.setNumber("Mesh.ScalingFactor", L0)
+            try:
+                gmsh.write(str(save_msh))
+            finally:
+                gmsh.option.setNumber("Mesh.ScalingFactor", 1.0)
         mesh = _extract(names, order, L0)
     check_quality(mesh)
     return mesh
