@@ -140,3 +140,23 @@ def test_cli_writes_one_folder_per_run(tmp_path):
     assert {f.name for f in (tmp_path / "here").iterdir()} == {   # a table per plot, too
         "dispersion.csv", "dispersion_colored.csv", "model.toml", "run.json"}
     assert main([str(path), "-q", "--contents", "tables,nope"]) == 2      # validated like any setting
+
+
+def test_quantity_columns_are_named_after_the_plots(tmp_path):
+    """quantities.csv: a column per plot under the plot's name, whatever its expression (commas, quotes),
+    and quantities.json: name -> expression in the order of the columns."""
+    import csv
+    from solidocean.plots import ResultPlot
+    p = templates.create("heat_bar")
+    p.output.contents = ["tables"]
+    p.plots = [ResultPlot("Probe", 'integral(T*exp(-x/1[um]), "all")', kind="quantity"),
+               ResultPlot("Mean", "mean(T)", kind="quantity"),
+               ResultPlot("Peak", "max(T)", kind="quantity")]
+    path = p.save(tmp_path / "m.toml")
+    assert main([str(path), "-q", "-o", str(tmp_path / "run")]) == 0
+    with open(tmp_path / "run" / "quantities.csv", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert list(rows[0])[-3:] == ["Probe", "Mean", "Peak"]
+    assert float(rows[0]["Peak"]) >= float(rows[0]["Mean"])
+    index = json.loads((tmp_path / "run" / "quantities.json").read_text(encoding="utf-8"))
+    assert index == {"Probe": 'integral(T*exp(-x/1[um]), "all")', "Mean": "mean(T)", "Peak": "max(T)"}

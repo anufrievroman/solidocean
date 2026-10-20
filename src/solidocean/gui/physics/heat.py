@@ -6,6 +6,7 @@ import numpy as np
 
 from ... import units
 from ..panels import heat as hp
+from ..panels.common import toggle_bypass
 from ..panels.problem import sweep_summary
 from .base import PhysicsUI
 from .common import condition_highlights
@@ -36,10 +37,9 @@ class HeatUI(PhysicsUI):
         sym = ", ".join(h.symmetry)
         return ([(f"Initial values ({h.initial})", ("heat_initial", None), False),
                  (f"Symmetry ({sym})" if sym else "Symmetry", ("heat_symmetry", None), not sym)] +
-                [(hp.heat_condition_label(c), ("heat_cond", i), False) for i, c in enumerate(h.conditions)] +
-                [(f"{q.name or 'Heat source'} (in {q.material})", ("heat_src", i), False)
-                 for i, q in enumerate(h.sources)] +
-                [(hp.interface_label(c), ("heat_iface", i), False) for i, c in enumerate(h.interfaces)])
+                [(hp.heat_condition_label(c), ("heat_cond", i), not c.enabled) for i, c in enumerate(h.conditions)] +
+                [(hp.source_label(q), ("heat_src", i), not q.enabled) for i, q in enumerate(h.sources)] +
+                [(hp.interface_label(c), ("heat_iface", i), not c.enabled) for i, c in enumerate(h.interfaces)])
 
     def problem_label(self, project):
         typ = project.heat.problem.type
@@ -59,6 +59,11 @@ class HeatUI(PhysicsUI):
             for typ, title in hp.INTERFACE_TITLES.items():
                 menu.addAction(f"Add {title}", lambda t=typ: hp.add_interface(win, t))
         elif kind in ("heat_cond", "heat_src", "heat_iface"):
+            h = win.project.heat
+            item = {"heat_cond": h.conditions, "heat_src": h.sources, "heat_iface": h.interfaces}[kind][index]
+            what = {"heat_cond": "condition", "heat_src": "heat source", "heat_iface": "interface"}[kind]
+            menu.addAction("Enable" if not item.enabled else "Bypass",
+                           lambda: toggle_bypass(win, item, (kind, index), what))
             menu.addAction("Delete", lambda: hp.delete_item(win, kind, index))
 
     def delete_node(self, win, kind, index):
@@ -68,7 +73,7 @@ class HeatUI(PhysicsUI):
         return True
 
     def highlights(self, project):
-        return condition_highlights(project, project.heat.conditions,
+        return condition_highlights(project, project.heat.active_conditions,
                                     {face: "symmetry" for face in project.heat.symmetry})
 
     # ---- results ---------------------------------------------------------------------

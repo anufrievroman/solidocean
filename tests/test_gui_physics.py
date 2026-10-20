@@ -35,3 +35,12 @@ def test_invalid_variables_give_no_highlights_instead_of_an_error():
     p = templates.create("cantilever")
     p.variables["L"] = "1/("
     assert gui_physics.of(p).highlights(p) == {}
+
+
+def test_bypassed_condition_is_dimmed_and_not_tinted():
+    p = templates.create("heat_pad")
+    p.heat.conditions[0].enabled = False
+    ui = gui_physics.of(p)
+    assert ("xmin", None, None) not in ui.highlights(p)
+    label, node, dimmed = next(n for n in ui.physics_nodes(p) if n[1] == ("heat_cond", 0))
+    assert dimmed and label.endswith("(bypassed)")

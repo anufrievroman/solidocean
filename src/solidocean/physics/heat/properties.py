@@ -21,7 +21,7 @@ def nonlinear(project) -> bool:
     """True if the heat model needs iterations: radiation, temperature-dependent material properties or
     thermal contacts."""
     from .interfaces import varies
-    if any(c.type == "radiation" for c in project.heat.conditions) or varies(project):
+    if any(c.type == "radiation" for c in project.heat.active_conditions) or varies(project):
         return True
     used = {f.material for f in project.objects if f.enabled and f.op == "add"}
     for m in project.materials:

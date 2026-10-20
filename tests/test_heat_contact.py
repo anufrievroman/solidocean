@@ -154,7 +154,7 @@ def test_interface_input_round_trip_and_checks(tmp_path):
         run(q)
     a.between, a.R, b.material, b.thickness = ["A", "Nope"], "-1[m^2*K/W]", "Nope", "0[nm]"
     errors = " ".join(q.validate())
-    for text in ("unknown object 'Nope'", "R must be positive", "material 'Nope' not defined",
+    for text in ("unknown object 'Nope'", "R must not be negative", "material 'Nope' not defined",
                  "thickness must be positive"):
         assert text in errors
     q.heat.interfaces = [HeatInterface("resistance", ["A", "A"])]
@@ -163,3 +163,48 @@ def test_interface_input_round_trip_and_checks(tmp_path):
     p.heat.interfaces = p.heat.interfaces[:1]
     with pytest.raises(ValueError, match="share no faces"):
         run(p)
+
+
+def test_bypassed_items_are_kept_but_not_applied(tmp_path):
+    """enabled = false on a condition, source or interface: the run is the model without it, the file keeps it,
+    and an unfinished bypassed item is not validated."""
+    from solidocean.physics.heat.model import HeatSource
+    base = bar(hot_cold(), two_materials=True)
+    full = bar(hot_cold() + [HeatCondition("flux", ["ymax"], "1e9[W/m^2]", name="extra")], two_materials=True,
+               sources=[HeatSource("A", "1e18[W/m^3]", name="Q")])
+    full.heat.interfaces = [HeatInterface("resistance", ["A", "B"], "1e-8[m^2*K/W]")]
+    for item in (full.heat.conditions[-1], full.heat.sources[0], full.heat.interfaces[0]):
+        item.enabled = False
+    full.heat.conditions[-1].on = "nowhere"        # unfinished, but bypassed: not an error
+    assert full.validate() == []
+    q = Project.load(full.save(tmp_path / "m.toml"))
+    assert q.heat == full.heat
+    assert "enabled = false" in (tmp_path / "m.toml").read_text()
+    np.testing.assert_allclose(run(q, ["mean(T)"]).T[0][0], run(base, ["mean(T)"]).T[0][0], rtol=1e-12)
+    q.heat.interfaces[0].enabled = True               # enabled again: it applies
+    assert run(q, ["mean(T)"]).meshes[0].n_nodes > run(base, ["mean(T)"]).meshes[0].n_nodes
+
+
+def test_zero_resistance_is_a_perfect_contact():
+    """R = 0 (the end of a sweep down to perfect contact): the interface is not cut, so the solution is the
+    bonded bar's exactly; the next value of the sweep cuts it again on the same mesh."""
+    from solidocean.project import Problem, VariableSweep
+    p = bar(hot_cold(), two_materials=True)
+    p.variables["R"] = "0[m^2*K/W]"
+    p.heat.interfaces = [HeatInterface("resistance", ["A", "B"], "R")]
+    p.problem = Problem(sweep=VariableSweep("R", "[0, 5e-9, 0] * 1[m^2*K/W]"))
+    assert p.validate() == []
+    res = run(p, ["mean(qx)"])
+    bonded = run(bar(hot_cold(), two_materials=True))
+    for i in (0, 2):
+        assert res.meshes[i].n_nodes == bonded.meshes[0].n_nodes
+        np.testing.assert_allclose(res.T[i][0], bonded.T[0][0], rtol=1e-12)
+    assert res.meshes[1].n_nodes > bonded.meshes[0].n_nodes
+    assert res.quantities["mean(qx)"][:, 0] == pytest.approx([series(0)[0], series(5e-9)[0], series(0)[0]],
+                                                             rel=1e-10)
+    p.problem = Problem()
+    p.heat.interfaces.append(HeatInterface("resistance", [], "1e-9[m^2*K/W]"))
+    with pytest.raises(ValueError, match="overlaps another interface"):   # perfect, but still checked
+        run(p)
+    p.heat.interfaces[0].R = "0[m^2*K/W] * T/1[K]"         # zero only as a constant
+    assert any("cannot be 0" in e for e in p.validate())

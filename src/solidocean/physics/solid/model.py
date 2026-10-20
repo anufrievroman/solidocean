@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...selection import FACES, check_selection, selection_to_dict
-from ...tomlio import label, table, without_defaults
+from ...tomlio import bypassed, label, table, without_defaults
 
 Expr = str | float | int
 
@@ -30,6 +30,7 @@ class SolidCondition:
     load_type: str = "area"            # area | total | pressure
     load: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])           # Pa (area) or N (total)
     pressure: Expr = "0[Pa]"           # pressure: acts against the outward normal (pushes on the surface)
+    enabled: bool = True               # bypassed: kept in the file, but not applied
 
     def to_dict(self):
         d = selection_to_dict(self, {"type": self.type, "name": self.name} if self.name else {"type": self.type})
@@ -41,7 +42,7 @@ class SolidCondition:
                 d["pressure"] = self.pressure
             else:
                 d["load"] = list(self.load)
-        return d
+        return bypassed(self, d)
 
     def free_components(self) -> tuple[bool, bool, bool]:
         """Components a constraint leaves free (prescribed displacement with an empty component)."""
@@ -221,6 +222,11 @@ class SolidPhysics:
         d["problem"] = self.problem.to_dict()
         return d
 
+    @property
+    def active_conditions(self) -> list[SolidCondition]:
+        """The conditions applied: all but the bypassed ones."""
+        return [c for c in self.conditions if c.enabled]
+
     def face_conditions(self, lattice) -> dict[str, str]:
         """Face -> condition name for the bounding-box faces with periodicity (axis shorthand of the lattice) or
         (anti)symmetry. Conditions on selections are listed separately (`conditions`)."""
@@ -256,7 +262,7 @@ def validate_settings(project, ev, material_names) -> list[str]:
                 errors.append(f"solid: face {face} is both {seen[face]} and {kind}")
             seen[face] = kind
     objects = {f.name for f in project.objects} | set(material_names)
-    for c in ph.conditions:
+    for c in ph.active_conditions:    # bypassed ones may be unfinished, like bypassed objects
         where = f"condition '{c.name or SOLID_CONDITION_TITLES.get(c.type, c.type)}'"
         if c.type not in SOLID_CONDITION_TYPES:
             errors.append(f"{where}: type must be one of {', '.join(SOLID_CONDITION_TYPES)}")

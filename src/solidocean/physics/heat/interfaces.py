@@ -3,6 +3,8 @@
 The mesh is conforming across interfaces; their nodes are duplicated (fem.surface.split_nodes) so the
 temperature may jump, and the two sides are coupled by the interface flux q = (T1 - T2) / R:
     K += int (T1 - T2)(v1 - v2) / R dA.
+R = 0 is the perfect contact, the limit of that coupling: such an interface is not cut at all, its nodes stay
+shared and T is continuous (exact, where a tiny R would only be an ill-conditioned approximation of it).
 A thin layer of material (thickness d, not meshed) has R = d / k_n (k_n = n . k . n across the layer) and
 adds its heat capacity rho cp d, half to each side. R, k and rho cp may depend on T, taken as the mean of
 both sides at each quadrature point.
@@ -29,8 +31,14 @@ class Split:
     faces: list                 # per interface: (tri1, tri2), the same positions on both sides
 
 
-def selection_key(project) -> tuple:
-    return tuple(tuple(c.between) for c in project.heat.interfaces)
+def perfect(c, ev) -> bool:
+    """A resistance R = 0: a perfect contact, left uncut. Only a constant R can be zero (validated)."""
+    return c.type == "resistance" and not depends_on_T(c.R) and ev(c.R) == 0
+
+
+def selection_key(project, ev) -> tuple:
+    """What determines the split mesh: the interfaces and which of them are cut."""
+    return tuple((tuple(c.between), perfect(c, ev)) for c in project.heat.active_interfaces)
 
 
 def interface_mask(mesh, c, faces) -> tuple[np.ndarray, np.ndarray]:
@@ -45,12 +53,14 @@ def interface_mask(mesh, c, faces) -> tuple[np.ndarray, np.ndarray]:
     return fwd | back, back
 
 
-def split(mesh, interfaces, tris, owner) -> Split:
-    """Duplicate the nodes of every interface (one copy per side); boundary triangles follow their cells."""
+def split(mesh, interfaces, tris, owner, ev) -> Split:
+    """Duplicate the nodes of every interface (one copy per side) but the perfect contacts, which are only
+    checked (their faces exist and overlap no other interface); boundary triangles follow their cells."""
     from dataclasses import replace
     faces = surface.interior_faces(mesh.cells, mesh.order)
     masks, swaps = [], []
     used = np.zeros(len(faces[1]), dtype=bool)
+    cut = np.zeros(len(faces[1]), dtype=bool)
     for c in interfaces:
         mask, swap = interface_mask(mesh, c, faces)
         name = c.name or (" | ".join(c.between) if c.between else "material interfaces")
@@ -59,14 +69,23 @@ def split(mesh, interfaces, tris, owner) -> Split:
         if (mask & used).any():
             raise ValueError(f"heat interface '{name}': overlaps another interface")
         used |= mask
+        if perfect(c, ev):
+            mask = None
+        else:
+            cut |= mask
         masks.append(mask)
         swaps.append(swap)
-    cells, source, (t1, t2) = surface.split_nodes(mesh.cells, mesh.order, used, faces)
+    if not cut.any():
+        return Split(mesh, tris, owner, [None] * len(masks))
+    cells, source, (t1, t2) = surface.split_nodes(mesh.cells, mesh.order, cut, faces)
     points = np.vstack([mesh.points, mesh.points[source]])
     new = replace(mesh, points=points, cells=cells, info={**mesh.info, "n_nodes": len(points)})
-    index = np.flatnonzero(used)
+    index = np.flatnonzero(cut)
     out = []
     for mask, swap in zip(masks, swaps):
+        if mask is None:
+            out.append(None)
+            continue
         sel = np.searchsorted(index, np.flatnonzero(mask))
         a, b = t1[sel], t2[sel]
         s = swap[mask]
@@ -101,7 +120,7 @@ class _Contact:
         """1 / R (W/(m^2 K)) at the quadrature points."""
         if self.layer is None:
             R = self.R(Tq)
-            if np.any(R <= 0):
+            if np.any(R <= 0):        # a constant R = 0 is never cut, so never gets here
                 raise ValueError(f"{self.where}: R not positive at T = {Tq[R <= 0].flat[0]:.6g} K")
             return 1 / R
         k = self.layer.conductivity(Tq)                                   # (F, Q, 3, 3)
@@ -132,7 +151,8 @@ class Contacts:
 
     def __init__(self, project, ev, split: Split | None):
         self.items = [] if split is None else [
-            _Contact(c, project, ev, split.mesh, t1, t2) for c, (t1, t2) in zip(project.heat.interfaces, split.faces)]
+            _Contact(c, project, ev, split.mesh, *faces)
+            for c, faces in zip(project.heat.active_interfaces, split.faces) if faces is not None]
 
     @property
     def k_varies(self) -> bool:
@@ -163,7 +183,7 @@ class Contacts:
 def varies(project) -> bool:
     """True if a contact depends on T (R using T, or a layer of a temperature-dependent material)."""
     from ... import materials as mat
-    for c in project.heat.interfaces:
+    for c in project.heat.active_interfaces:
         if c.type == "layer":
             try:
                 _, p = mat.resolve_properties(project.material(c.material).props)

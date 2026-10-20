@@ -21,7 +21,7 @@ from . import units
 # What a run can write; the values of [output] contents.
 CONTENTS = ("tables", "data", "model")
 CONTENT_HELP = {
-    "tables": "Tables (CSV): dispersion.csv / quantities.csv and a table per 1D plot.",
+    "tables": "Tables (CSV): dispersion.csv / quantities.csv (+ quantities.json) and a table per 1D plot.",
     "data": "Full data (.npz): fields and quantities in SI, reloadable with 'Load results…'.",
     "model": "Model file (model.toml) and a record of the run (run.json).",
 }

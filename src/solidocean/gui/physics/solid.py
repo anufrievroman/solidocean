@@ -7,7 +7,7 @@ import numpy as np
 from ... import units
 from ...physics.solid.model import SOLID_CONDITION_TITLES
 from ..panels import solid as sp
-from ..panels.common import equations, references
+from ..panels.common import equations, references, toggle_bypass
 from .base import PhysicsUI
 from .common import condition_highlights
 
@@ -114,7 +114,7 @@ class SolidUI(PhysicsUI):
         summary = sp.physics_summary(project)
         nodes = [(label if summary[key] == "none" else f"{label} ({summary[key]})", (key, None), summary[key] == "none")
                  for key, label in (("periodicity", "Periodicity"), ("symmetry", "Symmetry"))]
-        return nodes + [(sp.solid_condition_label(c), ("solid_cond", i), False)
+        return nodes + [(sp.solid_condition_label(c), ("solid_cond", i), not c.enabled)
                         for i, c in enumerate(project.solid.conditions)]
 
     def problem_label(self, project):
@@ -138,6 +138,9 @@ class SolidUI(PhysicsUI):
             for typ, title in SOLID_CONDITION_TITLES.items():
                 menu.addAction(f"Add {title}", lambda t=typ: sp.add_condition(win, t))
         elif kind == "solid_cond":
+            c = win.project.solid.conditions[index]
+            menu.addAction("Enable" if not c.enabled else "Bypass",
+                           lambda: toggle_bypass(win, c, ("solid_cond", index), "condition"))
             menu.addAction("Delete", lambda: sp.delete_condition(win, index))
         elif kind == "kpath":
             kp = win.project.solid.problem.kpath
@@ -185,7 +188,7 @@ class SolidUI(PhysicsUI):
         return True
 
     def highlights(self, project):
-        return condition_highlights(project, project.solid.conditions, project.solid.face_conditions(project.lattice))
+        return condition_highlights(project, project.solid.active_conditions, project.solid.face_conditions(project.lattice))
 
     # ---- results ---------------------------------------------------------------------
     def run_label(self, project):

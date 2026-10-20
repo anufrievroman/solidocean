@@ -14,8 +14,8 @@ from ...physics.heat.properties import nonlinear
 from ...selection import ALL_FACES, FACES, selection_text
 from .problem import solver_box
 from .common import (
-    ERROR_STYLE, ExprEdit, Panel, equations, field_quantity_rows, muted_label, objects, outer_labels,
-    selection_box,
+    ERROR_STYLE, ExprEdit, Panel, bypass_row, bypassed_label, equations, field_quantity_rows, muted_label, objects,
+    outer_labels, selection_box,
 )
 
 
@@ -31,14 +31,18 @@ def heat_condition_label(c) -> str:
         where += ", Gaussian" if c.profile.shape == "gauss" else ", profile"
     if c.type == "flux" and c.pulse.shape:
         where += ", oscillating" if c.pulse.shape == "sine" else ", pulsed"
-    return f"{c.name or HEAT_TITLES.get(c.type, c.type)} ({where})"
+    return bypassed_label(c, f"{c.name or HEAT_TITLES.get(c.type, c.type)} ({where})")
 
 
 INTERFACE_TITLES = {"resistance": "Contact resistance", "layer": "Thin layer"}
 
 
 def interface_label(c) -> str:
-    return f"{c.name or INTERFACE_TITLES.get(c.type, c.type)} ({interface_title(c)})"
+    return bypassed_label(c, f"{c.name or INTERFACE_TITLES.get(c.type, c.type)} ({interface_title(c)})")
+
+
+def source_label(q) -> str:
+    return bypassed_label(q, f"{q.name or 'Heat source'} (in {q.material})")
 
 
 PULSE_TITLES = {"": "Constant", "rect": "Rectangular pulse", "gauss": "Gaussian pulse", "sine": "Sinusoidal"}
@@ -183,7 +187,7 @@ class HeatPanel(Panel):
             b.clicked.connect(lambda _=False, i=i: self.win.select_node("heat_cond", i))
             f.addRow(b)
         for i, q in enumerate(h.sources):
-            b = QPushButton(f"{q.name or 'Heat source'} (in {q.material})")
+            b = QPushButton(source_label(q))
             b.setStyleSheet("text-align: left; padding: 4px 8px;")
             b.clicked.connect(lambda _=False, i=i: self.win.select_node("heat_src", i))
             f.addRow(b)
@@ -319,7 +323,7 @@ class HeatConditionPanel(Panel):
 
     def build(self):
         c = self.c
-        self.button_row(("Delete", lambda: delete_item(self.win, "heat_cond", self.index)))
+        bypass_row(self, c, ("heat_cond", self.index), "condition", lambda: delete_item(self.win, "heat_cond", self.index))
         f = self.form()
         name = QLineEdit(c.name)
         name.editingFinished.connect(lambda: (setattr(c, "name", name.text().strip()), self.win.mark_dirty(),
@@ -366,7 +370,7 @@ class HeatSourcePanel(Panel):
 
     def build(self):
         q = self.q
-        self.button_row(("Delete", lambda: delete_item(self.win, "heat_src", self.index)))
+        bypass_row(self, q, ("heat_src", self.index), "heat source", lambda: delete_item(self.win, "heat_src", self.index))
         f = self.form()
         name = QLineEdit(q.name)
         name.editingFinished.connect(lambda: (setattr(q, "name", name.text().strip()), self.win.mark_dirty()))
@@ -399,7 +403,8 @@ INTERFACE_FORMALISM = {
         ("q = (T₁ − T₂) / R", "The heat flux through the interface; the temperature jumps across it by "
          "ΔT = q R. A thermal boundary (Kapitza) resistance is typically 1e-9 to 1e-8 m²K/W between solids "
          "(conductances of 1 GW/(m²K) down to 100 MW/(m²K)), much more for a poor mechanical contact. R may "
-         "depend on T, the mean of both sides."),
+         "depend on T, the mean of both sides. R = 0 is the perfect contact (e.g. the end of a sweep of R): the "
+         "interface is then not cut, and T is continuous across it."),
         INTERFACE_SIDES,
     ),
     "layer": equations(
@@ -423,7 +428,8 @@ class HeatInterfacePanel(Panel):
 
     def build(self):
         c, p = self.c, self.p
-        self.button_row(("Delete", lambda: delete_item(self.win, "heat_iface", self.index)))
+        bypass_row(self, c, ("heat_iface", self.index), "interface",
+                   lambda: delete_item(self.win, "heat_iface", self.index))
         f = self.form()
         name = QLineEdit(c.name)
         name.editingFinished.connect(lambda: (setattr(c, "name", name.text().strip()), self.win.mark_dirty(),

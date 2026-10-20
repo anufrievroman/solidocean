@@ -19,8 +19,9 @@ from ...physics.solid.model import (LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_
                                     KPath, SolidCondition)
 from ...project import AXES, Feature
 from ...selection import FACES, selection_text
-from .common import (ERROR_STYLE, ExprEdit, Panel, VectorEdit, equations, field_quantity_rows, muted_label,
-                     outer_labels, pretty_point, references, selection_box, theme_text)
+from .common import (ERROR_STYLE, ExprEdit, Panel, VectorEdit, bypass_row, bypassed_label, equations,
+                     field_quantity_rows, muted_label, outer_labels, pretty_point, references, selection_box,
+                     theme_text)
 from .problem import SweepPanel, solver_box, sweep_summary
 from .lattice import _lattice_kind, hexagonal_vectors, lattice_mode, use_lattice_cell
 
@@ -37,7 +38,7 @@ def physics_summary(project) -> dict[str, str]:
 
 
 def solid_condition_label(c) -> str:
-    return f"{c.name or SOLID_CONDITION_TITLES.get(c.type, c.type)} ({selection_text(c)})"
+    return bypassed_label(c, f"{c.name or SOLID_CONDITION_TITLES.get(c.type, c.type)} ({selection_text(c)})")
 
 
 class SolidPanel(Panel):
@@ -1095,7 +1096,7 @@ class SolidConditionPanel(Panel):
 
     def build(self):
         c = self.c
-        self.button_row(("Delete", lambda: delete_condition(self.win, self.index)))
+        bypass_row(self, c, ("solid_cond", self.index), "condition", lambda: delete_condition(self.win, self.index))
         f = self.form()
         name = QLineEdit(c.name)
         name.editingFinished.connect(lambda: (setattr(c, "name", name.text().strip()), self.win.mark_dirty(),

@@ -36,6 +36,13 @@ def table(cls, d: dict, where: str):
     return cls(**d)
 
 
+def bypassed(obj, d: dict) -> dict:
+    """Add `enabled = false` to the table of a bypassed item (kept in the file, but not applied)."""
+    if not obj.enabled:
+        d["enabled"] = False
+    return d
+
+
 def label(d: dict, default: str = "") -> str:
     """How an entry of a list of tables is named in messages: its name, else its type."""
     return f"'{d.get('name') or d.get('type') or default}'"

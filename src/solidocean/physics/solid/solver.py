@@ -60,7 +60,7 @@ class Solver:
     def _constraint_key(self, ev: Evaluator):
         """Changes when the constrained DOFs change (not their prescribed values)."""
         ph = self.project.solid
-        held = [(c.type, selection.key(c, ev), c.free_components()) for c in ph.conditions if c.type != "load"]
+        held = [(c.type, selection.key(c, ev), c.free_components()) for c in ph.active_conditions if c.type != "load"]
         return repr((tuple(ph.symmetry), tuple(ph.antisymmetry), held))
 
     def _material_key(self, ev: Evaluator):
@@ -140,7 +140,7 @@ class Solver:
         values=True) their prescribed values (m). Where selections overlap, the later condition wins."""
         held = np.zeros((mesh.n_nodes, 3), dtype=bool)
         vals = np.zeros((mesh.n_nodes, 3))
-        for c in self.project.solid.conditions:
+        for c in self.project.solid.active_conditions:
             if c.type == "load":
                 continue
             nodes = np.unique(boundary.tris[self._selected(mesh, boundary, c, ev)])
@@ -156,7 +156,7 @@ class Solver:
         """(N, 3) nodal forces of the boundary loads (N)."""
         mesh, b = m.mesh, m.boundary
         f = np.zeros((mesh.n_nodes, 3))
-        for c in self.project.solid.conditions:
+        for c in self.project.solid.active_conditions:
             if c.type != "load":
                 continue
             idx = self._selected(mesh, b, c, ev)

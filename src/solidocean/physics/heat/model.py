@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ...selection import FACES, check_selection, selection_to_dict
-from ...tomlio import check_keys, label, table, without_defaults
+from ...tomlio import bypassed, check_keys, label, table, without_defaults
 
 Expr = str | float | int
 
@@ -94,6 +94,7 @@ class HeatCondition:
     pulse: Pulse = field(default_factory=Pulse)   # flux: time profile (transient problems)
     box: dict = field(default_factory=dict)       # optional {"min": [x, y, z], "max": [...]}: faces inside it
     profile: Profile = field(default_factory=Profile)   # flux: spatial profile
+    enabled: bool = True               # bypassed: kept in the file, but not applied
 
     def __post_init__(self):
         if isinstance(self.pulse, dict):
@@ -113,7 +114,7 @@ class HeatCondition:
             d["pulse"] = self.pulse.to_dict()
         if self.type == "flux" and self.profile.shape:
             d["profile"] = self.profile.to_dict()
-        return d
+        return bypassed(self, d)
 
 
 @dataclass
@@ -124,6 +125,7 @@ class HeatSource:
     name: str = ""
     pulse: Pulse = field(default_factory=Pulse)
     profile: Profile = field(default_factory=Profile)
+    enabled: bool = True               # bypassed: kept in the file, but not applied
 
     def __post_init__(self):
         if isinstance(self.pulse, dict):
@@ -138,7 +140,7 @@ class HeatSource:
             d["pulse"] = self.pulse.to_dict()
         if self.profile.shape:
             d["profile"] = self.profile.to_dict()
-        return d
+        return bypassed(self, d)
 
 
 @dataclass
@@ -156,6 +158,7 @@ class HeatInterface:
     material: str = ""
     thickness: Expr = "5[nm]"
     name: str = ""
+    enabled: bool = True               # bypassed: kept in the file, but not applied
 
     def to_dict(self):
         d = {"type": self.type, "name": self.name} if self.name else {"type": self.type}
@@ -164,7 +167,7 @@ class HeatInterface:
             d.update(material=self.material, thickness=self.thickness)
         else:
             d["R"] = self.R
-        return d
+        return bypassed(self, d)
 
 
 @dataclass
@@ -226,10 +229,23 @@ class HeatPhysics:
                                for c in d.get("interfaces", [])],
                    symmetry=list(d.get("symmetry", [])))
 
+    @property
+    def active_conditions(self) -> list[HeatCondition]:
+        """The conditions applied: all but the bypassed ones (likewise sources and interfaces)."""
+        return [c for c in self.conditions if c.enabled]
+
+    @property
+    def active_sources(self) -> list[HeatSource]:
+        return [q for q in self.sources if q.enabled]
+
+    @property
+    def active_interfaces(self) -> list[HeatInterface]:
+        return [c for c in self.interfaces if c.enabled]
+
     def face_conditions(self) -> dict[str, str]:
         """Conditions on the faces of the model's bounding box (for display)."""
         out = {face: "symmetry" for face in self.symmetry}
-        for c in self.conditions:
+        for c in self.active_conditions:
             if c.on or c.box:
                 continue
             for face in c.faces:
@@ -298,7 +314,7 @@ def validate_settings(project, ev, material_names) -> list[str]:
             except Exception as exc:
                 errors.append(f"{where}: profile: {exc}")
 
-    for c in h.conditions:
+    for c in h.active_conditions:     # bypassed ones may be unfinished, like bypassed objects
         where = f"heat condition '{c.name or c.type}'"
         if c.type not in HEAT_CONDITION_TYPES:
             errors.append(f"{where}: type must be one of {', '.join(HEAT_CONDITION_TYPES)}")
@@ -330,7 +346,7 @@ def validate_settings(project, ev, material_names) -> list[str]:
                     errors.append(f"{where}: emissivity must be between 0 and 1")
             except Exception:
                 pass                                        # reported above
-    for q in h.sources:
+    for q in h.active_sources:
         if q.material not in material_names:
             errors.append(f"heat source '{q.name}': material '{q.material}' not defined")
         try:
@@ -339,7 +355,7 @@ def validate_settings(project, ev, material_names) -> list[str]:
             errors.append(f"heat source '{q.name}': {exc}")
         check_pulse(f"heat source '{q.name or q.material}'", q.pulse)
         check_profile(f"heat source '{q.name or q.material}'", q.profile)
-    for c in h.interfaces:
+    for c in h.active_interfaces:
         errors += _check_interface(c, ev, objects, project)
     st = h.problem
     if st.type not in HEAT_PROBLEM_TYPES:
@@ -392,9 +408,12 @@ def _check_interface(c, ev, objects, project) -> list[str]:
             errors.append(f"{where}: unknown object '{obj}' (an object or material name)")
     if c.type == "resistance":
         try:
-            evr = ev.with_overrides({TEMPERATURE: REFERENCE_T}) if depends_on_T(c.R) else ev
-            if evr(c.R) <= 0:
-                errors.append(f"{where}: R must be positive")
+            if depends_on_T(c.R):
+                if ev.with_overrides({TEMPERATURE: REFERENCE_T})(c.R) <= 0:
+                    errors.append(f"{where}: R must be positive (a temperature-dependent R cannot be 0; a "
+                                  f"perfect contact is R = 0 written without T)")
+            elif ev(c.R) < 0:
+                errors.append(f"{where}: R must not be negative (0 = perfect contact)")
         except Exception as exc:
             errors.append(f"{where}: R: {exc}")
     elif c.type == "layer":

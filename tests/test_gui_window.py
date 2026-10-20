@@ -256,7 +256,7 @@ def test_plots_added_after_the_run_are_saved(tmp_path, monkeypatch):
     run = w.save_run(tmp_path / "run")
     assert (run / "Profile.csv").is_file()
     with open(run / "quantities.csv", encoding="utf-8") as fh:
-        assert "max(abs(ux))" in next(csv.reader(fh))
+        assert "Amplitude" in next(csv.reader(fh))            # columns are named after the plots
 
     out = tmp_path / "profile.csv"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))

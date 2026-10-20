@@ -115,6 +115,26 @@ def references(*entries: str) -> str:
     return "<br>".join(f"[{i}] {entry}" for i, entry in enumerate(entries, 1))
 
 
+def toggle_bypass(win, item, node, what: str):
+    """Bypass a condition, source or interface (kept in the model, not applied), or enable it again."""
+    item.enabled = not item.enabled
+    win.log(f"{'Enabled' if item.enabled else 'Bypassed'} {what} '{item.name or getattr(item, 'type', '')}'")
+    win.mark_dirty()
+    win.rebuild_tree(node)
+
+
+def bypass_row(panel, item, node, what: str, delete):
+    """The Bypass / Enable and Delete buttons of an item's panel, and a note while it is bypassed."""
+    panel.button_row(("Enable" if not item.enabled else "Bypass", lambda: toggle_bypass(panel.win, item, node, what)),
+                     ("Delete", delete))
+    if not item.enabled:
+        panel.outer.addWidget(muted_label(f"This {what} is bypassed: it is kept in the model but not applied."))
+
+
+def bypassed_label(item, label: str) -> str:
+    return label if item.enabled else label + "  (bypassed)"
+
+
 def muted_label(text: str) -> QLabel:
     lbl = QLabel(text)
     lbl.setWordWrap(True)

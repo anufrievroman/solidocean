@@ -130,17 +130,17 @@ class HeatSolver:
                      f"order {mesh.order} [{time.perf_counter() - t0:.1f} s]")
         mesh, tris, owner = self._mesh
         split = None
-        if p.heat.interfaces:               # duplicate the interface nodes: T may jump across them
-            split_key = (mesh_key, interfaces.selection_key(p))
+        if p.heat.active_interfaces:        # duplicate the interface nodes: T may jump across them
+            split_key = (mesh_key, interfaces.selection_key(p, ev))
             if self._split is None or self._split[0] != split_key:
-                self._split = (split_key, interfaces.split(mesh, p.heat.interfaces, tris, owner))
+                self._split = (split_key, interfaces.split(mesh, p.heat.active_interfaces, tris, owner, ev))
                 s = self._split[1]
                 self.log(f"Thermal contacts: {s.mesh.n_nodes - mesh.n_nodes} interface nodes duplicated")
             split = self._split[1]
             mesh, tris, owner = split.mesh, split.tris, split.owner
         props = Properties(p, ev, mesh.material_names)
         contacts = Contacts(p, ev, split)
-        key = (mesh_key, interfaces.selection_key(p), props.key(), contacts.key())
+        key = (mesh_key, interfaces.selection_key(p, ev), props.key(), contacts.key())
         if key == self._key and self._model is not None:
             return self._model
         t1 = time.perf_counter()
@@ -250,7 +250,7 @@ class HeatSolver:
         timed = []                                   # (unit load vector, profile function)
         fixed_of: dict[int, int] = {}                # node -> index into fixed_values
         fixed_values = []
-        for c in p.heat.conditions:
+        for c in p.heat.active_conditions:
             tris = self._faces(m, c, ev)
             if c.type == "temperature":
                 fixed_values.append(self._profile(ev, c.value, transient=transient))
@@ -281,7 +281,7 @@ class HeatSolver:
                     b += Te * f
             elif c.type == "radiation":
                 radiation.append(Radiation(tris, ev(c.emissivity), self._profile(ev, c.T_ext, transient=transient)))
-        for q in p.heat.sources:
+        for q in p.heat.active_sources:
             unit = [1.0 if name == q.material else 0.0 for name in mesh.material_names]
             if not any(unit):
                 continue
@@ -324,7 +324,7 @@ class HeatSolver:
         A_bc, b, fixed, T_fixed, radiation = self.system(ev, m, transient=st.type == "transient")
         nonlinear = bool(radiation) or m.props.varies or m.contacts.varies
         if st.type == "stationary":
-            sink = len(fixed) > 0 or radiation or any(c.type == "convection" for c in p.heat.conditions)
+            sink = len(fixed) > 0 or radiation or any(c.type == "convection" for c in p.heat.active_conditions)
             if not sink:
                 if nonlinear:
                     raise ValueError("a stationary model with temperature-dependent properties needs a heat sink "

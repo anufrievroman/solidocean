@@ -4,6 +4,7 @@ mechanics, ...), and their plots: quantity against time or the swept variable, a
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,6 +27,7 @@ class FieldResults:
     samplers: dict = field(default_factory=dict, repr=False)             # point locations of line plots (cache)
     kind: str = "stationary"                                             # stationary | transient
     timed: bool = True        # tables have a time column
+    columns: list = field(default_factory=list, repr=False)   # (name, expression) of quantities.csv, by plot
 
     def values(self, quantity: str):
         return self.quantities.get(quantity.strip())
@@ -49,6 +51,7 @@ class FieldResults:
         out = project.output
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
+        self.columns = quantity_columns(plots, self.quantities)
         written = self.save(directory, out.contents)
         if out.wants("tables"):
             for pl in plots:
@@ -73,20 +76,47 @@ class FieldResults:
         return Path(path)
 
     def save_quantities(self, directory: Path) -> list[Path]:
-        """quantities.csv: every evaluated quantity per variable value (and time)."""
-        names = list(self.quantities)
-        if not names:
+        """quantities.csv: every evaluated quantity per variable value (and time), one column per plot headed
+        by the plot's name, and quantities.json: column name -> expression, in the order of the columns."""
+        columns = self.columns or quantity_columns([], self.quantities)
+        if not columns:
             return []
         path = directory / "quantities.csv"
         with open(path, "w", newline="", encoding="utf-8") as fh:
             w = csv.writer(fh)
-            w.writerow(([self.outer_name] if self.outer_name else []) + (["time [s]"] if self.timed else []) + names)
+            w.writerow(([self.outer_name] if self.outer_name else []) + (["time [s]"] if self.timed else []) +
+                       [name for name, _ in columns])
             for i in range(len(self.outer_values)):
                 for j, t in enumerate(self.times):
                     w.writerow(([f"{self.outer_values[i]:.10g}"] if self.outer_name else []) +
                                ([f"{t:.10g}"] if self.timed else []) +
-                               [f"{self.quantities[q][i, j]:.10g}" for q in names])
-        return [path]
+                               [f"{self.quantities[q][i, j]:.10g}" for _, q in columns])
+        index = directory / "quantities.json"
+        index.write_text(json.dumps(dict(columns), indent=2, ensure_ascii=False), encoding="utf-8")
+        return [path, index]
+
+
+def quantity_columns(plots, quantities) -> list[tuple[str, str]]:
+    """The columns of quantities.csv: (name, expression) for every plot whose quantity was evaluated, named
+    after the plot (a repeated name gets " (2)", ...), then the other evaluated quantities under their
+    expression."""
+    columns, names = [], set()
+
+    def add(name, q):
+        unique, n = name, 2
+        while unique in names:
+            unique, n = f"{name} ({n})", n + 1
+        columns.append((unique, q))
+        names.add(unique)
+    for pl in plots:
+        for q in pl.expressions():
+            if q.strip() in quantities:
+                add(pl.name.strip() or q.strip(), q.strip())
+    plotted = {q for _, q in columns}
+    for q in quantities:
+        if q not in plotted:
+            add(q, q)
+    return columns
 
 
 def line_profile(results, project, pdef):

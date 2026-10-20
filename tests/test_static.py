@@ -202,3 +202,14 @@ def test_heat_flux_into_a_box_selection():
     assert p.validate() == []
     r = HeatSolver(p, log=lambda m: None).run(["integral(qz)"])
     assert r.quantities["integral(qz)"][0, 0] == pytest.approx(-1e6 * 0.25e-12 * 0.2e-6, rel=1e-6)
+
+
+def test_bypassed_conditions_are_not_applied():
+    """A bypassed fixed constraint and load leave the uniform stress of the load test unchanged."""
+    p = bar([SolidCondition("load", ["xmax"], load_type="area", load=["2[MPa]", "0", "0"]),
+             SolidCondition("fixed", ["xmax"], enabled=False),
+             SolidCondition("load", ["xmax"], load_type="area", load=["5[MPa]", "0", "0"], enabled=False)])
+    assert p.validate() == []
+    r = solve(p, ["mean(sxx)"])
+    assert r.quantities["mean(sxx)"][0, 0] == pytest.approx(2e6, rel=1e-9)
+    assert Project.from_dict(p.to_dict()).solid == p.solid
