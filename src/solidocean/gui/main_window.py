@@ -61,6 +61,8 @@ class MainWindow(ResultsMixin, QMainWindow):
         self._stashed_plots = {}   # plots of the other physics, kept while switching back and forth
         self._last_dir = Path.home()   # where file dialogs open while the model has no file of its own
         self._new_dialog = None   # the New dialog while it is open (a file opened from Finder closes it)
+        self._model_count = 0   # counts set_project: a task started for an earlier model drops its result
+        self._build_after_task = False   # a model opened while a task ran is built once it ends
         self.init_results_state()
         self.current_plot = 0
         self._view = None
@@ -201,6 +203,7 @@ class MainWindow(ResultsMixin, QMainWindow):
 
     def set_project(self, project: Project):
         self.project = project
+        self._model_count += 1
         self._stashed_plots = {}
         self.preview = None
         self.mesh = None
@@ -217,7 +220,9 @@ class MainWindow(ResultsMixin, QMainWindow):
     def _build_on_load(self):
         """A model that was just opened shows its geometry right away (the surface preview is quick); a model
         whose geometry has errors is left alone (they show when the user builds it)."""
-        if self.preview is None and not self.busy and not self.project.validate_geometry():
+        if self.busy:   # e.g. the start-up model's build, when a model opened from Finder replaces it
+            self._build_after_task = True
+        elif self.preview is None and not self.project.validate_geometry():
             self.build_geometry()
 
     def rebuild_tree(self, select=None, refresh_panel=True):
@@ -623,8 +628,10 @@ class MainWindow(ResultsMixin, QMainWindow):
         if r == QMessageBox.StandardButton.Save:
             return self.save()
         return r == QMessageBox.StandardButton.Discard
-    def new(self):
-        """New model: choose the physics, then a template of that physics."""
+    def new(self, wait: bool = True):
+        """New model: choose the physics, then a template of that physics. At start-up (`wait=False`) the dialog
+        is not modal: macOS holds its open-document event back while a modal dialog (even a sheet) is up, so a
+        model double-clicked in Finder would only arrive after Cancel; this way it arrives and closes the dialog."""
         if not self._confirm_discard():
             return
         from PySide6.QtWidgets import QButtonGroup
@@ -662,14 +669,21 @@ class MainWindow(ResultsMixin, QMainWindow):
         buttons.accepted.connect(dlg.accept)
         buttons.rejected.connect(dlg.reject)
         lay.addWidget(buttons)
-        accepted = dlg.exec() == QDialog.DialogCode.Accepted
-        self._new_dialog = None
-        if not accepted or lst.currentItem() is None:
-            return
-        key = lst.currentItem().data(Qt.ItemDataRole.UserRole)
-        t = templates.all_templates()[key]
-        self.set_project(templates.create(key))
-        self.log(f"New model ({physics.get(t.physics).title}) from template: {t.title}")
+
+        def done(result):
+            self._new_dialog = None
+            if result != QDialog.DialogCode.Accepted or lst.currentItem() is None:
+                return
+            key = lst.currentItem().data(Qt.ItemDataRole.UserRole)
+            t = templates.all_templates()[key]
+            self.set_project(templates.create(key))
+            self.log(f"New model ({physics.get(t.physics).title}) from template: {t.title}")
+
+        if wait:
+            done(dlg.exec())
+        else:
+            dlg.finished.connect(done)
+            dlg.show()   # returns at once; opening a model closes it (open_file)
     @staticmethod
     def _physics_button(spec) -> QPushButton:
         """A full-width choice of the New dialog: the physics' name in bold, its description below. (A
@@ -721,12 +735,12 @@ class MainWindow(ResultsMixin, QMainWindow):
             self.open_file(self.used_dir(path))
     def open_requested(self, path):
         """A model double-clicked in Finder (or dropped on the Dock icon), which reaches the running app as an
-        event rather than an argument: it replaces the New dialog of a fresh start, or the current model."""
-        if self._new_dialog is not None:
-            self._new_dialog.reject()
+        event rather than an argument."""
         if self._confirm_discard():
             self.open_file(self.used_dir(path))
     def open_file(self, path):
+        if self._new_dialog is not None:   # the start-up New dialog, which does not block the window
+            self._new_dialog.reject()
         try:
             self.set_project(Project.load(path))
             self.log(f"Opened {path}")
@@ -795,7 +809,14 @@ class MainWindow(ResultsMixin, QMainWindow):
         task.signals.log.connect(self.log)
         task.signals.log.connect(lambda msg: self._task_stage(label, msg))
         task.signals.progress.connect(self._on_progress)
-        task.signals.done.connect(lambda r: (self._task_finished(), on_done(r)))
+        model = self._model_count   # the result of a model no longer open is dropped
+
+        def done(result):
+            self._task_finished()
+            if model == self._model_count:
+                on_done(result)
+
+        task.signals.done.connect(done)
         task.signals.failed.connect(self._task_failed)
         self._task = task  # keep signals alive
         self.pool.start(task)
@@ -818,6 +839,9 @@ class MainWindow(ResultsMixin, QMainWindow):
         self.progress.setValue(i)
     def _task_finished(self):
         self.busy = False
+        if self._build_after_task:
+            self._build_after_task = False
+            QTimer.singleShot(0, self._build_on_load)
         if self._pending_mode:
             self._pending_mode = False
             QTimer.singleShot(0, self.show_mode)

@@ -50,5 +50,5 @@ def run(path: str | None = None) -> int:
     if not path:   # started without a model: offer the New dialog (Cancel keeps the empty model)
         from PySide6.QtCore import QTimer
         # unless a file opened from Finder came first (its event arrives once the loop runs)
-        QTimer.singleShot(0, lambda: win.project.path is None and win.new())
+        QTimer.singleShot(0, lambda: win.project.path is None and win.new(wait=False))
     return app.exec()
