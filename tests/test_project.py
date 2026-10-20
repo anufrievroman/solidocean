@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from solidocean import templates
@@ -130,3 +132,34 @@ def test_problem_sections():
     d = templates.create("heat_3omega").to_dict()
     assert "problem" in d and "problem" in d["heat"] and "study" not in d and "study" not in d["heat"]
     assert Project.from_dict(d).heat.problem.type == "frequency"
+
+
+@pytest.mark.parametrize("edit, message", [
+    (lambda d: d["objects"][0].update(bogus_key=3), "object 'Cell' (cell): unknown key 'bogus_key'"),
+    (lambda d: d["objects"][1].update(radus="1[um]"), "did you mean 'radius'?"),
+    (lambda d: d["materials"][0].update(kk="1"), "material 'Si': unknown key 'kk'"),
+    (lambda d: d["project"].update(lenght_unit="nm"), "did you mean 'length_unit'?"),
+    (lambda d: d["solid"]["problem"].update(num_eig=4), "[solid.problem]: unknown key 'num_eig'"),
+    (lambda d: d["plots"][0].update(colour="red"), "unknown key 'colour'"),
+    (lambda d: d["mesh"].update(max_sise="1[um]"), "did you mean 'max_size'?"),
+])
+def test_unknown_keys_are_refused(tmp_path, edit, message):
+    """A misspelt key would otherwise be dropped and give a different model without a word."""
+    import tomli_w
+    d = templates.create("square").to_dict()
+    edit(d)
+    path = tmp_path / "m.toml"
+    path.write_bytes(tomli_w.dumps(d).encode())
+    with pytest.raises(ValueError, match=re.escape(message)):
+        Project.load(path)
+
+
+def test_unknown_keys_in_heat_tables_are_refused():
+    d = templates.create("heat_pad").to_dict()
+    d["heat"]["conditions"][0]["valeu"] = "1"
+    with pytest.raises(ValueError, match=re.escape("did you mean 'value'?")):
+        Project.from_dict(d)
+    d = templates.create("heat_pad").to_dict()
+    d["heat"]["intial"] = "1"
+    with pytest.raises(ValueError, match=re.escape("[heat]: unknown key 'intial'")):
+        Project.from_dict(d)

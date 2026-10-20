@@ -16,7 +16,7 @@ from typing import Any
 
 from . import outputs, physics, tomlio
 from .expressions import Evaluator
-from .tomlio import without_defaults
+from .tomlio import check_keys, label, table, without_defaults
 from .lattice import Lattice
 from .physics.heat.model import HeatPhysics
 from .physics.solid.model import SolidPhysics
@@ -79,6 +79,10 @@ class Material:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Material":
+        from . import materials as mat
+        check_keys(d, ["name", "color", "library", "model", mat.ROTATION_KEY, mat.LOSS_KEY, *mat.THERMAL_KEYS,
+                       *dict.fromkeys(k for keys in mat.MODELS.values() for k in keys)],
+                   f"material {label(d)}")
         d = dict(d)
         return cls(name=d.pop("name"), color=d.pop("color", ""), props=d)
 
@@ -134,6 +138,11 @@ class Feature:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Feature":
+        typ = d.get("type")
+        if typ in FEATURE_TYPES:     # an unknown type is refused by the constructor
+            check_keys(d, ["type", "name", "op", "material", "enabled", "on", *FEATURE_TYPES[typ]] +
+                       ([] if typ == "cell" else [ROTATION_KEY, ARRAY_KEY, SPACING_KEY]),
+                       f"object {label(d)} ({typ})")
         d = dict(d)
         return cls(type=d.pop("type"), name=d.pop("name", d.get("type", "")),
                    op=d.pop("op", "add"), material=d.pop("material", ""),
@@ -175,7 +184,8 @@ class MeshSettings:
     regions: list[MeshRegion] = field(default_factory=list)
 
     def __post_init__(self):
-        self.regions = [r if isinstance(r, MeshRegion) else MeshRegion(**r) for r in self.regions]
+        self.regions = [r if isinstance(r, MeshRegion) else table(MeshRegion, r, f"mesh region {label(r, r.get('on', ''))}")
+                        for r in self.regions]
 
     def to_dict(self):
         d = without_defaults(self, {"max_size": self.max_size, "min_size": self.min_size, "order": self.order,
@@ -219,7 +229,7 @@ class Problem:
 
     def __post_init__(self):
         if isinstance(self.sweep, dict):
-            self.sweep = VariableSweep(**self.sweep)
+            self.sweep = table(VariableSweep, self.sweep, "[problem.sweep]")
 
     @property
     def active_sweep(self) -> VariableSweep | None:
@@ -254,7 +264,7 @@ class Output:
     def from_dict(cls, d: dict) -> "Output":
         d = dict(d)
         d.pop("plot", None)    # earlier models had `plot` (a PNG per plot); plots stay in the GUI now
-        return cls(**d)
+        return table(cls, d, "[output]")
 
 
 @dataclass
@@ -316,6 +326,8 @@ class Project:
         if unknown:
             raise ValueError(f"unknown section(s): {', '.join(sorted(unknown))}")
         info = d.get("project", {})
+        check_keys(info, ["name", "description", "length_unit", "frequency_unit", "time_unit", "physics"],
+                   "[project]")
         physics_kind = info.get("physics", "solid")
         spec = physics.get(physics_kind)
         plots = []
@@ -335,8 +347,8 @@ class Project:
             materials=[Material.from_dict(m) for m in d.get("materials", [])],
             objects=[Feature.from_dict(f) for f in d.get("objects", [])],
             lattice=Lattice.from_dict(d.get("lattice", {})),
-            mesh=MeshSettings(**d.get("mesh", {})),
-            problem=Problem(**d.get("problem", {})),
+            mesh=table(MeshSettings, d.get("mesh", {}), "[mesh]"),
+            problem=table(Problem, d.get("problem", {}), "[problem]"),
             output=Output.from_dict(d.get("output", {})),
             plots=plots or None,       # none in the file: the physics' defaults
             **{name: s.settings_from_dict(d.get(name, {})) for name, s in sections.items()},

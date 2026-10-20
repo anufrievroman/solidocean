@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ...selection import FACES, check_selection, selection_to_dict
-from ...tomlio import without_defaults
+from ...tomlio import check_keys, label, table, without_defaults
 
 Expr = str | float | int
 
@@ -42,7 +42,7 @@ class Pulse:
 
     @classmethod
     def from_dict(cls, d) -> "Pulse":
-        return cls(**d) if isinstance(d, dict) else cls()
+        return table(cls, d, "pulse") if isinstance(d, dict) else cls()
 
 
 @dataclass
@@ -63,7 +63,7 @@ class Profile:
 
     @classmethod
     def from_dict(cls, d) -> "Profile":
-        return cls(**d) if isinstance(d, dict) else cls()
+        return table(cls, d, "profile") if isinstance(d, dict) else cls()
 
     def factor(self, ev, points):
         """The factor at points (..., 3) (SI)."""
@@ -215,12 +215,15 @@ class HeatPhysics:
 
     @classmethod
     def from_dict(cls, d: dict) -> "HeatPhysics":
-        d = dict(d)
+        check_keys(d, ["initial", "conditions", "sources", "problem", "interfaces", "symmetry"], "[heat]")
         return cls(initial=d.get("initial", "293.15[K]"),
-                   conditions=[HeatCondition(**c) for c in d.get("conditions", [])],
-                   sources=[HeatSource(**q) for q in d.get("sources", [])],
-                   problem=HeatProblem(**d.get("problem", {})),
-                   interfaces=[HeatInterface(**c) for c in d.get("interfaces", [])],
+                   conditions=[table(HeatCondition, c, f"heat condition {label(c, 'temperature')}")
+                               for c in d.get("conditions", [])],
+                   sources=[table(HeatSource, q, f"heat source {label(q, q.get('material', ''))}")
+                            for q in d.get("sources", [])],
+                   problem=table(HeatProblem, d.get("problem", {}), "[heat.problem]"),
+                   interfaces=[table(HeatInterface, c, f"heat interface {label(c, 'resistance')}")
+                               for c in d.get("interfaces", [])],
                    symmetry=list(d.get("symmetry", [])))
 
     def face_conditions(self) -> dict[str, str]:

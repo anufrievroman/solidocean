@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ...selection import FACES, check_selection, selection_to_dict
-from ...tomlio import without_defaults
+from ...tomlio import label, table, without_defaults
 
 Expr = str | float | int
 
@@ -134,11 +134,11 @@ class SolidProblem:
 
     def __post_init__(self):
         if isinstance(self.kpath, dict):
-            self.kpath = KPath(**self.kpath)
+            self.kpath = table(KPath, self.kpath, "[solid.problem.kpath]")
         if isinstance(self.kmesh, dict):
-            self.kmesh = KMesh(**self.kmesh)
+            self.kmesh = table(KMesh, self.kmesh, "[solid.problem.kmesh]")
         if isinstance(self.fourier, dict):
-            self.fourier = Fourier(**self.fourier)
+            self.fourier = table(Fourier, self.fourier, "[solid.problem.fourier]")
 
     @property
     def stationary(self) -> bool:
@@ -205,13 +205,14 @@ class SolidPhysics:
     problem: SolidProblem = field(default_factory=SolidProblem)
 
     def __post_init__(self):
-        self.conditions = [c if isinstance(c, SolidCondition) else SolidCondition(**c) for c in self.conditions]
+        self.conditions = [c if isinstance(c, SolidCondition) else
+                           table(SolidCondition, c, f"solid condition {label(c, 'fixed')}") for c in self.conditions]
         if isinstance(self.problem, dict):
-            self.problem = SolidProblem(**self.problem)
+            self.problem = table(SolidProblem, self.problem, "[solid.problem]")
 
     @classmethod
     def from_dict(cls, d: dict) -> "SolidPhysics":
-        return cls(**d)
+        return table(cls, d, "[solid]")
 
     def to_dict(self):
         d = {key: list(getattr(self, key)) for key in ("symmetry", "antisymmetry") if getattr(self, key)}

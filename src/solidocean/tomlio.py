@@ -7,11 +7,38 @@ arrays stay on one line: `center = ["0", "0", "t/2"]` rather than one element pe
 from __future__ import annotations
 
 import dataclasses
+import difflib
 import re
 
 import tomli_w
 
 LINE = 100   # longest array kept on one line (characters, including the key)
+
+
+def check_keys(d: dict, known, where: str) -> None:
+    """Refuse the keys of a table that are not among `known`: a misspelt key would otherwise be dropped, and
+    the model silently be a different one."""
+    known = list(known)
+    unknown = [k for k in d if k not in known]
+    if not unknown:
+        return
+    hints = []
+    for k in unknown:
+        close = difflib.get_close_matches(k, known, n=1)
+        hints.append(f"'{k}'" + (f" (did you mean '{close[0]}'?)" if close else ""))
+    raise ValueError(f"{where}: unknown key{'s' if len(unknown) > 1 else ''} {', '.join(hints)}; "
+                     f"known: {', '.join(sorted(known))}")
+
+
+def table(cls, d: dict, where: str):
+    """cls(**d) for a table of the model file, refusing keys that are not settings of the dataclass cls."""
+    check_keys(d, [f.name for f in dataclasses.fields(cls) if f.init], where)
+    return cls(**d)
+
+
+def label(d: dict, default: str = "") -> str:
+    """How an entry of a list of tables is named in messages: its name, else its type."""
+    return f"'{d.get('name') or d.get('type') or default}'"
 
 
 def without_defaults(obj, d: dict, keep: tuple[str, ...] = ()) -> dict:

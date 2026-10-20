@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .tomlio import without_defaults
+from .tomlio import table, without_defaults
 
 Expr = str | float | int
 
@@ -73,8 +73,8 @@ class PlotStyle:
         return without_defaults(self, d)
 
     @classmethod
-    def from_dict(cls, d: dict) -> "PlotStyle":
-        return cls(**d)
+    def from_dict(cls, d: dict, where: str = "plot style") -> "PlotStyle":
+        return table(cls, d, where)
 
 
 SWEEP_AXES = ("auto", "kpath", "variable")
@@ -214,5 +214,6 @@ class ResultPlot:
     @classmethod
     def from_dict(cls, d: dict) -> "ResultPlot":
         d = dict(d)
-        style = PlotStyle.from_dict(d.pop("style", {}))
-        return cls(**d, style=style)  # older files without "kind": inferred from the quantity
+        where = f"plot '{d['name']}'" if d.get("name") else "plot"
+        style = PlotStyle.from_dict(d.pop("style", {}), f"{where}, style")
+        return table(cls, {**d, "style": style}, where)  # older files without "kind": inferred from the quantity
