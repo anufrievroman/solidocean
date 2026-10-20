@@ -220,7 +220,7 @@ def heat_3omega() -> Project:
                   Feature("block", "Heater", material="Au", params={"center": ["0", "b/2", "h/2"],
                                                                     "size": ["Lx", "b", "h"]})],
         mesh=MeshSettings(max_size="b/4"),
-        heat=HeatPhysics(initial="T0", conditions=[
+        heat=HeatPhysics(initial="T0", symmetry=["ymin"], conditions=[
             HeatCondition("temperature", ["ymax", "zmin"], "T0", name="Far field")],
             sources=[HeatSource("Au", "P / (2*b*h)", name="Joule heating (2ω)")],
             problem=HeatProblem(type="frequency", frequency="f")),
@@ -250,7 +250,7 @@ def heat_fdtr() -> Project:
                   Feature("block", "Film", material="Au", params={"center": ["R/2", "R/2", "d/2"],
                                                                   "size": ["R", "R", "d"]})],
         mesh=MeshSettings(max_size="w/5"),
-        heat=HeatPhysics(initial="T0", conditions=[
+        heat=HeatPhysics(initial="T0", symmetry=["xmin", "ymin"], conditions=[
             HeatCondition("flux", ["zmax"], "q0", name="Pump", profile=Profile("gauss", ["0", "0"], "w")),
             HeatCondition("temperature", ["xmax", "ymax", "zmin"], "T0", name="Far field")],
             interfaces=[HeatInterface("resistance", ["Film", "Substrate"], "1/G", name="Au | Si")],

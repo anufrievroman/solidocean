@@ -80,8 +80,9 @@ def tolerance(mesh) -> float:
     return 1e-6 * float(np.linalg.norm(hi - lo))
 
 
-def select(mesh, boundary: Boundary, c, ev: Evaluator) -> np.ndarray:
-    """Indices into boundary.tris of the triangles a condition (faces, on, box) selects."""
+def select(mesh, boundary: Boundary, c, ev: Evaluator, exclude=()) -> np.ndarray:
+    """Indices into boundary.tris of the triangles a condition (faces, on, box) selects. exclude: faces of the
+    model's bounding box (symmetry planes) whose triangles no selection includes."""
     tol = tolerance(mesh)
     pts = mesh.points
     candidates = np.arange(len(boundary.tris))
@@ -94,7 +95,10 @@ def select(mesh, boundary: Boundary, c, ev: Evaluator) -> np.ndarray:
     if not c.faces or len(candidates) == 0:
         return np.zeros(0, dtype=np.int64)
     within = (ev.vector(c.box["min"]), ev.vector(c.box["max"])) if c.box else None
-    mask = surface.select(pts, boundary.tris[candidates], c.faces, tol, box, within)
+    tris = boundary.tris[candidates]
+    mask = surface.select(pts, tris, c.faces, tol, box, within)
+    if exclude:
+        mask &= ~surface.select(pts, tris, list(exclude), tol)
     return candidates[mask]
 
 

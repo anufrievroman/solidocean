@@ -197,9 +197,15 @@ class HeatPhysics:
     sources: list[HeatSource] = field(default_factory=list)
     problem: HeatProblem = field(default_factory=HeatProblem)
     interfaces: list[HeatInterface] = field(default_factory=list)
+    # bounding-box faces of the model that are mirror planes: insulated, and left out of every selection
+    # (a condition on "all" faces stops at them)
+    symmetry: list[str] = field(default_factory=list)
 
     def to_dict(self):
-        d = {"initial": self.initial, "conditions": [c.to_dict() for c in self.conditions]}
+        d = {"initial": self.initial}
+        if self.symmetry:
+            d["symmetry"] = list(self.symmetry)
+        d["conditions"] = [c.to_dict() for c in self.conditions]
         if self.sources:
             d["sources"] = [q.to_dict() for q in self.sources]
         if self.interfaces:
@@ -214,11 +220,12 @@ class HeatPhysics:
                    conditions=[HeatCondition(**c) for c in d.get("conditions", [])],
                    sources=[HeatSource(**q) for q in d.get("sources", [])],
                    problem=HeatProblem(**d.get("problem", {})),
-                   interfaces=[HeatInterface(**c) for c in d.get("interfaces", [])])
+                   interfaces=[HeatInterface(**c) for c in d.get("interfaces", [])],
+                   symmetry=list(d.get("symmetry", [])))
 
     def face_conditions(self) -> dict[str, str]:
         """Conditions on the faces of the model's bounding box (for display)."""
-        out = {}
+        out = {face: "symmetry" for face in self.symmetry}
         for c in self.conditions:
             if c.on or c.box:
                 continue
@@ -235,6 +242,11 @@ def validate_settings(project, ev, material_names) -> list[str]:
     objects = {f.name for f in project.objects} | set(material_names)
     transient = h.problem.type == "transient"
     harmonic = h.problem.type == "frequency"     # time profiles: a sine gives its amplitude, pulses are ignored
+    for face in h.symmetry:
+        if face not in FACES:
+            errors.append(f"heat.symmetry: bad face '{face}' (use {', '.join(FACES)})")
+    if len(set(h.symmetry)) != len(h.symmetry):
+        errors.append("heat.symmetry: a face is listed twice")
 
     def check_pulse(where, pulse):
         if pulse.shape not in PULSE_SHAPES:
@@ -288,6 +300,11 @@ def validate_settings(project, ev, material_names) -> list[str]:
         if c.type not in HEAT_CONDITION_TYPES:
             errors.append(f"{where}: type must be one of {', '.join(HEAT_CONDITION_TYPES)}")
         errors += check_selection(where, c, ev, objects)
+        if not c.on:
+            for face in c.faces:
+                if face in h.symmetry:
+                    errors.append(f"{where}: face {face} is a symmetry plane (heat.symmetry) and cannot carry "
+                                  f"a condition")
         for face in ([] if c.box or c.type in ADDITIVE else c.faces):   # boxes, "all" and added heat flows may
             # overlap other selections on purpose
             key = (c.on, face)

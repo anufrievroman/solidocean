@@ -199,7 +199,8 @@ class HeatSolver:
 
     def _faces(self, m: HeatModel, c, ev: Evaluator) -> np.ndarray:
         """Boundary triangles of a condition's selection (see selection.py)."""
-        return m.tris[selection.select(m.mesh, selection.Boundary(m.tris, m.owner), c, ev)]
+        return m.tris[selection.select(m.mesh, selection.Boundary(m.tris, m.owner), c, ev,
+                                       exclude=self.project.heat.symmetry)]
 
     def _profile(self, ev: Evaluator, expr, pulse=None, transient=True):
         """Constant value, or a function (t0, t1) -> step value for time-dependent expressions / pulses."""

@@ -265,6 +265,9 @@ def validate_settings(project, ev, material_names) -> list[str]:
             for face in c.faces:
                 if face in FACES and face[0] in periodic:
                     errors.append(f"{where}: face {face} is periodic (along {face[0]})")
+                elif face in seen:
+                    errors.append(f"{where}: face {face} is a {seen[face]} plane (solid.{seen[face]}) and "
+                                  f"cannot carry a condition")
         if c.type == "displacement":
             if len(c.displacement) != 3:
                 errors.append(f"{where}: displacement needs 3 components (empty = free)")

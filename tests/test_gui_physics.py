@@ -26,7 +26,9 @@ def test_heat_highlights_and_tree():
     fluxes = [k for k, v in h.items() if v == "flux"]                  # the tops of the pad and the ribbon
     assert len(fluxes) == 2 and all(face == "zmax" and obj is not None and box is None for face, obj, box in fluxes)
     kinds = [node[0] for _, node, _ in ui.physics_nodes(p)]
-    assert kinds == ["heat_initial", "heat_cond", "heat_cond", "heat_cond"]
+    assert kinds == ["heat_initial", "heat_symmetry", "heat_cond", "heat_cond", "heat_cond"]
+    q = templates.create("heat_fdtr")
+    assert gui_physics.of(q).highlights(q)["ymin"] == "symmetry"
 
 
 def test_invalid_variables_give_no_highlights_instead_of_an_error():

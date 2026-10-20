@@ -55,15 +55,18 @@ def test_load_types_give_the_same_uniform_stress(cond):
     assert r.quantities["max(ux)"][0, 0] == pytest.approx(2e6 / E * 2e-6, rel=1e-9)
 
 
-def test_pressure_pushes_on_every_face_of_a_cube():
+@pytest.mark.parametrize("faces", [["xmax", "ymax", "zmax"], ["all"]])
+def test_pressure_pushes_on_every_face_of_a_cube(faces):
     """Hydrostatic pressure on all free faces of a quarter... eighth cube held by three symmetry planes:
-    uniform stress -p in every direction."""
-    p = bar([SolidCondition("load", ["xmax", "ymax", "zmax"], load_type="pressure", pressure="1[MPa]")],
+    uniform stress -p in every direction. "all" leaves the symmetry planes out."""
+    p = bar([SolidCondition("load", faces, load_type="pressure", pressure="1[MPa]")],
             size=("w", "w", "w"))
     r = solve(p, ["mean(sxx)", "mean(syy)", "mean(szz)", "max(abs(sxy))"])
     for s in ("sxx", "syy", "szz"):
         assert r.quantities[f"mean({s})"][0, 0] == pytest.approx(-1e6, rel=1e-9)
     assert r.quantities["max(abs(sxy))"][0, 0] < 1e-6
+    p.solid.conditions.append(SolidCondition("fixed", ["xmin"]))
+    assert any("xmin is a symmetry plane" in e for e in p.validate())
 
 
 def test_periodic_slab_under_pressure_is_in_uniaxial_strain():

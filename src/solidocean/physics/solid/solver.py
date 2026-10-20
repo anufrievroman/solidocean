@@ -129,7 +129,8 @@ class Solver:
         return self._model
 
     def _selected(self, mesh, boundary, c, ev) -> np.ndarray:
-        idx = selection.select(mesh, boundary, c, ev)
+        ph = self.project.solid
+        idx = selection.select(mesh, boundary, c, ev, exclude=ph.symmetry + ph.antisymmetry)  # cut planes
         if len(idx) == 0:
             self.log(f"Warning: condition '{c.name or c.type}' selects no boundary faces")
         return idx

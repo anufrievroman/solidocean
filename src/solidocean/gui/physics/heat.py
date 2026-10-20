@@ -25,15 +25,17 @@ class HeatUI(PhysicsUI):
     physics_panel = hp.HeatPanel
     problem_panel = hp.HeatProblemPanel
     field_panel = hp.TemperaturePanel
-    node_panels = {"heat_initial": hp.HeatInitialPanel}
+    node_panels = {"heat_initial": hp.HeatInitialPanel, "heat_symmetry": hp.HeatSymmetryPanel}
     indexed_panels = {"heat_cond": hp.HeatConditionPanel, "heat_src": hp.HeatSourcePanel,
                       "heat_iface": hp.HeatInterfacePanel}
-    highlight_nodes = ("heat_initial", "heat_cond", "heat_src")
+    highlight_nodes = ("heat_initial", "heat_symmetry", "heat_cond", "heat_src")
 
     # ---- model tree ------------------------------------------------------------------
     def physics_nodes(self, project):
         h = project.heat
-        return ([(f"Initial values ({h.initial})", ("heat_initial", None), False)] +
+        sym = ", ".join(h.symmetry)
+        return ([(f"Initial values ({h.initial})", ("heat_initial", None), False),
+                 (f"Symmetry ({sym})" if sym else "Symmetry", ("heat_symmetry", None), not sym)] +
                 [(hp.heat_condition_label(c), ("heat_cond", i), False) for i, c in enumerate(h.conditions)] +
                 [(f"{q.name or 'Heat source'} (in {q.material})", ("heat_src", i), False)
                  for i, q in enumerate(h.sources)] +
@@ -66,7 +68,8 @@ class HeatUI(PhysicsUI):
         return True
 
     def highlights(self, project):
-        return condition_highlights(project, project.heat.conditions)
+        return condition_highlights(project, project.heat.conditions,
+                                    {face: "symmetry" for face in project.heat.symmetry})
 
     # ---- results ---------------------------------------------------------------------
     def run_label(self, project):

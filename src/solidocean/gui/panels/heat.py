@@ -163,7 +163,8 @@ class HeatPanel(Panel):
     formalism = equations(
         ("ρ c<sub>p</sub> ∂T/∂t = ∇·(k ∇T) + Q", "Heat conduction (Fourier's law), with the heat sources Q "
          "(W/m³). A stationary problem drops the time term and solves ∇·(k ∇T) + Q = 0."),
-        ("n·(k ∇T) = 0", "On every face without a condition: insulated — the same as a mirror-symmetry plane."),
+        ("n·(k ∇T) = 0", "On every face without a condition: insulated — the same as a mirror-symmetry plane "
+         "(Symmetry names such planes and keeps conditions on all faces off them)."),
         ("C Ṫ + K T = f", "The assembled system (quadratic tetrahedra). Stationary: K T = f, one sparse solve. "
          "Transient: θ-scheme time steps (backward Euler or Crank–Nicolson), the matrix factorised once if the "
          "properties are constant. "
@@ -202,6 +203,39 @@ class HeatPanel(Panel):
         row = self.button_row(*[(INTERFACE_TITLES[t], lambda _=False, t=t: add_interface(self.win, t))
                                 for t in INTERFACE_TITLES])
         row.insertWidget(0, QLabel("Interfaces:"))
+
+
+class HeatSymmetryPanel(Panel):
+    title = "Symmetry"
+    help = ("Faces of the model's bounding box that are mirror planes of a structure modelled only in half (or a "
+            "quarter). They are insulated, and no condition reaches them: a selection of all faces, of the model "
+            "or of an object, stops at the plane. Physically the same as leaving the face without a condition; "
+            "naming it says why it is empty.")
+    formalism = equations(
+        ("n·(k ∇T) = 0", "Mirror symmetry of the temperature field: no heat crosses the plane. Implementation: "
+         "nothing is added on those faces (the natural condition of the weak form), and their boundary "
+         "triangles are removed from every condition's selection."),
+    )
+
+    def build(self):
+        h = self.p.heat
+        box = QGroupBox("Faces of the bounding box")
+        form = QFormLayout(box)
+        for face in FACES:
+            cb = QCheckBox("Symmetry plane")
+            cb.setChecked(face in h.symmetry)
+
+            def changed(on, face=face):
+                if face in h.symmetry:
+                    h.symmetry.remove(face)
+                if on:
+                    h.symmetry.append(face)
+                    h.symmetry.sort(key=FACES.index)
+                self.win.physics_changed()
+
+            cb.toggled.connect(changed)
+            form.addRow(face, cb)
+        self.outer.addWidget(box)
 
 
 class HeatInitialPanel(Panel):
