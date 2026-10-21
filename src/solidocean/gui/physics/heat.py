@@ -9,7 +9,7 @@ from ..panels import heat as hp
 from ..panels.common import toggle_bypass
 from ..panels.problem import sweep_summary
 from .base import PhysicsUI
-from .common import condition_highlights
+from .common import Tint, condition_highlights
 
 PLOT_HELP = {
     "time": "Any quantity of the temperature field against time (transient problems), one curve per variable "
@@ -19,6 +19,19 @@ PLOT_HELP = {
     "line": "A cross-section: the quantity along a straight line from a start to an end point, at one time step. "
             "Gaps mark holes or points outside the structure.",
 }
+
+
+def profile_tint(c, ev) -> Tint | None:
+    """A flux with a spatial profile tinted by it: the factor is relative to the value, its peak."""
+    prof = c.profile
+    if c.type != "flux" or not prof.shape:
+        return None
+    try:
+        prof.factor(ev, np.zeros((1, 3)))
+        scale, focus = (ev(prof.fwhm), tuple(ev(v) for v in prof.center)) if prof.shape == "gauss" else (None, None)
+    except Exception:          # an invalid profile: marked in its panel; tint the faces uniformly
+        return None
+    return Tint(c.type, lambda points: prof.factor(ev, points), scale, focus)
 
 
 class HeatUI(PhysicsUI):
@@ -74,7 +87,7 @@ class HeatUI(PhysicsUI):
 
     def highlights(self, project):
         return condition_highlights(project, project.heat.active_conditions,
-                                    {face: "symmetry" for face in project.heat.symmetry})
+                                    {face: "symmetry" for face in project.heat.symmetry}, profile_tint)
 
     # ---- results ---------------------------------------------------------------------
     def run_label(self, project):

@@ -83,8 +83,9 @@ def heat_pad() -> Project:
     return Project(
         name="Laser pulse on the ribbon with pad", physics_kind="heat", time_unit="us",
         description="TDTR experiment with Si ribbon held at T0 at both ends and a gold pad on top, heated by a "
-                    "laser pulse: a Gaussian beam (FWHM w, centred at x0 on the ribbon axis) of absorbed power P, "
-                    "which falls on the pad and, around it, on the ribbon; average pad temperature vs. time",
+                    "laser pulse: a Gaussian beam (FWHM w, centred at x0 on the ribbon axis) of absorbed power "
+                    "P, taken up by the pad only (the thin Si ribbon is nearly transparent at the laser wavelength, "
+                    "so its absorption is neglected); average pad temperature vs. time",
         variables={"L": "30[um]", "W": "5[um]", "t": "200[nm]", "D": "4[um]", "h": "100[nm]", "T0": "300[K]",
                     "P": "1[mW]", "w": "3[um]", "x0": "0[um]", "q0": "4*log(2)*P/(pi*w^2)",
                     "t_pulse": "200[ns]", "k_si": "148[W/(m*K)]", "S": "15[um]", "t_sio2": "1[um]"},
@@ -104,8 +105,6 @@ def heat_pad() -> Project:
         heat=HeatPhysics(initial="T0", conditions=[
             HeatCondition("temperature", ["zmin", "ymin", "xmin", "ymax", "xmax"], "T0", name="Ribbon ends"),
             HeatCondition("flux", ["zmax"], "q0", name="Laser on pad", on="Pad",
-                          pulse=Pulse("rect", duration="t_pulse"), profile=Profile("gauss", ["x0", "0"], "w")),
-            HeatCondition("flux", ["zmax"], "q0", name="Laser on ribbon", on="Ribbon",
                           pulse=Pulse("rect", duration="t_pulse"), profile=Profile("gauss", ["x0", "0"], "w"))],
             problem=HeatProblem("transient", t_start="0[ns]", t_end="10[us]", steps=310)),
         problem=Problem(sweep=VariableSweep("k_si", "[30, 60, 100, 148] * 1[W/(m*K)]")),

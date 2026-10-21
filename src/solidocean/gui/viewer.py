@@ -33,6 +33,9 @@ BC_LEGEND = {"periodic x": "Periodic x", "periodic y": "Periodic y", "periodic z
              "temperature": "Temperature", "flux": "Heat flux", "convection": "Convection",
              "radiation": "Radiation"}
 BC_BLEND = 0.6
+# profile tints (a beam spot): blend fraction of the faces where the factor is 0, and the factor change
+# across one triangle the geometry view refines down to
+TINT_FLOOR, REFINE_STEP = 0.15, 0.05
 # the opacity slider: at DEFAULT_OPACITY each view draws the structure at the opacity it asks for (plain geometry
 # at this value, more transparent with conditions or a line probe); MIN_OPACITY keeps it from vanishing
 DEFAULT_OPACITY, MIN_OPACITY = 0.75, 0.1
@@ -59,7 +62,8 @@ def _cell_colors(poly: pv.PolyData, domain: np.ndarray, conditions: dict[str, st
     box (e.g. the top of a pad: triangles in that plane within the box), or (face, object box or None, selection
     box or None) -> condition, where face may be "all" (the whole surface, of the object's box if given) and the
     selection box keeps only triangles inside it; periodic: (name, lattice vector) pairs, whose faces are found
-    as triangles that a lattice translation maps onto another triangle.
+    as triangles that a lattice translation maps onto another triangle. A condition that is a Tint
+    (gui.physics.common: a spatial profile) blends by its factor at each triangle's centre.
     """
     colors = colors or DEFAULT_COLORS
     base = np.array([_rgb(colors[d % len(colors)]) if d >= 0 else _rgb("#bbbbbb")
@@ -80,26 +84,95 @@ def _cell_colors(poly: pv.PolyData, domain: np.ndarray, conditions: dict[str, st
                 dist, _ = tree.query(centres + sign * np.asarray(vec))
                 on |= dist < 1e3 * tol
             rgb[on] = (1 - BC_BLEND) * rgb[on] + BC_BLEND * _rgb(BC_COLORS[f"periodic {name}"])
-    conditions = conditions or {}
-    for key, cond in conditions.items():
-        face, box, within = (tuple(key) + (None, None))[:3] if isinstance(key, tuple) else (key, None, None)
-        blo, bhi = (np.asarray(box[0]), np.asarray(box[1])) if box is not None else (lo, hi)
-        c = tri.mean(axis=1)
-        if face == "all":
-            on = np.ones(len(tri), dtype=bool)
-        else:
-            i = "xyz".index(face[0])
-            plane = blo[i] if face.endswith("min") else bhi[i]
-            on = np.all(np.abs(tri[:, :, i] - plane) < max(tol, 1e-3 * (bhi[i] - blo[i])), axis=1)
-        if box is not None:
-            pad = 1e-3 * np.linalg.norm(bhi - blo)
-            on &= np.all((c >= blo - pad) & (c <= bhi + pad), axis=1)
-        if within is not None:
-            wlo, whi = np.minimum(within[0], within[1]), np.maximum(within[0], within[1])
-            pad = 1e-3 * np.linalg.norm(hi - lo)
-            on &= np.all((tri >= np.asarray(wlo) - pad) & (tri <= np.asarray(whi) + pad), axis=(1, 2))
-        rgb[on] = (1 - BC_BLEND) * rgb[on] + BC_BLEND * _rgb(BC_COLORS[cond])
+    for key, cond in (conditions or {}).items():
+        on = _on_condition(tri, key, lo, hi, tol)
+        blend = BC_BLEND
+        if getattr(cond, "weight", None) is not None and on.any():   # a profile: tinted by its factor
+            blend = BC_BLEND * _tint_weight(cond, tri[on].mean(axis=1))[:, None]
+        rgb[on] = (1 - blend) * rgb[on] + blend * _rgb(BC_COLORS[cond])
     return rgb
+
+
+def _on_condition(tri: np.ndarray, key, lo, hi, tol) -> np.ndarray:
+    """Which triangles (n, 3 vertices, 3 coords) a condition key of _cell_colors covers."""
+    face, box, within = (tuple(key) + (None, None))[:3] if isinstance(key, tuple) else (key, None, None)
+    blo, bhi = (np.asarray(box[0]), np.asarray(box[1])) if box is not None else (lo, hi)
+    c = tri.mean(axis=1)
+    if face == "all":
+        on = np.ones(len(tri), dtype=bool)
+    else:
+        i = "xyz".index(face[0])
+        plane = blo[i] if face.endswith("min") else bhi[i]
+        on = np.all(np.abs(tri[:, :, i] - plane) < max(tol, 1e-3 * (bhi[i] - blo[i])), axis=1)
+    if box is not None:
+        pad = 1e-3 * np.linalg.norm(bhi - blo)
+        on &= np.all((c >= blo - pad) & (c <= bhi + pad), axis=1)
+    if within is not None:
+        wlo, whi = np.minimum(within[0], within[1]), np.maximum(within[0], within[1])
+        pad = 1e-3 * np.linalg.norm(hi - lo)
+        on &= np.all((tri >= np.asarray(wlo) - pad) & (tri <= np.asarray(whi) + pad), axis=(1, 2))
+    return on
+
+
+def _profile(tint, points: np.ndarray) -> np.ndarray:
+    """A Tint's factor at points (n, 3), as a tint strength in [0, 1]; 1 everywhere if it cannot be evaluated."""
+    try:
+        f = np.abs(np.asarray(tint.weight(points), dtype=float)).reshape(len(points))
+        return np.clip(np.nan_to_num(f), 0, 1)
+    except Exception:
+        return np.ones(len(points))
+
+
+def _tint_weight(tint, points: np.ndarray) -> np.ndarray:
+    """Blend fraction of a Tint at triangle centres: TINT_FLOOR keeps the whole selection visible."""
+    return TINT_FLOOR + (1 - TINT_FLOOR) * _profile(tint, points)
+
+
+def _needs_refining(tri: np.ndarray, tint) -> np.ndarray:
+    """Triangles over which a Tint's factor varies by more than REFINE_STEP, or larger than a quarter of its
+    scale near its focus (a spot that falls between the vertices of a coarse triangle)."""
+    corners = tri
+    mids = (tri + np.roll(tri, -1, axis=1)) / 2
+    samples = np.concatenate([corners, mids, tri.mean(axis=1, keepdims=True)], axis=1)   # (n, 7, 3)
+    f = _profile(tint, samples.reshape(-1, 3)).reshape(len(tri), -1)
+    need = f.max(axis=1) - f.min(axis=1) > REFINE_STEP
+    if tint.scale and tint.focus is not None:
+        edge = np.linalg.norm(np.roll(tri, -1, axis=1) - tri, axis=2).max(axis=1)
+        dist = np.linalg.norm(tri.mean(axis=1)[:, :2] - np.asarray(tint.focus, dtype=float), axis=1)
+        need |= (edge > tint.scale / 4) & (dist < 2 * tint.scale + edge)
+    return need
+
+
+def _refine_tinted(points: np.ndarray, triangles: np.ndarray, domain: np.ndarray, conditions,
+                   levels=10, max_triangles=200_000):
+    """Split the triangles under a profile Tint into four, where needed, until its variation is resolved
+    (the preview is far coarser than a beam spot). Returns points, triangles and domain; the new triangles leave
+    hanging nodes, harmless for flat per-triangle colours."""
+    tints = [(key, c) for key, c in (conditions or {}).items() if getattr(c, "weight", None) is not None]
+    if not tints:
+        return points, triangles, domain
+    pts, tris, dom = np.asarray(points, dtype=float), np.asarray(triangles), np.asarray(domain)
+    lo, hi = pts.min(axis=0), pts.max(axis=0)
+    tol = 1e-6 * np.linalg.norm(hi - lo)
+    for _ in range(levels):
+        tri = pts[tris]
+        split = np.zeros(len(tris), dtype=bool)
+        for key, tint in tints:
+            on = np.flatnonzero(_on_condition(tri, key, lo, hi, tol) & ~split)
+            if len(on):
+                split[on[_needs_refining(tri[on], tint)]] = True
+        n = int(split.sum())
+        if not n or len(tris) + 3 * n > max_triangles:
+            break
+        a, b, c = tris[split].T
+        m01 = len(pts) + np.arange(n)
+        m12, m20 = m01 + n, m01 + 2 * n
+        pts = np.vstack([pts, (pts[a] + pts[b]) / 2, (pts[b] + pts[c]) / 2, (pts[c] + pts[a]) / 2])
+        children = np.concatenate([np.stack(t, axis=1) for t in
+                                   ((a, m01, m20), (m01, b, m12), (m20, m12, c), (m01, m12, m20))])
+        tris = np.vstack([tris[~split], children])
+        dom = np.concatenate([dom[~split], np.tile(dom[split], 4)])
+    return pts, tris, dom
 
 
 def _linear_grid(mesh: Mesh) -> pv.UnstructuredGrid:
@@ -459,12 +532,16 @@ class Viewer(QWidget):
         self.plotter.clear()
         faces = np.hstack([np.full((len(preview.triangles), 1), 3), preview.triangles]).ravel()
         poly = pv.PolyData(preview.points, faces)
+        edges = poly.extract_feature_edges(30)    # of the preview: refined triangles leave hanging nodes
+        points, triangles, domain = _refine_tinted(preview.points, preview.triangles, preview.domain, conditions)
+        if len(triangles) != len(preview.triangles):
+            poly = pv.PolyData(points, np.hstack([np.full((len(triangles), 1), 3), triangles]).ravel())
         colors = [material_colors[n] for n in preview.material_names] if material_colors else None
-        poly.cell_data["rgb"] = _cell_colors(poly, preview.domain, conditions, periodic, colors)
+        poly.cell_data["rgb"] = _cell_colors(poly, domain, conditions, periodic, colors)
         actor = self.plotter.add_mesh(poly, scalars="rgb", rgb=True, smooth_shading=True, specular=0.2)
         self._surface = (actor, opacity)
         self._apply_opacity()
-        self.plotter.add_mesh(poly.extract_feature_edges(30), color="#333333", line_width=1)
+        self.plotter.add_mesh(edges, color="#333333", line_width=1)
         self._legend(preview.material_names, conditions, periodic, colors)
         self._finish(reset_camera)
 
