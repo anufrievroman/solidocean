@@ -391,7 +391,7 @@ def _set_periodic(periods: dict[str, float], s: float) -> None:
     for ax, period in periods.items():
         i = AXES.index(ax)
         L = period * s
-        if abs((hi[i] - lo[i]) - L) > 1e-6 * max(L, 1e-30):
+        if abs((hi[i] - lo[i]) - L) > max(eps, 1e-6 * max(L, 1e-30)):
             raise ValueError(
                 f"periodic along {ax}: the geometry is {(hi[i] - lo[i]) / s * 1e6:.4g} µm long in {ax} but the "
                 f"period is {period * 1e6:.4g} µm. Make the block size along {ax} equal to the period, or use a "
