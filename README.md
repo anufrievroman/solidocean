@@ -29,6 +29,8 @@ Essentially, it is a Qt user interface uniting several open-source tools for cre
   resistive layers at interfaces.
 - **Frequency domain** problems with the temperature oscillation driven at one frequency, as in the 3ω and
   FDTR methods.
+- **Hydrodynamic** phonon heat transport (steady Guyer–Krumhansl equation): the heat flux is solved together
+  with the temperature, giving Poiseuille flow in narrow structures and heat vortices beside current contacts.
 
 The [formalism](https://anufrievroman.gitbook.io/solidocean/physics) pages describe the equations, elements and solvers, and the [tutorials](https://anufrievroman.gitbook.io/solidocean/tutorials) walk through example models.
 

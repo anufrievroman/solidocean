@@ -31,6 +31,7 @@ from ...geometry import evaluate_features
 from ...results.field import FieldResults
 from ..base import Cancelled, LogFn
 from . import fields as heat_fields
+from . import hydro
 from . import interfaces
 from .interfaces import Contacts
 from .properties import Conductivity, Properties
@@ -63,7 +64,8 @@ class Radiation:
 @dataclass
 class HeatResults(FieldResults):
     T: list = field(default_factory=list)                   # per variable value: (n_t, N) nodal temperatures (K)
-    kels: dict = field(default_factory=dict, repr=False)    # per variable value: properties.Conductivity
+    kels: dict = field(default_factory=dict, repr=False)    # per variable value: properties.Conductivity, or the
+    #                                                         nodal heat flux (fields.HydroFlux) of a hydrodynamic problem
 
     def point_values(self, i: int, j: int, expr: str, scalars, sampler) -> np.ndarray:
         return fields.evaluate_points(expr, scalars, sampler, heat_fields.at_points(sampler, self.T[i][j], self.kels[i]))
@@ -81,6 +83,8 @@ class HeatResults(FieldResults):
         arrays = {}
         for i, T in enumerate(self.T):
             arrays[f"T{i}"] = T
+            if isinstance(self.kels.get(i), heat_fields.HydroFlux):
+                arrays[f"q_flux{i}"] = self.kels[i].q
             if i in self.meshes:
                 arrays[f"points{i}"] = self.meshes[i].points
                 arrays[f"cells{i}"] = self.meshes[i].cells
@@ -318,6 +322,9 @@ class HeatSolver:
         m = self.model(ev)
         st = p.heat.problem
         backend = p.problem.solver
+        if st.type == "hydrodynamic":
+            T, self._flux = hydro.solve(self, ev, m)
+            return np.zeros(1), T[None]
         if st.type == "frequency":
             A_bc, b, fixed, _, radiation = self.system(ev, m, harmonic=True)
             return np.zeros(1), self._harmonic(ev, m, A_bc, b, fixed, radiation, backend)[None]
@@ -477,6 +484,8 @@ class HeatSolver:
             m = self._model
             temps.append(T)
             meshes[i], kels[i] = m.mesh, m.cond
+            if p.heat.problem.type == "hydrodynamic":
+                kels[i] = heat_fields.HydroFlux(self._flux)
             if np.iscomplexobj(T) and m.props.k_varies:      # flux of the oscillation: k at the initial temperature
                 T0e = self._T0(ev, m)[m.mesh.cells[:, :4]].mean(axis=1)
                 kels[i] = m.props.conductivity(m.mesh.cell_domain, T0e)
@@ -484,7 +493,7 @@ class HeatSolver:
                 m.quad = fields.Quadrature.of(m.mesh)
             for q in quantities:
                 qvals[q].append([fields.evaluate(q, {**ev.values, "time": t}, m.quad,
-                                                 partial(heat_fields.at_quadrature, T=Tj, kel=m.cond))
+                                                 partial(heat_fields.at_quadrature, T=Tj, kel=kels[i]))
                                  for t, Tj in zip(times, T)])
             if np.iscomplexobj(T):
                 self.log(f"  temperature amplitude: up to {np.abs(T[-1]).max():.6g} K")

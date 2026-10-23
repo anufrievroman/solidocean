@@ -14,7 +14,7 @@ Expr = str | float | int
 
 HEAT_CONDITION_TYPES = ("temperature", "flux", "convection", "radiation")
 ADDITIVE = ("flux", "radiation")       # may share a face with another condition: their heat flows add
-HEAT_PROBLEM_TYPES = ("stationary", "transient", "frequency")
+HEAT_PROBLEM_TYPES = ("stationary", "transient", "frequency", "hydrodynamic")
 INTERFACE_TYPES = ("resistance", "layer")
 PULSE_SHAPES = ("", "rect", "gauss", "sine")   # "" = constant in time
 PROFILE_SHAPES = ("", "gauss", "expr")         # "" = uniform in space
@@ -172,7 +172,8 @@ class HeatInterface:
 
 @dataclass
 class HeatProblem:
-    type: str = "stationary"           # stationary | transient | frequency (small-signal harmonic response)
+    type: str = "stationary"           # stationary | transient | frequency (small-signal harmonic response) |
+    #                                    hydrodynamic (steady Guyer-Krumhansl phonon flow, physics/heat/hydro.py)
     t_end: Expr = "1[us]"
     t_start: Expr = "0[s]"             # may be negative, e.g. to settle before a pulse at t = 0
     steps: int = 100
@@ -184,13 +185,18 @@ class HeatProblem:
     max_iter: int = 50
     # frequency domain: every flux and source oscillates at this frequency (sweep it with a variable)
     frequency: Expr = "f"
+    # hydrodynamic: viscous length l of the Guyer-Krumhansl equation q + k grad T = l^2 (lap q + 2 grad div q);
+    # l = 0 is Fourier's law, l comparable to the structure's size gives Poiseuille flow and heat vortices
+    viscous_length: Expr = "1[um]"
 
     def to_dict(self):
         d = {"type": self.type, "t_start": self.t_start, "t_end": self.t_end, "steps": self.steps,
              "theta": self.theta, "save_every": self.save_every, "tol": self.tol, "max_iter": self.max_iter}
         if self.type == "frequency":
             d = {"type": self.type, "frequency": self.frequency}
-        return without_defaults(self, d, keep=("type", "frequency"))
+        if self.type == "hydrodynamic":
+            d = {"type": self.type, "viscous_length": self.viscous_length}
+        return without_defaults(self, d, keep=("type", "frequency", "viscous_length"))
 
 
 @dataclass
@@ -360,6 +366,8 @@ def validate_settings(project, ev, material_names) -> list[str]:
     st = h.problem
     if st.type not in HEAT_PROBLEM_TYPES:
         errors.append(f"heat.problem.type must be one of {', '.join(HEAT_PROBLEM_TYPES)}")
+    if st.type == "hydrodynamic":
+        errors += _check_hydrodynamic(project, ev)
     if st.type == "frequency":
         try:
             if ev(st.frequency) <= 0:
@@ -383,6 +391,30 @@ def validate_settings(project, ev, material_names) -> list[str]:
         fields.check(h.initial, ev.values, fields=(), scalars=("time",))     # may use x, y, z
     except Exception as exc:
         errors.append(f"heat.initial: {exc}")
+    return errors
+
+
+def _check_hydrodynamic(project, ev) -> list[str]:
+    """What the hydrodynamic problem does not support (see physics/heat/hydro.py)."""
+    from .properties import nonlinear
+    h, errors = project.heat, []
+    try:
+        if ev(h.problem.viscous_length) < 0:
+            errors.append("heat.problem.viscous_length must not be negative")
+    except Exception as exc:
+        errors.append(f"heat.problem.viscous_length: {exc}")
+    if project.mesh.order != 2:
+        errors.append("hydrodynamic heat transport needs quadratic elements (mesh.order = 2)")
+    for c in h.active_conditions:
+        if c.type not in ("temperature", "flux"):
+            errors.append(f"heat condition '{c.name or c.type}': a hydrodynamic problem has only temperature and "
+                          f"flux conditions")
+        elif c.type == "flux" and c.pulse.shape:
+            errors.append(f"heat condition '{c.name or c.type}': a hydrodynamic problem is steady (no pulse)")
+    if h.active_interfaces:
+        errors.append("hydrodynamic heat transport has no thermal contacts (heat.interfaces)")
+    if nonlinear(project):
+        errors.append("hydrodynamic heat transport needs temperature-independent material properties")
     return errors
 
 

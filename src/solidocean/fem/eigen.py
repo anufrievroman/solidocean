@@ -39,8 +39,9 @@ class SingularMatrix(ValueError):
     caller that knows the mesh can add to it what the solver cannot know: which element is to blame."""
 
 
-def _factorize(A: sp.spmatrix, which: str = "auto"):
-    """Return a solve(b) function for sparse A."""
+def _factorize(A: sp.spmatrix, which: str = "auto", permc: str = "MMD_AT_PLUS_A"):
+    """Return a solve(b) function for sparse A. permc: the column ordering of SuperLU (COLAMD for saddle-point
+    systems, whose zero block makes the default one fill in without end)."""
     try:
         if backend(which) == "mumps":
             import mumps
@@ -50,7 +51,7 @@ def _factorize(A: sp.spmatrix, which: str = "auto"):
             ctx.set_matrix(sp.triu(A, format="coo") if real else A.tocoo(), symmetric=real)
             ctx.factor()
             return ctx.solve
-        lu = sla.splu(A.tocsc(), permc_spec="MMD_AT_PLUS_A")
+        lu = sla.splu(A.tocsc(), permc_spec=permc)
     except Exception as exc:
         raise SingularMatrix(f"the system matrix is singular: it could not be factorised ({exc})") from exc
     return lu.solve

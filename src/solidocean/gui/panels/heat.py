@@ -15,7 +15,7 @@ from ...selection import ALL_FACES, FACES, selection_text
 from .problem import solver_box
 from .common import (
     ERROR_STYLE, ExprEdit, Panel, bypass_row, bypassed_label, equations, field_quantity_rows, muted_label, objects,
-    outer_labels, selection_box,
+    outer_labels, references, selection_box,
 )
 
 
@@ -528,14 +528,42 @@ HEAT_PROBLEM_FORMALISM = {
 }
 
 
-HEAT_PROBLEM_TITLES = {"stationary": "Stationary", "transient": "Transient", "frequency": "Frequency domain"}
+HEAT_PROBLEM_FORMALISM["hydrodynamic"] = equations(
+    ("q + k ∇T = ℓ² [∇²q + 2∇(∇·q)],   ∇·q = Q", "Steady hydrodynamic phonon heat transport, the Guyer–Krumhansl "
+     "equation [1, 2] in the form derived from the Peierls–Boltzmann equation with the Callaway scattering model "
+     "[2]. The heat flux q is an unknown next to the temperature T; k is the conductivity of the material and Q "
+     "the volume heat source. The first term is the drag of the momentum-destroying (resistive) scattering, the "
+     "bracket is the viscosity of the phonon gas produced by momentum-conserving (normal) scattering."),
+    ("ℓ² = η τ<sub>R</sub>,   η = β v<sub>g</sub>² τ<sub>N</sub>,   k = α C v<sub>g</sub>² τ<sub>R</sub>",
+     "The viscous length ℓ (Problem → Viscous length) from the kinematic viscosity η, the resistive and normal "
+     "relaxation times τ<sub>R</sub> and τ<sub>N</sub>, the group velocity v<sub>g</sub>, the heat capacity C and "
+     "model constants α, β [2]: only ℓ and k enter the solution. For ℓ → 0 it is Fourier's law q = −k∇T."),
+    ("χ = w² / ℓ²", "Compares a structure's width w with ℓ: for χ ≳ 30 the transport is diffusive (Fourier), for "
+     "χ ≲ 10 heat flows in Poiseuille profiles and forms vortices beside contacts, with heat flowing from the "
+     "cold to the hot side of them [2]."),
+    ("[A G; Gᵀ 0] [q; T] = [f; −F]", "Weak form with test functions w (vector) and v: ∫ q·w / k + (ℓ²/k) ∫ "
+     "(∇q : ∇w + 2 ∇·q ∇·w) − ∫ T ∇·w = −∮ T<sub>D</sub> w·n and ∫ v ∇·q = ∫ v Q. Like Stokes flow (q: velocity, "
+     "T: pressure), it uses a stable pair of elements: quadratic q on all the nodes and linear T on the vertices "
+     "(Taylor–Hood), so the mesh must be quadratic. One sparse direct solve of the symmetric indefinite system."),
+    ("Boundaries", "Temperature: a heat bath, the surface term above (T prescribed, q free). Flux: q = −flux · n, "
+     "no slip along the face. Other faces, and the edges where a bath meets them: insulated walls with no slip, "
+     "q = 0. Symmetry planes: the normal component of q is zero, the tangential ones are free, so a slab closed by "
+     "symmetry planes is a 2D model. Not supported: convection, radiation, thermal contacts, pulses, "
+     "temperature-dependent or anisotropic conductivity, a time derivative (second sound)."),
+    references("R. A. Guyer and J. A. Krumhansl, Phys. Rev. 148, 766 (1966)",
+               "M.-Y. Shang, C. Zhang, Z. Guo and J.-T. Lü, Sci. Rep. 10, 8272 (2020)"),
+)
+
+HEAT_PROBLEM_TITLES = {"stationary": "Stationary", "transient": "Transient", "frequency": "Frequency domain",
+                       "hydrodynamic": "Hydrodynamic (phonon)"}
 
 
 class HeatProblemPanel(Panel):
     help = ("Stationary: the steady temperature field. Transient: the temperature evolution from the initial "
             "values at the start time, implicit time stepping. Frequency domain: the amplitude and phase of the "
             "temperature oscillation driven by sources at one frequency (3ω, FDTR). A variable sweep (Problem → "
-            "Variable sweep) repeats any of them, e.g. over the frequency.")
+            "Variable sweep) repeats any of them, e.g. over the frequency. Hydrodynamic: steady phonon flow with "
+            "viscosity (Guyer–Krumhansl): Poiseuille flow and heat vortices in narrow structures.")
     action = ("Run ▶︎", "compute")
 
     def __init__(self, win):
@@ -563,6 +591,17 @@ class HeatProblemPanel(Panel):
                                  "oscillate, convection and radiation are sinks. Results are the complex amplitude "
                                  "of the temperature: Tamp, Tphase (degrees, negative = lagging), Tre, Tim. "
                                  "Temperature-dependent properties are taken at the initial temperature."))
+        if st.type == "hydrodynamic":
+            length = ExprEdit(self.win, lambda: st.viscous_length, lambda t: setattr(st, "viscous_length", t or "1[um]"))
+            length.setToolTip("Viscous length ℓ = √(ητ_R) of the Guyer-Krumhansl equation: Fourier's law for ℓ ≪ the "
+                              "structure, Poiseuille flow and heat vortices for ℓ comparable to its width "
+                              "(χ = w²/ℓ² ≲ 10)")
+            f.addRow("Viscous length", length)
+            f.addRow(muted_label("Steady phonon hydrodynamics: the heat flux is solved for together with the "
+                                 "temperature. Temperature conditions are heat baths, flux conditions prescribe the "
+                                 "normal flux, and the other faces are insulated no-slip walls; symmetry planes are "
+                                 "free-slip. Needs quadratic mesh elements, constant isotropic conductivity, and no "
+                                 "convection, radiation or thermal contacts."))
         if st.type == "transient":
             start = ExprEdit(self.win, lambda: st.t_start, lambda t: setattr(st, "t_start", t or "0[s]"))
             start.setToolTip("Time of the initial values; may be negative, e.g. -50[ns] to start before a pulse "

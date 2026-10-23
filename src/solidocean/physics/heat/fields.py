@@ -19,6 +19,14 @@ def _harmonic(Tc: np.ndarray) -> dict:
     return dict(Tre=np.real(Tc), Tim=np.imag(Tc), Tamp=np.abs(Tc), Tphase=np.degrees(np.angle(Tc)))
 
 
+class HydroFlux:
+    """The solved heat flux of a hydrodynamic problem, nodal (N, 3), in place of the conductivity: there the flux is
+    not -k grad T (physics/heat/hydro.py)."""
+
+    def __init__(self, q: np.ndarray):
+        self.q = q
+
+
 def _flux(kel, elements: np.ndarray, T: np.ndarray, g: np.ndarray) -> np.ndarray:
     """-k grad T at points of the given elements (...) with temperatures T (...) and gradients g (..., 3); kel:
     a properties.Conductivity, or the (E, 3, 3) conductivity of every element."""
@@ -36,7 +44,8 @@ def at_quadrature(quad, T: np.ndarray, kel=None) -> dict:
         out = dict(Tx=g[..., 0], Ty=g[..., 1], Tz=g[..., 2])
         if kel is not None:
             Tq = quad.at_points(Tr)
-            q = _flux(kel, np.broadcast_to(quad.elements[:, None], Tq.shape), Tq, g)
+            q = quad.at_points(kel.q) if isinstance(kel, HydroFlux) else \
+                _flux(kel, np.broadcast_to(quad.elements[:, None], Tq.shape), Tq, g)
             out.update(qx=q[..., 0], qy=q[..., 1], qz=q[..., 2])
         return out
 
@@ -57,7 +66,10 @@ def at_points(sampler, T: np.ndarray, kel=None) -> dict:
     if kel is not None:
         q = np.full((len(g), 3), np.nan)
         inside = sampler.inside
-        q[inside] = _flux(kel, sampler.elem[inside], Tp[inside], g[inside])
+        if isinstance(kel, HydroFlux):
+            q = np.stack([sampler.values(kel.q[:, i]) for i in range(3)], axis=-1)
+        else:
+            q[inside] = _flux(kel, sampler.elem[inside], Tp[inside], g[inside])
         out.update(qx=q[:, 0], qy=q[:, 1], qz=q[:, 2])
     return out
 
@@ -74,7 +86,9 @@ def at_nodes(mesh, T: np.ndarray, kel=None) -> dict:
     def gradient():
         g = corner_gradients(mesh, Tr)                               # (E, 4, 3)
         out = {f"T{a}": to_nodes(mesh, g[..., i]) for i, a in enumerate("xyz")}
-        if kel is not None:
+        if isinstance(kel, HydroFlux):
+            out.update({f"q{a}": kel.q[:, i] for i, a in enumerate("xyz")})
+        elif kel is not None:
             Tc = Tr[mesh.cells[:, :4]]                               # (E, 4) at the corners
             q = _flux(kel, np.broadcast_to(np.arange(len(Tc))[:, None], Tc.shape), Tc, g)
             out.update({f"q{a}": to_nodes(mesh, q[..., i]) for i, a in enumerate("xyz")})
