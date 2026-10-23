@@ -528,14 +528,25 @@ HEAT_PROBLEM_FORMALISM = {
 }
 
 
-HEAT_PROBLEM_TITLES = {"stationary": "Stationary", "transient": "Transient", "frequency": "Frequency domain"}
+HEAT_PROBLEM_FORMALISM["hydrodynamic"] = equations(
+    ("q + k∇T = ℓ² (∇²q + 2∇(∇·q)),  ∇·q = Q", "Steady hydrodynamic (Guyer–Krumhansl) phonon heat transport: the heat "
+     "flux q is an unknown next to T, with the viscous length ℓ² = ητ<sub>R</sub>. For ℓ → 0 it is Fourier's law."),
+    ("[A G; Gᵀ 0] [q; T] = [f; −F]", "Like Stokes flow (q: velocity, T: pressure): quadratic q and linear T "
+     "(Taylor–Hood, quadratic mesh needed), one sparse direct solve."),
+    "Boundaries: temperature = heat bath (T prescribed, q free); flux = prescribed normal flux, no slip along the "
+    "face; other faces = insulated walls, no slip (q = 0); symmetry planes: normal q = 0, tangential q free.",
+)
+
+HEAT_PROBLEM_TITLES = {"stationary": "Stationary", "transient": "Transient", "frequency": "Frequency domain",
+                       "hydrodynamic": "Hydrodynamic (phonon)"}
 
 
 class HeatProblemPanel(Panel):
     help = ("Stationary: the steady temperature field. Transient: the temperature evolution from the initial "
             "values at the start time, implicit time stepping. Frequency domain: the amplitude and phase of the "
             "temperature oscillation driven by sources at one frequency (3ω, FDTR). A variable sweep (Problem → "
-            "Variable sweep) repeats any of them, e.g. over the frequency.")
+            "Variable sweep) repeats any of them, e.g. over the frequency. Hydrodynamic: steady phonon flow with "
+            "viscosity (Guyer–Krumhansl): Poiseuille flow and heat vortices in narrow structures.")
     action = ("Run ▶︎", "compute")
 
     def __init__(self, win):
@@ -563,6 +574,17 @@ class HeatProblemPanel(Panel):
                                  "oscillate, convection and radiation are sinks. Results are the complex amplitude "
                                  "of the temperature: Tamp, Tphase (degrees, negative = lagging), Tre, Tim. "
                                  "Temperature-dependent properties are taken at the initial temperature."))
+        if st.type == "hydrodynamic":
+            length = ExprEdit(self.win, lambda: st.viscous_length, lambda t: setattr(st, "viscous_length", t or "1[um]"))
+            length.setToolTip("Viscous length ℓ = √(ητ_R) of the Guyer-Krumhansl equation: Fourier's law for ℓ ≪ the "
+                              "structure, Poiseuille flow and heat vortices for ℓ comparable to its width "
+                              "(χ = w²/ℓ² ≲ 10)")
+            f.addRow("Viscous length", length)
+            f.addRow(muted_label("Steady phonon hydrodynamics: the heat flux is solved for together with the "
+                                 "temperature. Temperature conditions are heat baths, flux conditions prescribe the "
+                                 "normal flux, and the other faces are insulated no-slip walls; symmetry planes are "
+                                 "free-slip. Needs quadratic mesh elements, constant isotropic conductivity, and no "
+                                 "convection, radiation or thermal contacts."))
         if st.type == "transient":
             start = ExprEdit(self.win, lambda: st.t_start, lambda t: setattr(st, "t_start", t or "0[s]"))
             start.setToolTip("Time of the initial values; may be negative, e.g. -50[ns] to start before a pulse "

@@ -92,7 +92,8 @@ class HeatUI(PhysicsUI):
     # ---- results ---------------------------------------------------------------------
     def run_label(self, project):
         return {"transient": "Solving heat transfer (transient)…",
-                "frequency": "Solving heat transfer (frequency domain)…"}.get(project.heat.problem.type,
+                "frequency": "Solving heat transfer (frequency domain)…",
+                "hydrodynamic": "Solving hydrodynamic heat transport…"}.get(project.heat.problem.type,
                                                                               "Solving heat transfer…")
 
     def show_field(self, win):
