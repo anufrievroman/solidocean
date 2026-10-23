@@ -15,7 +15,7 @@ from ...selection import ALL_FACES, FACES, selection_text
 from .problem import solver_box
 from .common import (
     ERROR_STYLE, ExprEdit, Panel, bypass_row, bypassed_label, equations, field_quantity_rows, muted_label, objects,
-    outer_labels, selection_box,
+    outer_labels, references, selection_box,
 )
 
 
@@ -529,12 +529,29 @@ HEAT_PROBLEM_FORMALISM = {
 
 
 HEAT_PROBLEM_FORMALISM["hydrodynamic"] = equations(
-    ("q + k∇T = ℓ² (∇²q + 2∇(∇·q)),  ∇·q = Q", "Steady hydrodynamic (Guyer–Krumhansl) phonon heat transport: the heat "
-     "flux q is an unknown next to T, with the viscous length ℓ² = ητ<sub>R</sub>. For ℓ → 0 it is Fourier's law."),
-    ("[A G; Gᵀ 0] [q; T] = [f; −F]", "Like Stokes flow (q: velocity, T: pressure): quadratic q and linear T "
-     "(Taylor–Hood, quadratic mesh needed), one sparse direct solve."),
-    "Boundaries: temperature = heat bath (T prescribed, q free); flux = prescribed normal flux, no slip along the "
-    "face; other faces = insulated walls, no slip (q = 0); symmetry planes: normal q = 0, tangential q free.",
+    ("q + k ∇T = ℓ² [∇²q + 2∇(∇·q)],   ∇·q = Q", "Steady hydrodynamic phonon heat transport, the Guyer–Krumhansl "
+     "equation [1, 2] in the form derived from the Peierls–Boltzmann equation with the Callaway scattering model "
+     "[2]. The heat flux q is an unknown next to the temperature T; k is the conductivity of the material and Q "
+     "the volume heat source. The first term is the drag of the momentum-destroying (resistive) scattering, the "
+     "bracket is the viscosity of the phonon gas produced by momentum-conserving (normal) scattering."),
+    ("ℓ² = η τ<sub>R</sub>,   η = β v<sub>g</sub>² τ<sub>N</sub>,   k = α C v<sub>g</sub>² τ<sub>R</sub>",
+     "The viscous length ℓ (Problem → Viscous length) from the kinematic viscosity η, the resistive and normal "
+     "relaxation times τ<sub>R</sub> and τ<sub>N</sub>, the group velocity v<sub>g</sub>, the heat capacity C and "
+     "model constants α, β [2]: only ℓ and k enter the solution. For ℓ → 0 it is Fourier's law q = −k∇T."),
+    ("χ = w² / ℓ²", "Compares a structure's width w with ℓ: for χ ≳ 30 the transport is diffusive (Fourier), for "
+     "χ ≲ 10 heat flows in Poiseuille profiles and forms vortices beside contacts, with heat flowing from the "
+     "cold to the hot side of them [2]."),
+    ("[A G; Gᵀ 0] [q; T] = [f; −F]", "Weak form with test functions w (vector) and v: ∫ q·w / k + (ℓ²/k) ∫ "
+     "(∇q : ∇w + 2 ∇·q ∇·w) − ∫ T ∇·w = −∮ T<sub>D</sub> w·n and ∫ v ∇·q = ∫ v Q. Like Stokes flow (q: velocity, "
+     "T: pressure), it uses a stable pair of elements: quadratic q on all the nodes and linear T on the vertices "
+     "(Taylor–Hood), so the mesh must be quadratic. One sparse direct solve of the symmetric indefinite system."),
+    ("Boundaries", "Temperature: a heat bath, the surface term above (T prescribed, q free). Flux: q = −flux · n, "
+     "no slip along the face. Other faces, and the edges where a bath meets them: insulated walls with no slip, "
+     "q = 0. Symmetry planes: the normal component of q is zero, the tangential ones are free, so a slab closed by "
+     "symmetry planes is a 2D model. Not supported: convection, radiation, thermal contacts, pulses, "
+     "temperature-dependent or anisotropic conductivity, a time derivative (second sound)."),
+    references("R. A. Guyer and J. A. Krumhansl, Phys. Rev. 148, 766 (1966)",
+               "M.-Y. Shang, C. Zhang, Z. Guo and J.-T. Lü, Sci. Rep. 10, 8272 (2020)"),
 )
 
 HEAT_PROBLEM_TITLES = {"stationary": "Stationary", "transient": "Transient", "frequency": "Frequency domain",

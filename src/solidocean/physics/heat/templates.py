@@ -264,6 +264,42 @@ def heat_fdtr() -> Project:
                           y_label="Amplitude of the probed temperature (K)", style=PlotStyle(x_log=True, y_log=True))])
 
 
+def heat_vortices() -> Project:
+    flux = ResultPlot.field_view("Vertical heat flux", "coolwarm")
+    flux.quantity = "qy"
+    return Project(
+        name="Hydrodynamic heat vortices", physics_kind="heat", length_unit="um",
+        description="Phonon hydrodynamics (Guyer-Krumhansl, steady): heat of power P is injected through a contact "
+                    "on one side of a ribbon of width w and removed through the opposite contact, as in Fig. 1c "
+                    "of Shang et al., Sci. Rep. 10, 8272 (2020). Walls do not slip; the ends are heat baths "
+                    "and the slab is closed by symmetry planes, so the model is 2D. Viscosity makes the heat flow "
+                    "in two vortices beside the direct flow, backwards, from the cold side to the hot side of "
+                    "the contacts, when chi = w^2 / l^2 is below about 10 (l, the viscous length, comes from the "
+                    "normal and resistive scattering times); above it the transport is diffusive and the "
+                    "vortices disappear. Sweep over chi: the strongest backflow against the strongest forward "
+                    "flow. The same flux is given by an exact solution of the infinite strip (Fourier "
+                    "transform of the stream function)",
+        variables={"w": "10[um]", "L": "8*w", "t": "w/4", "chi": "0.5", "ell": "w/sqrt(chi)", "s": "0.15*w",
+                    "P": "10[uW]", "q0": "P / (t * s * sqrt(2*pi))", "T0": "300[K]"},
+        materials=[_si()],
+        objects=[Feature("block", "Ribbon", material="Si", params={"center": ["0", "0", "0"],
+                                                                   "size": ["L", "w", "t"]})],
+        mesh=MeshSettings(max_size="w/8"),
+        heat=HeatPhysics(initial="T0", symmetry=["zmin", "zmax"], conditions=[
+            HeatCondition("temperature", ["xmin", "xmax"], "T0", name="Heat baths"),
+            HeatCondition("flux", ["ymin"], "q0", name="Source", profile=Profile("expr", expr="exp(-x^2/(2*s^2))")),
+            HeatCondition("flux", ["ymax"], "-q0", name="Drain", profile=Profile("expr", expr="exp(-x^2/(2*s^2))"))],
+            problem=HeatProblem(type="hydrodynamic", viscous_length="ell")),
+        problem=Problem(sweep=VariableSweep("chi", "[0.2, 0.5, 1, 3, 10, 30, 100]")),
+        plots=[field_plot(), flux,
+               field_plot("Heat flux magnitude", "sqrt(qx^2 + qy^2 + qz^2)"),
+               ResultPlot("Vertical heat flux across the ribbon", "qy", kind="line", start=["-2*w", "0", "0"],
+                          end=["2*w", "0", "0"], y_label="Heat flux q_y (W/m²)", style=PlotStyle(markers=False)),
+               ResultPlot("Backflow", "min(qy) / max(qy)", kind="quantity",
+                          y_label="Strongest backflow / strongest forward flow", x_label="χ = w² / ℓ²",
+                          style=PlotStyle(x_log=True))])
+
+
 TEMPLATES = {  # in display order
     # heat transfer
     "heat_empty": Template("Empty model", heat_empty, "heat"),
@@ -275,4 +311,5 @@ TEMPLATES = {  # in display order
     "heat_contact": Template("Thermal boundary resistance", heat_contact, "heat"),
     "heat_3omega": Template("3ω method: heater line on glass", heat_3omega, "heat"),
     "heat_fdtr": Template("FDTR: gold transducer on silicon", heat_fdtr, "heat"),
+    "heat_vortices": Template("Hydrodynamic heat vortices", heat_vortices, "heat"),
 }
