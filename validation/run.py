@@ -26,10 +26,10 @@ import traceback
 import common
 
 CASES = ["lamb_plate", "zone_spectra", "free_sphere", "driven_bar", "lame_cylinder", "semi_infinite",
-         "spreading_disk", "contact_stack", "three_omega", "fdtr"]
+         "spreading_disk", "contact_stack", "three_omega", "fdtr", "hydro_vortex"]
 GROUPS = [("Elastic waves and vibrations", ["lamb_plate", "zone_spectra", "free_sphere", "driven_bar"]),
           ("Statics", ["lame_cylinder"]),
-          ("Heat transfer", ["semi_infinite", "spreading_disk", "contact_stack", "three_omega", "fdtr"])]
+          ("Heat transfer", ["semi_infinite", "spreading_disk", "contact_stack", "three_omega", "fdtr", "hydro_vortex"])]
 SECTIONS = common.HERE / "sections.json"
 
 FRONT_MATTER = """---
