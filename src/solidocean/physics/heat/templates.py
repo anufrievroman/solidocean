@@ -271,13 +271,14 @@ def heat_vortices() -> Project:
         name="Hydrodynamic heat vortices", physics_kind="heat", length_unit="um",
         description="Phonon hydrodynamics (Guyer-Krumhansl, steady): heat of power P is injected through a contact "
                     "on one side of a ribbon of width w and removed through the opposite contact, as in Fig. 1c "
-                    "of Shang et al., Sci. Rep. 10, 8272 (2020). Walls do not slip; the ends are heat baths "
+                    "of Shang et al., Sci. Rep. 10, 8272 (2020), but with Gaussian contacts instead of point "
+                    "sources so that the mesh converges. Walls do not slip; the ends are heat baths "
                     "and the slab is closed by symmetry planes, so the model is 2D. Viscosity makes the heat flow "
                     "in two vortices beside the direct flow, backwards, from the cold side to the hot side of "
-                    "the contacts, when chi = w^2 / l^2 is below about 10 (l, the viscous length, comes from the "
-                    "normal and resistive scattering times); above it the transport is diffusive and the "
-                    "vortices disappear. Sweep over chi: the strongest backflow against the strongest forward "
-                    "flow. The same flux is given by an exact solution of the infinite strip (Fourier "
+                    "the contacts, when chi = w^2 / l^2 is small (l, the viscous length, comes from the "
+                    "normal and resistive scattering times); for large chi the transport is diffusive and the "
+                    "vortices disappear (for these contacts, near chi = 30). Sweep over chi: the strongest "
+                    "backflow against the strongest forward flow. The same flux is given by an exact solution of the infinite strip (Fourier "
                     "transform of the stream function)",
         variables={"w": "10[um]", "L": "8*w", "t": "w/4", "chi": "0.5", "ell": "w/sqrt(chi)", "s": "0.15*w",
                     "P": "10[uW]", "q0": "P / (t * s * sqrt(2*pi))", "T0": "300[K]"},
