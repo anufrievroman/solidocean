@@ -35,6 +35,7 @@ class PhysicsSpec:
     settings_class: type = object
     plot_kinds: tuple[str, ...] = ()           # kinds of results plots, in menu order
     plot_titles: dict[str, str] = {}           # kind -> title
+    vector: tuple[str, str, str] = ("", "", "")  # components of the vector that arrow and streamline plots start with
     field_names: tuple[str, ...] = ()          # field variables of quantities (besides x, y, z)
     scalar_names: tuple[str, ...] = ()         # scalar variables of quantities (besides the model variables, pi)
 
@@ -91,8 +92,8 @@ class PhysicsSpec:
         raise NotImplementedError
 
     def probe_plot(self, project, kind: str, box, quantity: str, colormap: str):
-        """A new line (through the middle of the model along x) or cross-section (the xy plane through its
-        centre) of a quantity."""
+        """A new line (through the middle of the model along x), cross-section or vector plot (arrows or
+        streamlines) on the xy plane through its centre."""
         from ..plots import PlotStyle, ResultPlot
         from ..units import length_expr
         lo, hi = (np.asarray(v, dtype=float) for v in box)
@@ -104,6 +105,9 @@ class PhysicsSpec:
         if kind == "line":
             return ResultPlot(self.plot_titles[kind], quantity, kind="line", start=pt((lo[0], c[1], c[2])),
                               end=pt((hi[0], c[1], c[2])), style=PlotStyle(markers=False))
+        if kind in ("quiver", "stream"):    # no colour map behind the arrows: they are coloured by their length
+            return ResultPlot(self.plot_titles[kind], "", kind=kind, vector=list(self.vector), origin=pt(c),
+                              style=PlotStyle(colormap=colormap, color="#222222"))
         return ResultPlot(self.plot_titles[kind], quantity, kind="section", origin=pt(c),
                           style=PlotStyle(colormap=colormap))
 

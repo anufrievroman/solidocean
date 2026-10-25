@@ -87,11 +87,11 @@ SWEEP_AXES = ("auto", "kpath", "variable")
 # wavevector mesh as a map over the Brillouin zone; surfaces: several of its bands as surfaces in 3D;
 # spectrum: a quantity of the whole mesh against frequency (density of states, group velocity, heat flux);
 # conductance: that flux integrated over frequency, against temperature
-PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section", "kmap", "surfaces",
-              "spectrum", "conductance")
+PLOT_KINDS = ("dispersion", "quantity", "colored", "field", "time", "line", "section", "quiver", "stream", "kmap",
+              "surfaces", "spectrum", "conductance")
 # the type of each kind, shown with plot names: 3D views of the structure, 2D maps (cross-sections), XY plots, and
 # XY plots whose points are coloured by a third value
-PLOT_TYPES = {"field": "3D", "surfaces": "3D", "section": "2D", "kmap": "2D", "dispersion": "XY",
+PLOT_TYPES = {"field": "3D", "surfaces": "3D", "section": "2D", "quiver": "2D", "stream": "2D", "kmap": "2D", "dispersion": "XY",
               "quantity": "XY", "time": "XY", "line": "XY", "spectrum": "XY", "conductance": "XY",
               "colored": "XYz"}
 
@@ -103,6 +103,9 @@ def plot_label(kind: str, text: str) -> str:
 
 LINE_AXES = ("s", "x", "y", "z")   # x axis of a line plot: distance from the start, or a coordinate
 SECTION_PLANES = ("xy", "yz", "xz")  # coordinate plane a cross-section starts from (before its rotation)
+# plots on a plane through the structure: a colour map, and a vector quantity as arrows (quiver) or streamlines
+VECTOR_KINDS = ("quiver", "stream")
+MAP_KINDS = ("section",) + VECTOR_KINDS
 
 
 FIELD_COMPONENTS = ("|u|", "ux", "uy", "uz", "mises")   # solid mechanics; mises: von Mises stress (stationary)
@@ -149,14 +152,23 @@ class ResultPlot:
     origin: list[str] = field(default_factory=lambda: ["0", "0", "0"])
     rotation: list[str] = field(default_factory=lambda: ["0", "0", "0"])
     resolution: int = 150
+    # quiver / stream: the three components of the vector (expressions; its in-plane part is drawn), the quantity
+    # of an optional colour map behind it (`quantity`; empty = none, the arrows are then coloured by their
+    # length), arrows across the longer side of the plane, their length (1 = the longest spans one spacing
+    # between arrows) and width relative to the default, and the density of streamlines
+    vector: list[str] = field(default_factory=lambda: ["", "", ""])
+    arrows: int = 25
+    arrow_scale: float = 1.0
+    arrow_width: float = 1.0
+    stream_density: float = 1.5
 
     def __post_init__(self):
         if not self.kind:
             self.kind = "dispersion" if self.quantity.strip() == "freq" else "quantity"
         if self.kind in ("dispersion", "colored"):
             self.quantity = "freq"
-        elif self.kind == "field" and self.quantity.strip() == "freq":
-            self.quantity = ""       # the field of the physics' default quantity
+        elif self.kind in ("field",) + VECTOR_KINDS and self.quantity.strip() == "freq":
+            self.quantity = ""       # the field of the physics' default quantity; no colour map behind a vector plot
 
     @classmethod
     def field_view(cls, name: str = "Field", colormap: str = "viridis") -> "ResultPlot":
@@ -166,7 +178,7 @@ class ResultPlot:
     def expressions(self) -> list[str]:
         """Quantities this plot needs evaluated (one number per solution; field, line and section plots
         evaluate their own, point by point)."""
-        if self.kind in ("field", "line", "section", "spectrum", "conductance"):
+        if self.kind in ("field", "line", "spectrum", "conductance") + MAP_KINDS:
             return []      # these are summed over the bands, not evaluated per mode
         return [self.quantity] + ([self.color_by] if self.kind == "colored" and self.color_by.strip() else [])
 
@@ -182,6 +194,15 @@ class ResultPlot:
         if self.kind == "section":
             d.update(quantity=self.quantity, plane=self.plane, origin=list(self.origin), rotation=list(self.rotation),
                      resolution=self.resolution, at=self.at, at_time=self.at_time, style=self.style.to_dict())
+            return self._compact(d)
+        if self.kind in VECTOR_KINDS:
+            d.update(quantity=self.quantity, vector=list(self.vector), plane=self.plane, origin=list(self.origin),
+                     rotation=list(self.rotation), resolution=self.resolution, at=self.at, at_time=self.at_time,
+                     color_label=self.color_label, style=self.style.to_dict())
+            if self.kind == "quiver":
+                d.update(arrows=self.arrows, arrow_scale=self.arrow_scale, arrow_width=self.arrow_width)
+            else:
+                d.update(stream_density=self.stream_density, arrow_scale=self.arrow_scale)
             return self._compact(d)
         if self.kind == "line":
             d.update(quantity=self.quantity, start=list(self.start), end=list(self.end), points=self.points,
@@ -206,7 +227,7 @@ class ResultPlot:
         return self._compact(d)
 
     def _compact(self, d: dict) -> dict:
-        d = without_defaults(self, d, keep=("name", "kind", "quantity", "start", "end", "plane"))
+        d = without_defaults(self, d, keep=("name", "kind", "quantity", "start", "end", "plane", "vector"))
         if not d.get("style"):
             d.pop("style", None)
         return d

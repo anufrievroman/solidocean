@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 
 from ... import physics, units
 from .. import theme
-from ...plots import plot_label
+from ...plots import MAP_KINDS, VECTOR_KINDS, plot_label
 from ...project import AXES
 from .common import (ERROR_STYLE, ExprBox, ExprEdit, Panel, muted_label, outer_labels, pretty_point,
                      quantity_builder, spoiler)
@@ -122,7 +122,7 @@ class PlotPanel(Panel):
                                  "time steps can then be chosen here."))
             return
         d.addRow(muted_label(self.win.results_summary()))
-        if self.fieldres and pl.kind in ("line", "section"):
+        if self.fieldres and (pl.kind == "line" or pl.kind in MAP_KINDS):
             self._line_dataset_rows(d, overlay=pl.kind == "line")
         elif self.fieldres:
             if (pl.kind == "time" and r.outer_name) or (pl.kind == "quantity" and len(r.times) > 1):
@@ -143,7 +143,10 @@ class PlotPanel(Panel):
     def _quantity_box(self):
         from ... import fields
         pl, kind = self.pl, self.pl.kind
-        d = self.form("Colour by quantity" if kind == "colored" else "Quantity")
+        d = self.form("Colour by quantity" if kind == "colored" else "Vector and background" if kind in VECTOR_KINDS
+                      else "Quantity")
+        if kind in VECTOR_KINDS:
+            self._vector_rows(d)
         if kind == "dispersion":
             d.addRow(muted_label("Eigenfrequencies (freq), one curve per band. For other quantities add a "
                                  "'Quantity vs sweep' or a coloured dispersion plot."))
@@ -169,9 +172,10 @@ class PlotPanel(Panel):
         def run_compute():
             text = q.text().strip()
             try:
-                if not text:
+                if not text and kind not in VECTOR_KINDS:      # the colour map behind a vector plot is optional
                     raise ValueError("enter an expression")
-                fields.check(text, self.p.evaluator().values)
+                if text:
+                    fields.check(text, self.p.evaluator().values)
             except Exception as exc:
                 q.setStyleSheet(ERROR_STYLE)
                 self.q_status.setText(str(exc))
@@ -189,7 +193,7 @@ class PlotPanel(Panel):
 
         compute.clicked.connect(run_compute)
         q.ctrl_enter = run_compute
-        builder, buttons = quantity_builder(self, q, run_compute, reduce=kind not in ("line", "section"))
+        builder, buttons = quantity_builder(self, q, run_compute, reduce=kind not in ("line", "section") + VECTOR_KINDS)
         for b in buttons:
             row.addWidget(b)
         d.insertRow(d.rowCount() - 1, builder)     # the builder, then Compute / Use / Insert
@@ -199,8 +203,92 @@ class PlotPanel(Panel):
         elif kind == "section":
             d.addRow(muted_label(self.ui.line_help(self.p).replace("along the line", "on the plane")
                                  + " Empty: the default quantity of the physics."))
+        elif kind in VECTOR_KINDS:
+            d.addRow(muted_label("Optional colour map behind the " + ("arrows" if kind == "quiver" else "streamlines")
+                                 + " (a scalar quantity). Empty: they are coloured by their in-plane magnitude."))
         self._quantity_help(d)
         self.update_status()
+
+    def _vector_rows(self, d):
+        """The three components of the vector of an arrow or streamline plot; its part in the plane is drawn."""
+        from ... import fields
+        pl = self.pl
+        spec = physics.of(self.p)
+        d.addRow(muted_label("Components of the vector (expressions); its part lying in the plane is drawn."))
+        row = QHBoxLayout()
+        for n, axis in enumerate(AXES):
+            row.addWidget(QLabel(axis))
+            e = QLineEdit(pl.vector[n])
+            e.setPlaceholderText(spec.vector[n])
+            e.setToolTip(f"The {axis} component, e.g. {spec.vector[n]}")
+
+            def commit(e=e, n=n):
+                text = e.text().strip()
+                try:
+                    if not text:
+                        raise ValueError("enter an expression")
+                    fields.check(text, self.p.evaluator().values, spec.field_names, spec.scalar_names)
+                except Exception as exc:
+                    e.setStyleSheet(ERROR_STYLE)
+                    e.setToolTip(str(exc))
+                    return
+                e.setStyleSheet("")
+                pl.vector[n] = text
+                self._refresh()
+
+            e.editingFinished.connect(commit)
+            row.addWidget(e, 1)
+        d.addRow(row)
+
+    def _vector_style_rows(self, d):
+        """Arrows: how many, how long, how thick; streamlines: how dense, how thick, the size of the heads; the
+        colour used over a colour map."""
+        pl, st = self.pl, self.pl.style
+
+        def spin(attr, lo, hi, step, decimals, tip, target=pl):
+            box = QDoubleSpinBox()
+            box.setRange(lo, hi)
+            box.setSingleStep(step)
+            box.setDecimals(decimals)
+            box.setValue(getattr(target, attr))
+            box.setToolTip(tip)
+            box.valueChanged.connect(lambda v: (setattr(target, attr, v), self._refresh()))
+            return box
+        if pl.kind == "quiver":
+            n = QSpinBox()
+            n.setRange(2, 200)
+            n.setValue(pl.arrows)
+            n.setToolTip("Arrows across the longer side of the plane")
+            n.valueChanged.connect(lambda v: (setattr(pl, "arrows", v), self._refresh()))
+            d.addRow("Arrows", n)
+            d.addRow("Arrow length", spin("arrow_scale", 0.1, 10, 0.1, 2, "Relative to the spacing between arrows: "
+                                          "1 makes the longest arrow as long as one spacing"))
+            d.addRow("Arrow width", spin("arrow_width", 0.1, 10, 0.1, 2, "Relative to the default width"))
+        else:
+            d.addRow("Density", spin("stream_density", 0.1, 5, 0.1, 1, "Closeness of the streamlines"))
+            d.addRow("Line width", spin("line_width", 0.2, 6, 0.2, 1, "Width of the streamlines", st))
+            d.addRow("Arrow size", spin("arrow_scale", 0.1, 10, 0.1, 2, "Size of the arrow heads along the lines"))
+        swatch = QPushButton()
+        swatch.setFixedWidth(46)
+        swatch.setToolTip("Colour of the arrows or lines drawn over a colour map; without one they are coloured by "
+                          "their magnitude")
+
+        def paint():
+            swatch.setStyleSheet(f"background: {st.color}; border: 1px solid #777; border-radius: 4px;")
+
+        def pick():
+            from PySide6.QtWidgets import QColorDialog
+            c = QColorDialog.getColor(QColor(st.color), self, "Colour")
+            if c.isValid():
+                self._restyle("color")(c.name())
+                paint()
+
+        swatch.clicked.connect(pick)
+        paint()
+        row = QHBoxLayout()
+        row.addWidget(swatch)
+        row.addStretch(1)
+        d.addRow("Colour over a map", row)
 
     def _line_dataset_rows(self, d, overlay: bool = True):
         """Line plot: which variable value(s) and which time step; cross-sections: one variable value."""
@@ -459,7 +547,7 @@ class PlotPanel(Panel):
         d = self.form("Plot")
         if pl.kind == "line":
             self._line_rows(d)
-        if pl.kind == "section":
+        if pl.kind in MAP_KINDS:
             return self._section_rows(d)
         if pl.kind in ("kmap", "surfaces"):
             return self._zone_rows(d)
@@ -805,7 +893,7 @@ class PlotPanel(Panel):
             return self._zone_style_box()
         if self.pl.kind == "colored":
             return self._colored_style_box()
-        if self.pl.kind == "section":
+        if self.pl.kind in MAP_KINDS:
             d = self.form("Style")
             cmap = QComboBox()
             st = self.pl.style
@@ -814,6 +902,8 @@ class PlotPanel(Panel):
             cmap.currentTextChanged.connect(self._restyle("colormap"))
             d.addRow("Colour scale", cmap)
             d.addRow("", self._checks((("Title", "title"), ("Colour bar", "colorbar"))))
+            if self.pl.kind in VECTOR_KINDS:
+                self._vector_style_rows(d)
             return
         st = self.pl.style
         d = self.form("Style")

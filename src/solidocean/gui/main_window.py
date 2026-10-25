@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import meshing, physics, units
-from ..plots import plot_label
+from ..plots import MAP_KINDS, plot_label
 from ..project import FEATURE_TITLES, FEATURE_TYPES, Project
 from . import physics as gui_physics
 from . import theme
@@ -369,7 +369,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         node = self._current_node()
         if node and node[0] == "plot" and 0 <= node[1] < len(self.project.plots):
             pl = self.project.plots[node[1]]
-            return pl if pl.kind in ("line", "section") else None
+            return pl if pl.kind == "line" or pl.kind in MAP_KINDS else None
         return None
     def show_line_scene(self):
         """Line or cross-section plot selected: the structure, semi-transparent, with the line or the plane drawn
@@ -384,7 +384,7 @@ class MainWindow(ResultsMixin, QMainWindow):
         if pl is None:
             return
         try:
-            if pl.kind == "section":
+            if pl.kind in MAP_KINDS:
                 from ..results.field import section_corners
                 bounds = self.mesh.bounds() if self.mesh is not None else model_box(self.project)
                 self.viewer.set_plane(section_corners(self.project, pl, bounds))

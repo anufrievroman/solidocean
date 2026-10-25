@@ -20,8 +20,8 @@ from .tomlio import check_keys, label, table, without_defaults
 from .lattice import Lattice
 from .physics.heat.model import HeatPhysics
 from .physics.solid.model import SolidPhysics
-from .plots import (COLOR_MODES, FIELD_COMPONENTS, K_UNITS, LINE_AXES, LINE_STYLES, SECTION_PLANES, SWEEP_AXES,
-                    X_AXES, ResultPlot)
+from .plots import (COLOR_MODES, FIELD_COMPONENTS, K_UNITS, LINE_AXES, LINE_STYLES, MAP_KINDS, SECTION_PLANES,
+                    SWEEP_AXES, VECTOR_KINDS, X_AXES, ResultPlot)
 
 Expr = str | float | int
 # Geometry primitives: parameter name -> default value.
@@ -536,7 +536,7 @@ class Project:
                     errors.append(f"{where}: points must be at least 2")
                 if pl.line_axis not in LINE_AXES:
                     errors.append(f"{where}: line_axis must be one of {', '.join(LINE_AXES)}")
-            if pl.kind == "section":
+            if pl.kind in MAP_KINDS:
                 if pl.plane not in SECTION_PLANES:
                     errors.append(f"{where}: plane must be one of {', '.join(SECTION_PLANES)}")
                 try:
@@ -546,12 +546,27 @@ class Project:
                     errors.append(f"{where}: origin / rotation: {exc}")
                 if not 10 <= pl.resolution <= 1000:
                     errors.append(f"{where}: resolution must be between 10 and 1000")
-            if pl.kind in ("field", "section") and pl.quantity.strip():
+            if pl.kind in VECTOR_KINDS:
+                if len(pl.vector) != 3 or not all(str(c).strip() for c in pl.vector):
+                    errors.append(f"{where}: vector needs 3 components (expressions)")
+                else:
+                    for c in pl.vector:
+                        try:
+                            fields.check(c, ev.values, spec.field_names, spec.scalar_names)
+                        except Exception as exc:
+                            errors.append(f"{where}: vector: {exc}")
+                if not 2 <= pl.arrows <= 200:
+                    errors.append(f"{where}: arrows must be between 2 and 200")
+                if not pl.arrow_scale > 0 or not pl.arrow_width > 0:
+                    errors.append(f"{where}: arrow_scale and arrow_width must be positive")
+                if not 0.1 <= pl.stream_density <= 5:
+                    errors.append(f"{where}: stream_density must be between 0.1 and 5")
+            if pl.kind in ("field",) + MAP_KINDS and pl.quantity.strip():
                 try:
                     fields.check(pl.quantity, ev.values, spec.field_names, spec.scalar_names)
                 except Exception as exc:
                     errors.append(f"{where}: quantity: {exc}")
-            if pl.kind == "section":
+            if pl.kind in MAP_KINDS:
                 continue
             if pl.kind == "field":
                 if pl.component not in FIELD_COMPONENTS:
