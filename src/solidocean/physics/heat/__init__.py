@@ -38,6 +38,7 @@ class HeatSpec(PhysicsSpec):
     settings_class = HeatPhysics
     plot_kinds = plots.PLOT_KINDS
     plot_titles = plots.PLOT_TITLES
+    vector = ("qx", "qy", "qz")
     field_names = heat_fields.FIELD_NAMES
     scalar_names = ("time",)
     problem_types = HEAT_PROBLEM_TYPES
@@ -96,6 +97,8 @@ class HeatSpec(PhysicsSpec):
             return plots.time_plot("Time plot", "max(T)", "Maximum temperature (K)")
         if kind in ("line", "section"):
             return self.probe_plot(project, kind, box, "T", "magma")
+        if kind in ("quiver", "stream"):
+            return self.probe_plot(project, kind, box, "", "viridis")
         return ResultPlot(title, "max(T)", kind="quantity", y_label="Maximum temperature (K)")
 
     def plot_unavailable(self, project, plot) -> str:

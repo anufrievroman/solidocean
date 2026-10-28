@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import fields, outputs
+from ..plots import VECTOR_KINDS
 from .style import LINESTYLES, outer_axis, outer_text, plot_ranges, set_scales, time_axis, use_plot_style
 
 
@@ -59,6 +60,8 @@ class FieldResults:
                     written.append(save_line_table(self, project, pl, directory / f"{slug(pl.name)}.csv"))
                 elif pl.kind == "section":
                     written.append(save_section_table(self, project, pl, directory / f"{slug(pl.name)}.csv"))
+                elif pl.kind in VECTOR_KINDS:
+                    written.append(save_vector_table(self, project, pl, directory / f"{slug(pl.name)}.csv"))
         if out.wants("model"):
             written += outputs.write_record(project, directory, self)
         return written
@@ -171,6 +174,8 @@ def draw(results, ax, project, pdef, values: np.ndarray | None = None) -> np.nda
     use_plot_style()
     if pdef.kind == "section":
         return draw_section(results, ax, project, pdef)
+    if pdef.kind in VECTOR_KINDS:
+        return draw_vectors(results, ax, project, pdef)
     st = pdef.style
     vals = results.values(pdef.quantity) if values is None else values
     cmap = matplotlib.colormaps[st.colormap]
@@ -263,80 +268,194 @@ def section_plane(project, pdef, ev, mesh=None, bounds=None):
     return origin, e1, e2, (u.min(), u.max()), (v.min(), v.max())
 
 
-def section_values(results, project, pdef):
-    """A cross-section's data: the axes u (nu,) and v (nv,) in SI, values (nv, nu) (NaN outside the structure),
-    the variable and time indices used, and the axis names. An unrotated plane has the model's coordinates
-    on its axes (x, y, z); a rotated one in-plane coordinates u, v measured from its origin."""
+def section_grid(results, project, pdef, n: int | None = None, centered: bool = False):
+    """The sample points of a cross-section: a namespace with the axes u (nu,) and v (nv,) in SI (measured from
+    the plane's origin), the point sampler of the grid, the scalars of the evaluation, the variable and time indices
+    used, the plane's unit vectors e1, e2 and origin, the displayed axes ud, vd and their names, and the size and
+    the displayed box (u0, u1, v0, v1) of the whole plane. `n` samples
+    along the longer side (default: the plot's resolution); `centered`: at the centres of n cells rather than
+    on the edges. An unrotated plane has the model's coordinates on its axes (x, y, z); a rotated one in-plane
+    coordinates u, v measured from its origin."""
+    from types import SimpleNamespace
     i = min(max(pdef.at, 0), len(results.outer_values) - 1)
     j = len(results.times) - 1 if pdef.at_time < 0 else min(pdef.at_time, len(results.times) - 1)
     base = project.evaluator()
     ev = base.with_overrides({results.outer_name: results.outer_values[i]}) if results.outer_name else base
     mesh = results.meshes[i]
     origin, e1, e2, (u0, u1), (v0, v1) = section_plane(project, pdef, ev, mesh)
-    n = int(pdef.resolution)
-    span = max(u1 - u0, v1 - v0)
-    nu = max(min(n, 40), int(round(n * (u1 - u0) / span)))   # at least 40 samples across thin sections
-    nv = max(min(n, 40), int(round(n * (v1 - v0) / span)))
-    u, v = np.linspace(u0, u1, nu), np.linspace(v0, v1, nv)
+    n = int(pdef.resolution if n is None else n)
+    # samples: square cells on the data, but for arrows square on the screen, where a slender section is stretched
+    w, h = u1 - u0, (v1 - v0) * (stretch_aspect(u1 - u0, v1 - v0) if centered else 1.0)
+    span = max(w, h)
+    floor = min(n, 3) if centered else min(n, 40)
+    nu = max(floor, int(round(n * w / span)))            # at least a few samples across thin sections
+    nv = max(floor, int(round(n * h / span)))
+    if centered:
+        u = u0 + (np.arange(nu) + 0.5) * (u1 - u0) / nu
+        v = v0 + (np.arange(nv) + 0.5) * (v1 - v0) / nv
+    else:
+        u, v = np.linspace(u0, u1, nu), np.linspace(v0, v1, nv)
     U, V = np.meshgrid(u, v)
     pts = origin + U.reshape(-1, 1) * e1 + V.reshape(-1, 1) * e2
     key = (id(mesh), pts.round(15).tobytes())
     sampler = results.samplers.get(key)
     if sampler is None:
         sampler = results.samplers[key] = fields.PointSampler(mesh, pts)
-    from .. import physics
-    expr = pdef.quantity.strip() or physics.of(project).field_quantity(project)
-    vals = results.point_values(i, j, expr, {**ev.values, "time": results.times[j]}, sampler).reshape(nv, nu)
     rotated = any(abs(float(x)) > 0 for x in ev.vector(pdef.rotation))
-    if rotated:
-        return u, v, vals, i, j, ("u", "v")
     a, b = _PLANE_AXES[pdef.plane]
-    return u + origin[a], v + origin[b], vals, i, j, ("xyz"[a], "xyz"[b])
+    ud, vd, names = (u, v, ("u", "v")) if rotated else (u + origin[a], v + origin[b], ("xyz"[a], "xyz"[b]))
+    du, dv = ud[0] - u[0], vd[0] - v[0]
+    return SimpleNamespace(u=u, v=v, nu=nu, nv=nv, sampler=sampler, i=i, j=j, e1=e1, e2=e2, origin=origin,
+                           scalars={**ev.values, "time": results.times[j]}, ud=ud, vd=vd, names=names,
+                           size=(u1 - u0, v1 - v0), box=(u0 + du, u1 + du, v0 + dv, v1 + dv))
 
 
-def draw_section(results, ax, project, pdef) -> np.ndarray:
-    """A 2D colour map of the quantity on the cross-section; returns no pick points."""
-    import matplotlib
+def section_values(results, project, pdef):
+    """A cross-section's data: the axes u (nu,) and v (nv,) in SI, values (nv, nu) (NaN outside the structure),
+    the variable and time indices used, and the axis names (see section_grid)."""
+    from .. import physics
+    g = section_grid(results, project, pdef)
+    expr = pdef.quantity.strip() or physics.of(project).field_quantity(project)
+    vals = results.point_values(g.i, g.j, expr, g.scalars, g.sampler).reshape(g.nv, g.nu)
+    return g.ud, g.vd, vals, g.i, g.j, g.names
+
+
+def _grid_values(results, g, expr: str) -> np.ndarray:
+    """An expression on a section grid, (nv, nu); a constant is spread over the grid."""
+    x = np.asarray(results.point_values(g.i, g.j, expr, g.scalars, g.sampler), dtype=float)
+    return np.full(g.nu * g.nv, x.item()).reshape(g.nv, g.nu) if x.size == 1 else x.reshape(g.nv, g.nu)
+
+
+def vector_values(results, project, pdef, n: int | None = None, centered: bool = False):
+    """A vector quantity on a cross-section: the grid (see section_grid) and the vector's components along the
+    plane's axes, Vu and Vv (nv, nu), in the units of the quantity (NaN outside the structure)."""
+    g = section_grid(results, project, pdef, n, centered)
+    V = np.stack([_grid_values(results, g, e) for e in pdef.vector], axis=-1)       # (nv, nu, 3)
+    return g, V @ g.e1, V @ g.e2
+
+
+def stretch_aspect(width: float, height: float) -> float:
+    """Vertical data units per horizontal one on the screen of a map of the given size: 1, but a slender section at
+    true proportions would be a thin line, so it is stretched to fill the plot."""
+    stretch = max(width, height) / max(min(width, height), 1e-300)
+    if stretch <= 4:
+        return 1.0
+    return 0.6 * width / height if width > height else 1.6 * width / height
+
+
+def _finish_map(ax, project, pdef, u, v, names, g_i, g_j, results, mappable=None, label=""):
+    """Everything around a map of the plane: aspect ratio, axis labels, colour bar (of `mappable`) and titles."""
     from ..units import LENGTH, axis_scale
     st = pdef.style
-    u, v, vals, i, j, names = section_values(results, project, pdef)
     scale, unit = axis_scale(LENGTH, project.length_unit)
-    cmap = matplotlib.colormaps[st.colormap]
-    if cmap.N <= 20:                     # a qualitative palette (for curves): use a colour scale
-        cmap = matplotlib.colormaps["viridis"]
-    lo, hi = _section_range(project, st, vals)
-    im = ax.imshow(np.ma.masked_invalid(vals), origin="lower", cmap=cmap, vmin=lo, vmax=hi,
-                   extent=(u[0] * scale, u[-1] * scale, v[0] * scale, v[-1] * scale), interpolation="nearest")
     width, height = u[-1] - u[0], v[-1] - v[0]
     stretch = max(width, height) / max(min(width, height), 1e-300)
     labels = [f"{names[0]} ({unit})", f"{names[1]} ({unit})"]
-    aspect = 1.0             # vertical data units per horizontal one on screen
-    if stretch > 4:          # a slender section at true proportions would be a thin line: fill the plot
-        aspect = 0.6 * width / height if width > height else 1.6 * width / height
+    aspect = stretch_aspect(width, height)
+    if aspect != 1.0:
         k = 1 if width > height else 0
         labels[k] += f", stretched ×{stretch * (0.6 if k else 1 / 1.6):.0f}"
     ax.set_aspect(aspect)
     ax.set_xlabel(labels[0], fontsize=13)
     ax.set_ylabel(labels[1], fontsize=13)
     ax.tick_params(labelsize=11)
-    from .. import physics
-    expr = pdef.quantity.strip() or physics.of(project).field_quantity(project)
-    if st.colorbar:   # about as tall as the map, which is less tall than the axes box when it is wide
+    if mappable is not None and st.colorbar:   # about as tall as the map, which is less tall than the axes box when wide
         fw, fh = ax.figure.get_size_inches()
         shrink = float(np.clip(fw * 0.8 / (fh * width / (height * aspect)), 0.25, 1.0))
-        cb = ax.figure.colorbar(im, ax=ax, shrink=shrink, pad=0.02, aspect=25 * shrink)
-        cb.set_label(pdef.color_label or named_quantity(project, expr), fontsize=13)
+        cb = ax.figure.colorbar(mappable, ax=ax, shrink=shrink, pad=0.02, aspect=25 * shrink)
+        cb.set_label(label, fontsize=13)
         cb.ax.tick_params(labelsize=11)
     parts = []
     if results.outer_name:
-        parts.append(f"{results.outer_name} = {outer_text(results, project, i)}")
+        parts.append(f"{results.outer_name} = {outer_text(results, project, g_i)}")
     if len(results.times) > 1:
         tscale, tunit = time_axis(project)
-        parts.append(f"t = {results.times[j] / tscale:.4g} {tunit}")
+        parts.append(f"t = {results.times[g_j] / tscale:.4g} {tunit}")
     if parts:
         ax.set_title(", ".join(parts), fontsize=11, loc="right")
     if st.title:
         ax.set_title(f"{project.name}: {pdef.name}", loc="left")
+    return aspect
+
+
+def _colour_scale(st):
+    """The colormap of a map: a qualitative palette (for curves) is replaced by a colour scale."""
+    import matplotlib
+    cmap = matplotlib.colormaps[st.colormap]
+    return matplotlib.colormaps["viridis"] if cmap.N <= 20 else cmap
+
+
+def draw_section(results, ax, project, pdef) -> np.ndarray:
+    """A 2D colour map of the quantity on the cross-section; returns no pick points."""
+    from .. import physics
+    from ..units import LENGTH, axis_scale
+    st = pdef.style
+    u, v, vals, i, j, names = section_values(results, project, pdef)
+    scale, unit = axis_scale(LENGTH, project.length_unit)
+    lo, hi = _section_range(project, st, vals)
+    im = ax.imshow(np.ma.masked_invalid(vals), origin="lower", cmap=_colour_scale(st), vmin=lo, vmax=hi,
+                   extent=(u[0] * scale, u[-1] * scale, v[0] * scale, v[-1] * scale), interpolation="nearest")
+    expr = pdef.quantity.strip() or physics.of(project).field_quantity(project)
+    _finish_map(ax, project, pdef, u, v, names, i, j, results, im, pdef.color_label or named_quantity(project, expr))
+    return np.zeros((0, 5))
+
+
+def draw_vectors(results, ax, project, pdef) -> np.ndarray:
+    """A vector quantity on the cross-section: its in-plane part as arrows (kind "quiver", on a grid of
+    `arrows` cells across the longer side) or as streamlines (kind "stream"), over a colour map of `quantity`
+    if there is one. Without a map the arrows are coloured by their length. Returns no pick points."""
+    import matplotlib
+    from ..units import LENGTH, axis_scale
+    st = pdef.style
+    scale, unit = axis_scale(LENGTH, project.length_unit)
+    quiver = pdef.kind == "quiver"
+    # the map and the streamlines live on the plot's resolution grid, the arrows on a coarser one
+    g, Vu, Vv = vector_values(results, project, pdef, int(pdef.arrows) if quiver else None, centered=quiver)
+    u, v = np.array(g.box[:2]), np.array(g.box[2:])      # the whole plane (the arrows' grid is inside it)
+    mappable, label = None, ""
+    if pdef.quantity.strip():
+        bu, bv, vals, _, _, _ = section_values(results, project, pdef)
+        lo, hi = _section_range(project, st, vals)
+        mappable = ax.imshow(np.ma.masked_invalid(vals), origin="lower", cmap=_colour_scale(st), vmin=lo, vmax=hi,
+                             extent=(bu[0] * scale, bu[-1] * scale, bv[0] * scale, bv[-1] * scale),
+                             interpolation="nearest")
+        label = pdef.color_label or named_quantity(project, pdef.quantity.strip())
+        arrow_color, norm, cmap, mappable_arrows = st.color, None, None, False
+    else:
+        cmap, mappable_arrows = _colour_scale(st), True
+        mag = np.hypot(Vu, Vv)
+        lo, hi = _section_range(project, st, mag)
+        norm = matplotlib.colors.Normalize(lo, hi)
+        label = pdef.color_label or "In-plane magnitude"
+    # lengths on the screen: a stretched section shows the vertical axis shorter or longer than the data
+    # extent, so the arrows are given in screen units
+    aspect = stretch_aspect(u[-1] - u[0], v[-1] - v[0])
+    ok = np.isfinite(Vu) & np.isfinite(Vv)
+    X, Y = np.meshgrid(g.ud * scale, g.vd * scale)
+    artist = None
+    if ok.any() and quiver:
+        Us, Vs = Vu[ok], Vv[ok] * aspect
+        longest = float(np.hypot(Us, Vs).max())
+        pitch = min(g.size[0] / g.nu, g.size[1] / g.nv * aspect) * scale      # spacing on the screen (x units)
+        kw = dict(angles="uv", scale_units="x", pivot="mid", width=0.0035 * pdef.arrow_width,
+                  scale=max(longest, 1e-300) / (pitch * pdef.arrow_scale))
+        if mappable_arrows:
+            artist = ax.quiver(X[ok], Y[ok], Us, Vs, np.hypot(Vu, Vv)[ok], cmap=cmap, norm=norm, **kw)
+        else:
+            artist = ax.quiver(X[ok], Y[ok], Us, Vs, color=arrow_color, **kw)
+    elif ok.any():
+        sx = np.ma.masked_invalid(np.where(ok, Vu, np.nan))
+        sy = np.ma.masked_invalid(np.where(ok, Vv, np.nan))
+        kw = dict(density=pdef.stream_density, linewidth=st.line_width, arrowsize=pdef.arrow_scale)
+        if mappable_arrows:
+            artist = ax.streamplot(X[0], Y[:, 0], sx, sy, color=np.hypot(Vu, Vv), cmap=cmap, norm=norm,
+                                   **kw).lines
+        else:
+            ax.streamplot(X[0], Y[:, 0], sx, sy, color=arrow_color, **kw)
+    ax.set_xlim(u[0] * scale, u[-1] * scale)
+    ax.set_ylim(v[0] * scale, v[-1] * scale)
+    _finish_map(ax, project, pdef, u, v, g.names, g.i, g.j, results, mappable if mappable is not None else artist,
+                label)
     return np.zeros((0, 5))
 
 
@@ -382,6 +501,23 @@ def save_section_table(results, project, pdef, path: Path) -> Path:
                 p = origin + (uu - du) * e1 + (vv - dv) * e2
                 w.writerow(([f"{uu:.10g}", f"{vv:.10g}"] if in_plane else []) + [f"{c:.10g}" for c in p]
                            + [f"{vals[b, a]:.10g}"])
+    return Path(path)
+
+
+def save_vector_table(results, project, pdef, path: Path) -> Path:
+    """A vector plot as a table, one row per sample of the plot's resolution grid: the point x, y, z (m), the
+    three components of the vector, and the quantity behind it if there is one."""
+    g, _, _ = vector_values(results, project, pdef)
+    V = [_grid_values(results, g, e) for e in pdef.vector]
+    bg = pdef.quantity.strip()
+    extra = [_grid_values(results, g, bg)] if bg else []
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["x [m]", "y [m]", "z [m]"] + [" ".join(e.split()) for e in pdef.vector] + ([bg] if bg else []))
+        for b, vv in enumerate(g.v):
+            for a, uu in enumerate(g.u):
+                p = g.origin + uu * g.e1 + vv * g.e2
+                w.writerow([f"{c:.10g}" for c in p] + [f"{c[b, a]:.10g}" for c in V + extra])
     return Path(path)
 
 

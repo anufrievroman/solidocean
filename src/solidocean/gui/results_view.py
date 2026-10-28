@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QFileDialog
 
 from .. import meshing, units
 from ..expressions import UNITS
+from ..plots import MAP_KINDS, VECTOR_KINDS
 from ..results.field import FieldResults
 from .panels.common import model_box, pretty_point
 
@@ -161,14 +162,15 @@ class ResultsMixin:
     def _show_field_plot(self, pdef):
         """Plots of field results: against time or the swept variable, or along a line."""
         from ..results.field import draw
-        if pdef.kind in ("line", "section"):  # evaluated point by point by the drawer itself
+        if pdef.kind == "line" or pdef.kind in MAP_KINDS:  # evaluated point by point by the drawer itself
             self.show_line_scene()
             try:
                 QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
                 self.plot.show_results(self.results, self.project, pdef, None, drawer=draw)
             except Exception as exc:
                 where = "along the line" if pdef.kind == "line" else "on the cross-section"
-                self.plot.show_message(f"Cannot plot '{pdef.quantity}' {where}:\n{exc}")
+                what = " ".join(pdef.vector) if pdef.kind in VECTOR_KINDS else pdef.quantity
+                self.plot.show_message(f"Cannot plot '{what}' {where}:\n{exc}")
             finally:
                 QApplication.restoreOverrideCursor()
             self._refresh_plot_panel()
@@ -521,7 +523,7 @@ class ResultsMixin:
         if not path.lower().endswith(".csv"):
             path += ".csv"
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        from ..results.field import save_line_table, save_section_table
+        from ..results.field import save_line_table, save_section_table, save_vector_table
         try:
             if pdef.kind in ("spectrum", "conductance"):
                 from ..physics.solid.spectra import save_table
@@ -532,6 +534,8 @@ class ResultsMixin:
                 save_line_table(self.results, self.results_project, pdef, Path(path))
             elif field and pdef.kind == "section":
                 save_section_table(self.results, self.results_project, pdef, Path(path))
+            elif field and pdef.kind in VECTOR_KINDS:
+                save_vector_table(self.results, self.results_project, pdef, Path(path))
             else:
                 if self.results.values(pdef.quantity) is None and field:
                     self.results.compute(self.results_project, pdef.quantity)

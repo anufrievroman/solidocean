@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from ...plots import PlotStyle, ResultPlot
 
-PLOT_KINDS = ("field", "section", "time", "quantity", "line")
-PLOT_TITLES = {"field": "Field", "section": "Cross-section", "time": "Time plot", "quantity": "Sweep plot",
+PLOT_KINDS = ("field", "section", "quiver", "stream", "time", "quantity", "line")
+PLOT_TITLES = {"field": "Field", "section": "Cross-section", "quiver": "Heat flux arrows",
+               "stream": "Heat flux streamlines", "time": "Time plot", "quantity": "Sweep plot",
                "line": "Profile along line"}
 
 

@@ -5,10 +5,11 @@ from __future__ import annotations
 from ...plots import PlotStyle, ResultPlot
 
 PLOT_KINDS = ("dispersion", "colored", "quantity", "kmap", "surfaces", "spectrum", "conductance", "field",
-              "section", "line")
+              "section", "quiver", "stream", "line")
 PLOT_TITLES = {"dispersion": "Dispersion", "colored": "Dispersion (colored)", "quantity": "Quantity vs sweep",
                "kmap": "Band map", "surfaces": "Band surfaces", "spectrum": "Spectrum", "conductance": "Conductance", "field": "Displacement field",
-               "section": "Cross-section", "line": "Profile along line"}
+               "section": "Cross-section", "quiver": "Displacement arrows",
+               "stream": "Displacement streamlines", "line": "Profile along line"}
 
 
 def field_plot(name: str = "") -> ResultPlot:

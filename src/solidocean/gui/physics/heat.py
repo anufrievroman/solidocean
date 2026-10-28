@@ -18,6 +18,10 @@ PLOT_HELP = {
                 "the final or a chosen time. Click a point to see the field.",
     "line": "A cross-section: the quantity along a straight line from a start to an end point, at one time step. "
             "Gaps mark holes or points outside the structure.",
+    "quiver": "A vector quantity, by default the heat flux, as arrows on a plane through the structure: the part "
+              "of the vector lying in the plane. Set the number and size of the arrows in Style.",
+    "stream": "The in-plane part of a vector quantity, by default the heat flux, as streamlines on a plane through "
+              "the structure.",
 }
 
 

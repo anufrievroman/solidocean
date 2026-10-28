@@ -54,6 +54,7 @@ class SolidSpec(PhysicsSpec):
     settings_class = SolidPhysics
     plot_kinds = plots.PLOT_KINDS
     plot_titles = plots.PLOT_TITLES
+    vector = ("ux", "uy", "uz")
     field_names = solid_fields.FIELD_NAMES
     scalar_names = ("freq", "omega", "kx", "ky", "kz", "k", "mode")
     problem_types = PROBLEM_TYPES
@@ -131,6 +132,8 @@ class SolidSpec(PhysicsSpec):
             return self.probe_plot(project, kind, box, "uz", "viridis")
         if kind == "section":
             return self.probe_plot(project, kind, box, "", "viridis")
+        if kind in ("quiver", "stream"):
+            return self.probe_plot(project, kind, box, "", "viridis")
         if project.solid.problem.harmonic:
             return ResultPlot(title, "max(abs(uz))", kind="quantity", y_label="Largest amplitude of uz (m)",
                               style=PlotStyle(x_log=False, y_log=True))
@@ -153,8 +156,8 @@ class SolidSpec(PhysicsSpec):
         elif st.coherent and plot.kind in ("dispersion", "colored"):
             return "Coherent heat conduction samples the zone on a mesh, not along a path: map a band over " \
                    "the zone, or choose an eigenfrequency problem for a dispersion."
-        elif plot.kind in ("line", "section"):
-            return "Line and cross-section plots need a stationary or frequency-domain problem (Problem → Problem type)."
+        elif plot.kind in ("line", "section", "quiver", "stream"):
+            return "Line, cross-section and vector plots need a stationary or frequency-domain problem (Problem → Problem type)."
         return ""
 
     def templates(self) -> dict:

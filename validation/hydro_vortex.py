@@ -12,12 +12,17 @@ ABOUT = r"""
 Steady hydrodynamic phonon transport, the Guyer-Krumhansl equation for the heat flux $\mathbf q$ with the viscous
 length $\ell$ [1, 2],
 $$\mathbf q + k\nabla T = \ell^2\left[\nabla^2\mathbf q + 2\nabla(\nabla\cdot\mathbf q)\right],\qquad \nabla\cdot\mathbf q = 0,$$
-in a ribbon $0 < y < w$ (no slip, $\mathbf q = 0$ at the walls) between a source and a drain: heat $I$ per unit
-thickness enters through a Gaussian contact of width $\sigma$ on the wall $y = 0$ and leaves through the same contact
-on the opposite wall, as in Fig. 1c of [2]. The viscosity of the phonon gas then makes the heat flow in two
-counter-rotating vortices on either side of the direct flow, running backwards (from the cold to the hot side of the
-contacts) when $\chi = w^2/\ell^2$ is below about 10; at larger $\chi$ the transport is diffusive (Fourier's law)
-and the vortices vanish. The reference is the exact solution of the infinite strip, as in [2]. With the stream
+in a ribbon $0 < y < w$ (no slip along the walls, $\mathbf q = 0$ on them outside the contacts) between a source and
+a drain: heat $I$ per unit thickness enters through a contact on the wall $y = 0$ and leaves through the same contact
+on the opposite wall. This is the setup of Fig. 1c of [2], where the contact is a point source, $I(x) = I\delta(x)$;
+here it is a Gaussian of width $\sigma$, its smoothed version (see below). The viscosity of the phonon gas then makes
+the heat flow in two counter-rotating vortices on either side of the direct flow, running backwards (from the cold to
+the hot side of the contacts) when $\chi = w^2/\ell^2$ is small. The paper shows them at $\chi = 0.5$ and none at
+$\chi = 2\times10^4$, where the transport is diffusive (Fourier's law, reached for $\chi \to \infty$) [2]. For the
+contact below, the exact solution gives a backflow of 2.2 % of the direct flow on the middle line at $\chi = 0.5$,
+0.7 % at $\chi = 10$ and 0.1 % at $\chi = 20$, and none beyond $\chi \approx 30$. The reference is the exact
+solution of the infinite strip, that of the supplement of [2] (whose printed formula has the opposite overall sign,
+contradicting its own boundary condition); the formulas below are an equivalent form of it. With the stream
 function $\mathbf q = (-\partial_y\psi, \partial_x\psi)$ the curl of the equation gives
 $\nabla^2(\nabla^2 - \ell^{-2})\psi = 0$, so each Fourier mode $e^{i\xi x}$ of $\psi$, even about the middle of the strip
 ($s = y - w/2$), is
