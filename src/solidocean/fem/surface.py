@@ -243,6 +243,50 @@ def select(points, tris, faces, tol: float, box=None, within=None) -> np.ndarray
     return mask
 
 
+def boundary_edges(tris: np.ndarray, order: int) -> np.ndarray:
+    """Unique edges (K, 2|3) of boundary triangles (vertices, then the mid-edge node of order 2)."""
+    nt = tris.shape[1]
+    pairs = [(0, 1, 3), (1, 2, 4), (2, 0, 5)] if nt == 6 else [(0, 1), (1, 2), (2, 0)]
+    edges = np.vstack([tris[:, list(pair)] for pair in pairs])
+    _, idx = np.unique(np.sort(edges[:, :2], axis=1), axis=0, return_index=True)
+    return edges[idx]
+
+
+def edges_on_segment(points: np.ndarray, edges: np.ndarray, a, b, tol: float) -> np.ndarray:
+    """Boolean mask of the edges whose nodes all lie within `tol` of the segment from a to b."""
+    a, b = np.asarray(a, dtype=float), np.asarray(b, dtype=float)
+    d = b - a
+    length2 = float(d @ d)
+    if length2 == 0:
+        return np.zeros(len(edges), dtype=bool)
+    X = points[edges] - a                                       # (K, nn, 3)
+    t = np.clip(X @ d / length2, 0.0, 1.0)
+    dist = np.linalg.norm(X - t[..., None] * d, axis=2)
+    return np.all(dist < tol, axis=1)
+
+
+def edge_terms(points, edges, order, n_nodes: int | None = None) -> np.ndarray:
+    """Vector int N_a dl over line elements (K, 2|3) (vertices, then the mid-edge node)."""
+    n = n_nodes or len(points)
+    out = np.zeros(n)
+    if len(edges) == 0:
+        return out
+    s, w = np.polynomial.legendre.leggauss(3)
+    s, w = (s + 1) / 2, w / 2
+    X = points[edges]
+    fe = np.zeros(edges.shape)
+    for sq, wq in zip(s, w):
+        if edges.shape[1] == 3:
+            N = np.array([(1 - sq) * (1 - 2 * sq), sq * (2 * sq - 1), 4 * sq * (1 - sq)])
+            dN = np.array([-3 + 4 * sq, 4 * sq - 1, 4 - 8 * sq])
+        else:
+            N, dN = np.array([1 - sq, sq]), np.array([-1.0, 1.0])
+        jac = np.linalg.norm(np.einsum("kai,a->ki", X, dN), axis=1)
+        fe += wq * jac[:, None] * N[None]
+    np.add.at(out, edges, fe)
+    return out
+
+
 def normal_terms(points, tris, owner_cells, order, n_nodes: int | None = None) -> np.ndarray:
     """(n_nodes, 3) integrals int N_a n dA over triangles with the outward unit normal n (pointing away from
     the tetrahedron each triangle belongs to, `owner_cells` (F, 4+) node indices). A pressure p gives the

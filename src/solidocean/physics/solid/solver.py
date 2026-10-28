@@ -16,6 +16,7 @@ from ...expressions import Evaluator
 from ...fem import assembly, bloch, eigen, surface
 from ...geometry import evaluate_features
 from ..base import Cancelled, LogFn, ProgressFn  # noqa: F401  (Cancelled: raised by the problems)
+from .model import NOT_CONSTRAINTS
 
 
 @dataclass
@@ -60,7 +61,8 @@ class Solver:
     def _constraint_key(self, ev: Evaluator):
         """Changes when the constrained DOFs change (not their prescribed values)."""
         ph = self.project.solid
-        held = [(c.type, selection.key(c, ev), c.free_components()) for c in ph.active_conditions if c.type != "load"]
+        held = [(c.type, selection.key(c, ev), c.free_components()) for c in ph.active_conditions
+                if c.type not in NOT_CONSTRAINTS]
         return repr((tuple(ph.symmetry), tuple(ph.antisymmetry), held))
 
     def _material_key(self, ev: Evaluator):
@@ -141,7 +143,7 @@ class Solver:
         held = np.zeros((mesh.n_nodes, 3), dtype=bool)
         vals = np.zeros((mesh.n_nodes, 3))
         for c in self.project.solid.active_conditions:
-            if c.type == "load":
+            if c.type in NOT_CONSTRAINTS:
                 continue
             nodes = np.unique(boundary.tris[self._selected(mesh, boundary, c, ev)])
             for comp, free in enumerate(c.free_components()):
@@ -157,6 +159,12 @@ class Solver:
         mesh, b = m.mesh, m.boundary
         f = np.zeros((mesh.n_nodes, 3))
         for c in self.project.solid.active_conditions:
+            if c.type == "edge_load":
+                f += self._edge_load(m, c, ev)
+                continue
+            if c.type == "point_load":
+                f += self._point_load(m, c, ev)
+                continue
             if c.type != "load":
                 continue
             idx = self._selected(mesh, b, c, ev)
@@ -174,6 +182,67 @@ class Solver:
                 vec = vec / area
             f += w[:, None] * vec[None, :]
         return f
+
+    def _edge_load(self, m: Model, c, ev: Evaluator) -> np.ndarray:
+        """(N, 3) nodal forces of an edge load: the boundary-triangle edges lying on the segment start -> end
+        carry the force per length (N/m), or the total force (N) spread over their length."""
+        mesh, b = m.mesh, m.boundary
+        f = np.zeros((mesh.n_nodes, 3))
+        edges = surface.boundary_edges(b.tris, mesh.order)
+        on = surface.edges_on_segment(mesh.points, edges, ev.vector(c.start), ev.vector(c.end),
+                                      selection.tolerance(mesh))
+        if not on.any():
+            self.log(f"Warning: edge load '{c.name or c.type}' lies on no boundary edges of the mesh")
+            return f
+        w = surface.edge_terms(mesh.points, edges[on], mesh.order, mesh.n_nodes)
+        vec = ev.vector(c.load)
+        if c.load_type == "total":
+            vec = vec / w.sum()
+        return w[:, None] * vec[None, :]
+
+    def _point_load(self, m: Model, c, ev: Evaluator) -> np.ndarray:
+        """(N, 3) nodal forces of a point load: the force acts on the mesh node nearest to the point."""
+        mesh = m.mesh
+        f = np.zeros((mesh.n_nodes, 3))
+        x = ev.vector(c.point)
+        dist = np.linalg.norm(mesh.points - x, axis=1)
+        node = int(np.argmin(dist))
+        lo, hi = mesh.bounds()
+        if dist[node] > 1e-3 * np.linalg.norm(hi - lo):
+            self.log(f"Warning: point load '{c.name or c.type}' is {dist[node]:.3g} m from the nearest mesh node; "
+                     f"it acts there (place the point on a vertex of the geometry)")
+        f[node] = ev.vector(c.load)
+        return f
+
+    def impedance_matrix(self, m: Model, ev: Evaluator):
+        """Real matrix D of the absorbing boundaries: the harmonic system gets + i omega D, with
+        D = sum over faces of int Z N_a N_b dA (times the identity on the components) and Z = rho (c_p + c_s) / 2
+        of the material behind each face. The speeds follow from the Christoffel matrix n.C.n of the element's
+        stiffness: c_p is the fastest wave along the face normal n, c_s the mean of the other two."""
+        import scipy.sparse as sp
+        mesh, b = m.mesh, m.boundary
+        n = mesh.n_nodes
+        D = sp.csr_matrix((n, n))
+        rho = np.array([mat.evaluate(self.project.material(name).props, ev)[1] for name in mesh.material_names])
+        for c in self.project.solid.active_conditions:
+            if c.type != "impedance":
+                continue
+            idx = self._selected(mesh, b, c, ev)
+            if len(idx) == 0:
+                continue
+            tris, owner = b.tris[idx], b.owner[idx]
+            nrm = surface.face_normals(mesh.points, tris)
+            C = m.cel[owner]                                    # (F, 6, 6) Voigt
+            # Christoffel matrix G_ik = n_j C_ijkl n_l, via the Voigt index of each pair (i, j)
+            voigt = np.array([[0, 5, 4], [5, 1, 3], [4, 3, 2]])
+            G = np.einsum("fj,fl,fijkl->fik", nrm, nrm,
+                          C[:, voigt[:, :, None, None], voigt[None, None, :, :]])
+            r = rho[mesh.cell_domain[owner]]
+            speeds = np.sqrt(np.maximum(np.linalg.eigvalsh(G), 0.0) / r[:, None])    # ascending
+            z = r * (speeds[:, 2] + speeds[:, :2].mean(axis=1)) / 2
+            coeff = z[:, None] * surface.surface_at_points(mesh.points, tris, mesh.order, np.ones(n))
+            D = D + surface.surface_terms(mesh.points, tris, mesh.order, coeff=coeff, n_nodes=n)[0]
+        return sp.kron(D, sp.identity(3), format="csr")
 
     def solve_static(self, ev: Evaluator) -> np.ndarray:
         """Stationary displacement (N, 3) in m: K u = f with the constraints and prescribed displacements;
@@ -206,12 +275,9 @@ class Solver:
                              "rotate). Hold it with fixed constraints, prescribed displacements or symmetry planes")
         return (T @ ur + g).reshape(n, 3)
 
-    def solve_harmonic(self, ev: Evaluator) -> np.ndarray:
-        """Complex displacement amplitude (N, 3) in m of the harmonic response at the problem's frequency:
-        (K (1 + i eta) + i omega (alpha M + beta K) - omega^2 M) u = f, with the loss factors eta and the
-        Rayleigh damping alpha M + beta K, the loads and prescribed displacements being the amplitudes of the
-        drive (u(t) = Re(u exp(i omega t)))."""
-        m = self.model(ev)
+    def harmonic_drive(self, m: Model, ev: Evaluator):
+        """(omega, alpha, beta, f, g) of a harmonic solve: the angular frequency, the Rayleigh coefficients, the
+        nodal forces (3N,) and the prescribed displacements of the nodes the constraints hold (3N,)."""
         cons, n = m.constraints, m.mesh.n_nodes
         held, vals = self._prescribed(m.mesh, m.boundary, ev)
         root_vals = np.zeros((n, 3))
@@ -220,11 +286,26 @@ class Solver:
         g = np.where(cons.dof_index[cons.root] < 0, root_vals[cons.root], 0.0).ravel()
         f = self.load_vector(m, ev).ravel()
         st = self.project.solid.problem
-        omega = 2 * np.pi * ev(st.frequency)
-        alpha, beta = ev(st.rayleigh_alpha), ev(st.rayleigh_beta)
+        return 2 * np.pi * ev(st.frequency), ev(st.rayleigh_alpha), ev(st.rayleigh_beta), f, g
+
+    def harmonic_matrix(self, m: Model, D, omega: float, alpha: float, beta: float):
+        """System matrix K (1 + i omega beta) + i K_loss - (omega^2 - i omega alpha) M + i omega D (full space)."""
         A = m.K * (1 + 1j * omega * beta) - (omega ** 2 - 1j * omega * alpha) * m.M
         if m.K_loss is not None:
             A = A + 1j * m.K_loss
+        if D.nnz:
+            A = A + 1j * omega * D
+        return A
+
+    def solve_harmonic(self, ev: Evaluator) -> np.ndarray:
+        """Complex displacement amplitude (N, 3) in m of the harmonic response at the problem's frequency:
+        (K (1 + i eta) + i omega (alpha M + beta K + D) - omega^2 M) u = f, with the loss factors eta, the
+        Rayleigh damping alpha M + beta K and the impedance of absorbing boundaries D, the loads and prescribed
+        displacements being the amplitudes of the drive (u(t) = Re(u exp(i omega t)))."""
+        m = self.model(ev)
+        cons, n = m.constraints, m.mesh.n_nodes
+        omega, alpha, beta, f, g = self.harmonic_drive(m, ev)
+        A = self.harmonic_matrix(m, self.impedance_matrix(m, ev), omega, alpha, beta)
         if cons.n_free == 0:
             return g.reshape(n, 3).astype(complex)
         T = cons.T().real.tocsr()
@@ -235,6 +316,13 @@ class Solver:
             raise ValueError("harmonic solve failed: the drive frequency is (numerically) an eigenfrequency of a "
                              "lossless model; add a loss factor (solid.problem.loss or a material's eta) or Rayleigh damping")
         return (T @ ur + g).reshape(n, 3)
+
+    def sweep_key(self, ev: Evaluator):
+        """What fixes the matrices of a harmonic solve: equal for two values of a sweep when only the frequency,
+        the Rayleigh coefficients and the drive (loads, prescribed displacements) differ between them."""
+        ph = self.project.solid
+        absorbing = [selection.key(c, ev) for c in ph.active_conditions if c.type == "impedance"]
+        return (self._geometry_key(ev), self._material_key(ev), self._constraint_key(ev), repr(absorbing))
 
     # ---- solving ---------------------------------------------------------
     def _sigma(self, ev: Evaluator):
