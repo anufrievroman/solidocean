@@ -66,13 +66,24 @@ def run(solver, quantities=()) -> StaticResults:
                         kind="frequency" if p.solid.problem.harmonic else "stationary")
     qvals = {q: np.full((len(outer_values), 1), np.nan) for q in quantities}
     quads = {}
+    reduced_u, reduced_info = None, None
+    st = p.solid.problem
+    if st.harmonic and st.sweep_method == "reduced" and sw:
+        from . import reduced
+        evs = [base.with_overrides({outer_name: val}) for val in outer_values]
+        out = reduced.sweep(solver, evs, st.reduced_tol, st.reduced_max_basis)
+        reduced_u, reduced_info = out if out else (None, None)
     for i, val in enumerate(outer_values):
         if solver.cancel.is_set():
             raise Cancelled()
         ev = base.with_overrides({outer_name: val}) if outer_name else base
         if outer_name:
             solver.log(f"{outer_name} = {val:.6g}")
-        u = solver.solve_harmonic(ev) if p.solid.problem.harmonic else solver.solve_static(ev)
+        if reduced_u is not None:
+            solver.model(ev)
+            u = reduced_u[i]
+        else:
+            u = solver.solve_harmonic(ev) if p.solid.problem.harmonic else solver.solve_static(ev)
         m = solver._model
         res.U.append(u)
         res.meshes[i], res.cels[i] = m.mesh, m.cel
@@ -90,6 +101,8 @@ def run(solver, quantities=()) -> StaticResults:
     res.info = {"project": p.name, "elapsed_s": round(time.perf_counter() - t_start, 2),
                 "n_dofs": int(solver._model.constraints.n_free) if solver._model else 0,
                 "outer_dim": list(outer_dim) if outer_dim else None}
+    if reduced_info:
+        res.info["reduced"] = reduced_info
     solver.log(f"Done in {res.info['elapsed_s']} s")
     return res
 

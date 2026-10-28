@@ -154,6 +154,9 @@ class SolidProblem:
     loss: Expr = "0"                 # frequency domain: loss factor of every material (added to its own `eta`)
     rayleigh_alpha: Expr = "0"       # frequency domain: Rayleigh damping C = alpha M + beta K (alpha in 1/s,
     rayleigh_beta: Expr = "0"        # beta in s), a damping ratio alpha / 2 omega + beta omega / 2 of every mode
+    sweep_method: str = "direct"     # frequency domain: direct (a solve per frequency) | reduced (reduced basis)
+    reduced_tol: float = 1e-6        # reduced sweep: largest relative residual accepted at any frequency
+    reduced_max_basis: int = 60      # reduced sweep: most exact solves (basis vectors) before solving directly
 
     def __post_init__(self):
         if isinstance(self.kpath, dict):
@@ -201,7 +204,9 @@ class SolidProblem:
         if self.harmonic:
             return without_defaults(self, {"type": self.type, "frequency": self.frequency, "loss": self.loss,
                                            "rayleigh_alpha": self.rayleigh_alpha,
-                                           "rayleigh_beta": self.rayleigh_beta},
+                                           "rayleigh_beta": self.rayleigh_beta, "sweep_method": self.sweep_method,
+                                           "reduced_tol": self.reduced_tol,
+                                           "reduced_max_basis": self.reduced_max_basis},
                                     keep=("type", "frequency"))
         d = without_defaults(self, {"type": self.type, "num_eigs": self.num_eigs, "search_freq": self.search_freq,
                                     "k": list(self.k), "tol": self.tol, "maxiter": self.maxiter},
@@ -263,6 +268,7 @@ class SolidPhysics:
 
 KPATH_MODES = ("path", "list")       # a path through named points, or exactly the listed wavevectors
 MAX_FOURIER_VECTORS = 2000           # reciprocal vectors the Fourier components may be asked for
+SWEEP_METHODS = ("direct", "reduced")   # a solve per frequency, or a reduced basis built from a few of them
 PROBLEM_TYPES = ("eigenfrequency", "stationary", "frequency", "conductance")
 PROBLEM_TITLES = {"eigenfrequency": "Eigenfrequency", "stationary": "Stationary", "frequency": "Frequency domain",
                   "conductance": "Coherent heat conduction"}
@@ -330,6 +336,12 @@ def validate_settings(project, ev, material_names) -> list[str]:
                 errors.append("solid.problem.frequency must be positive")
             if ev(st.loss) < 0:
                 errors.append("solid.problem.loss must not be negative")
+            if st.sweep_method not in SWEEP_METHODS:
+                errors.append(f"solid.problem.sweep_method must be one of {', '.join(SWEEP_METHODS)}")
+            if not 0 < st.reduced_tol < 1:
+                errors.append("solid.problem.reduced_tol must be between 0 and 1")
+            if st.reduced_max_basis < 4:
+                errors.append("solid.problem.reduced_max_basis must be at least 4")
             for name in ("rayleigh_alpha", "rayleigh_beta"):
                 if ev(getattr(st, name)) < 0:
                     errors.append(f"solid.problem.{name} must not be negative")

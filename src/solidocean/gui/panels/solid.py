@@ -521,6 +521,43 @@ class SolidProblemPanel(Panel):
             beta.setToolTip("Rayleigh damping C = αM + βK, stiffness-proportional part β (s): a damping ratio βω/2, "
                             "strongest at high frequencies")
             t.addRow("Rayleigh β (stiffness)", beta)
+            method = QComboBox()
+            method.addItem("Direct (a solve per frequency)", "direct")
+            method.addItem("Reduced basis (fast)", "reduced")
+            method.setCurrentIndex(max(0, method.findData(st.sweep_method)))
+            method.setToolTip("How a frequency sweep is solved. Reduced basis: exact solves at a few frequencies "
+                              "span a small space in which the other frequencies are solved almost instantly; "
+                              "frequencies it cannot reach within the tolerance are solved exactly. Needs a sweep "
+                              "of the frequency only (not of geometry or materials); otherwise every value is "
+                              "solved directly.")
+            tol = QLineEdit(f"{st.reduced_tol:g}")
+            tol.setToolTip("Largest relative residual |A u − b| / |b| accepted at any frequency of the sweep")
+            basis = QSpinBox()
+            basis.setRange(4, 1000)
+            basis.setValue(st.reduced_max_basis)
+            basis.setToolTip("Most exact solves; frequencies still above the tolerance are then solved directly")
+
+            def set_tol():
+                try:
+                    st.reduced_tol = float(tol.text())
+                except ValueError:
+                    tol.setText(f"{st.reduced_tol:g}")
+                self.win.mark_dirty()
+
+            def set_method(i):
+                st.sweep_method = method.itemData(i)
+                tol.setEnabled(st.sweep_method == "reduced")
+                basis.setEnabled(st.sweep_method == "reduced")
+                self.win.mark_dirty()
+
+            tol.editingFinished.connect(set_tol)
+            basis.valueChanged.connect(lambda v: (setattr(st, "reduced_max_basis", v), self.win.mark_dirty()))
+            method.currentIndexChanged.connect(set_method)
+            tol.setEnabled(st.sweep_method == "reduced")
+            basis.setEnabled(st.sweep_method == "reduced")
+            t.addRow("Sweep method", method)
+            t.addRow("Residual tolerance", tol)
+            t.addRow("Largest basis", basis)
         elif not st.field_problem:
             n = QSpinBox()
             n.setRange(1, 1000)

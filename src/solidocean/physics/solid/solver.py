@@ -275,12 +275,9 @@ class Solver:
                              "rotate). Hold it with fixed constraints, prescribed displacements or symmetry planes")
         return (T @ ur + g).reshape(n, 3)
 
-    def solve_harmonic(self, ev: Evaluator) -> np.ndarray:
-        """Complex displacement amplitude (N, 3) in m of the harmonic response at the problem's frequency:
-        (K (1 + i eta) + i omega (alpha M + beta K + D) - omega^2 M) u = f, with the loss factors eta, the
-        Rayleigh damping alpha M + beta K and the impedance of absorbing boundaries D, the loads and prescribed displacements being the amplitudes of the
-        drive (u(t) = Re(u exp(i omega t)))."""
-        m = self.model(ev)
+    def harmonic_drive(self, m: Model, ev: Evaluator):
+        """(omega, alpha, beta, f, g) of a harmonic solve: the angular frequency, the Rayleigh coefficients, the
+        nodal forces (3N,) and the prescribed displacements of the nodes the constraints hold (3N,)."""
         cons, n = m.constraints, m.mesh.n_nodes
         held, vals = self._prescribed(m.mesh, m.boundary, ev)
         root_vals = np.zeros((n, 3))
@@ -289,14 +286,26 @@ class Solver:
         g = np.where(cons.dof_index[cons.root] < 0, root_vals[cons.root], 0.0).ravel()
         f = self.load_vector(m, ev).ravel()
         st = self.project.solid.problem
-        omega = 2 * np.pi * ev(st.frequency)
-        alpha, beta = ev(st.rayleigh_alpha), ev(st.rayleigh_beta)
+        return 2 * np.pi * ev(st.frequency), ev(st.rayleigh_alpha), ev(st.rayleigh_beta), f, g
+
+    def harmonic_matrix(self, m: Model, D, omega: float, alpha: float, beta: float):
+        """System matrix K (1 + i omega beta) + i K_loss - (omega^2 - i omega alpha) M + i omega D (full space)."""
         A = m.K * (1 + 1j * omega * beta) - (omega ** 2 - 1j * omega * alpha) * m.M
         if m.K_loss is not None:
             A = A + 1j * m.K_loss
-        D = self.impedance_matrix(m, ev)
         if D.nnz:
             A = A + 1j * omega * D
+        return A
+
+    def solve_harmonic(self, ev: Evaluator) -> np.ndarray:
+        """Complex displacement amplitude (N, 3) in m of the harmonic response at the problem's frequency:
+        (K (1 + i eta) + i omega (alpha M + beta K + D) - omega^2 M) u = f, with the loss factors eta, the
+        Rayleigh damping alpha M + beta K and the impedance of absorbing boundaries D, the loads and prescribed
+        displacements being the amplitudes of the drive (u(t) = Re(u exp(i omega t)))."""
+        m = self.model(ev)
+        cons, n = m.constraints, m.mesh.n_nodes
+        omega, alpha, beta, f, g = self.harmonic_drive(m, ev)
+        A = self.harmonic_matrix(m, self.impedance_matrix(m, ev), omega, alpha, beta)
         if cons.n_free == 0:
             return g.reshape(n, 3).astype(complex)
         T = cons.T().real.tocsr()
@@ -307,6 +316,13 @@ class Solver:
             raise ValueError("harmonic solve failed: the drive frequency is (numerically) an eigenfrequency of a "
                              "lossless model; add a loss factor (solid.problem.loss or a material's eta) or Rayleigh damping")
         return (T @ ur + g).reshape(n, 3)
+
+    def sweep_key(self, ev: Evaluator):
+        """What fixes the matrices of a harmonic solve: equal for two values of a sweep when only the frequency,
+        the Rayleigh coefficients and the drive (loads, prescribed displacements) differ between them."""
+        ph = self.project.solid
+        absorbing = [selection.key(c, ev) for c in ph.active_conditions if c.type == "impedance"]
+        return (self._geometry_key(ev), self._material_key(ev), self._constraint_key(ev), repr(absorbing))
 
     # ---- solving ---------------------------------------------------------
     def _sigma(self, ev: Evaluator):
