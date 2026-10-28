@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 
 from ... import units
 from .. import theme
-from ...physics.solid.model import (LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_TITLES, Fourier, KMesh,
+from ...physics.solid.model import (EDGE_LOAD_TYPES, LINE_POINT_LOADS, LOAD_TYPES, SOLID_CONDITION_TITLES, PROBLEM_TITLES, Fourier, KMesh,
                                     KPath, SolidCondition)
 from ...project import AXES, Feature
 from ...selection import FACES, selection_text
@@ -38,7 +38,9 @@ def physics_summary(project) -> dict[str, str]:
 
 
 def solid_condition_label(c) -> str:
-    return bypassed_label(c, f"{c.name or SOLID_CONDITION_TITLES.get(c.type, c.type)} ({selection_text(c)})")
+    where = {"edge_load": f"{', '.join(c.start)} → {', '.join(c.end)}",
+             "point_load": ", ".join(c.point)}.get(c.type) or selection_text(c)
+    return bypassed_label(c, f"{c.name or SOLID_CONDITION_TITLES.get(c.type, c.type)} ({where})")
 
 
 class SolidPanel(Panel):
@@ -1050,7 +1052,7 @@ class DisplacementPanel(Panel):
 
 # ---------------------------------------------------------------------------
 # Solid mechanics conditions
-LOAD_TITLES = {"area": "Force per area", "total": "Total force", "pressure": "Pressure"}
+LOAD_TITLES = {"area": "Force per area", "total": "Total force", "pressure": "Pressure", "length": "Force per length"}
 
 
 SOLID_HELP = {
@@ -1058,6 +1060,11 @@ SOLID_HELP = {
     "displacement": "The selected faces are moved by a given amount; an empty component is left free.",
     "load": "Force on the selected faces. Stationary and frequency-domain problems only — an eigenfrequency "
             "problem has no loads.",
+    "edge_load": "Force along a line on the surface, given by the segment it lies on: the boundary edges of "
+                 "the mesh on that segment carry it. Stationary and frequency-domain problems only.",
+    "point_load": "A force at a point, applied at the mesh node nearest to it (put the point on a vertex of the "
+                  "geometry). Stationary and frequency-domain problems only; the displacement under a point force "
+                  "grows without bound as the mesh is refined.",
     "impedance": "First-order absorbing boundary: waves leave through the selected faces with little "
                  "reflection, as at the far end of a long structure. Frequency-domain problems only.",
 }
@@ -1082,6 +1089,18 @@ SOLID_FORMALISM = {
         ("t = −p n", "A pressure p on the surface, pushing against its outward normal n (negative = suction)."),
         "Implementation: ∫ v·t dS over the selected boundary triangles, added to the right-hand side. Loads "
         "from several conditions on the same face add up.",
+    ),
+    "edge_load": equations(
+        ("t = F / L", "Force per length (N/m) along the line, or a total force (N) spread over the length the "
+         "line covers."),
+        "Implementation: ∫ N<sub>a</sub> t dl over the boundary-triangle edges that lie on the segment from start "
+        "to end (within a mesh tolerance), added to the right-hand side.",
+    ),
+    "point_load": equations(
+        ("f = F at x<sub>0</sub>", "A force F (N) at the point x<sub>0</sub>."),
+        "Implementation: F is added to the right-hand side at the mesh node nearest to x<sub>0</sub>. A point "
+        "force in an elastic continuum has an infinite local displacement: results next to the node depend on "
+        "the mesh, those at a distance of a few elements do not.",
     ),
     "impedance": equations(
         ("t = −iω Z u,  Z = ρ (c<sub>p</sub> + c<sub>s</sub>) / 2", "The traction on the selected faces "
@@ -1140,6 +1159,28 @@ class SolidConditionPanel(Panel):
                     f.addRow(f"F{axis} ({unit})", ExprEdit(self.win, lambda i=i: c.load[i], setter))
             if not self.p.solid.problem.field_problem:
                 f.addRow(muted_label("Loads act in stationary and frequency-domain problems only (Problem → Problem type)."))
+        elif c.type in LINE_POINT_LOADS:
+            if c.type == "edge_load":
+                f.addRow("Start (m)", VectorEdit(self.win, c.start, on_change=self.win.physics_changed))
+                f.addRow("End (m)", VectorEdit(self.win, c.end, on_change=self.win.physics_changed))
+                typ = QComboBox()
+                for key in EDGE_LOAD_TYPES:
+                    typ.addItem(LOAD_TITLES[key], key)
+                typ.setCurrentIndex(max(0, typ.findData(c.load_type)))
+                typ.currentIndexChanged.connect(lambda i: (setattr(c, "load_type", typ.itemData(i)),
+                                                           self.win.physics_changed(), self._refresh()))
+                f.addRow("Load type", typ)
+                unit = "N" if c.load_type == "total" else "N/m"
+            else:
+                f.addRow("Point (m)", VectorEdit(self.win, c.point, on_change=self.win.physics_changed))
+                unit = "N"
+            for i, axis in enumerate(AXES):
+                def setter(t, i=i):
+                    c.load[i] = t or "0"
+                f.addRow(f"F{axis} ({unit})", ExprEdit(self.win, lambda i=i: c.load[i], setter))
+            if not self.p.solid.problem.field_problem:
+                f.addRow(muted_label("Loads act in stationary and frequency-domain problems only (Problem → Problem type)."))
+            return
         elif c.type == "impedance":
             f.addRow(muted_label("No parameters: Z follows from the material of the selected faces."))
             if not self.p.solid.problem.harmonic:
@@ -1155,6 +1196,8 @@ def add_condition(win, typ: str):
     c = SolidCondition(typ, faces=[])
     if typ == "load":
         c.load_type, c.pressure = "pressure", "1[MPa]"
+    elif typ == "edge_load":
+        c.load_type = "length"
     win.project.solid.conditions.append(c)
     win.mark_dirty()
     win.rebuild_tree(("solid_cond", len(win.project.solid.conditions) - 1))

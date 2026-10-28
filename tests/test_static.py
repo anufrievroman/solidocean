@@ -213,3 +213,58 @@ def test_bypassed_conditions_are_not_applied():
     r = solve(p, ["mean(sxx)"])
     assert r.quantities["mean(sxx)"][0, 0] == pytest.approx(2e6, rel=1e-9)
     assert Project.from_dict(p.to_dict()).solid == p.solid
+
+
+def _midspan_ux(p):
+    res = solve(p)
+    pts, u = res.meshes[0].points, res.U[0]
+    return u[np.abs(pts[:, 0] - 1e-6) < 1e-9, 0].mean()
+
+
+@pytest.mark.parametrize("load", [
+    [SolidCondition("edge_load", name="rim", start=["L", "0", "0"], end=["L", "w", "0"], load_type="total",
+                    load=["F/4", "0", "0"]),
+     SolidCondition("edge_load", start=["L", "w", "0"], end=["L", "w", "w"], load_type="length",
+                    load=["F/4/w", "0", "0"]),
+     SolidCondition("edge_load", start=["L", "w", "w"], end=["L", "0", "w"], load_type="total",
+                    load=["F/4", "0", "0"]),
+     SolidCondition("edge_load", start=["L", "0", "w"], end=["L", "0", "0"], load_type="length",
+                    load=["F/4/w", "0", "0"])],
+    [SolidCondition("point_load", point=["L", "0", "0"], load=["F", "0", "0"])]])
+def test_edge_and_point_loads_pull_a_bar(load):
+    """A force F spread over the four edges of the end face, or at one corner, gives the uniform stretch
+    u = F x / (E A) at a distance from the end (Saint-Venant); the nodal forces add up to F."""
+    F = 1e-3
+    p = bar([SolidCondition("fixed", ["xmin"])] + load, symmetry=())
+    p.variables["F"] = f"{F:g}[N]"
+    assert p.validate() == []
+    s = Solver(p, log=lambda m: None)
+    forces = s.load_vector(s.model(p.evaluator()), p.evaluator())
+    np.testing.assert_allclose(forces.sum(axis=0), [F, 0, 0], atol=1e-12 * F)
+    np.testing.assert_allclose(_midspan_ux(p), F * 1e-6 / (E * (0.5e-6) ** 2), rtol=0.08)
+
+
+def test_edge_load_only_loads_the_nodes_on_its_segment():
+    p = bar([SolidCondition("fixed", ["xmin"]),
+             SolidCondition("edge_load", start=["L", "0", "0"], end=["L", "w", "0"], load=["0", "0", "-1[N/m]"])],
+            symmetry=())
+    s = Solver(p, log=lambda m: None)
+    m = s.model(p.evaluator())
+    f = s.load_vector(m, p.evaluator())
+    loaded = np.abs(f).sum(axis=1) > 0
+    pts = m.mesh.points
+    assert loaded.sum() >= 3
+    assert np.allclose(pts[loaded][:, 0], 2e-6) and np.allclose(pts[loaded][:, 2], 0)
+    np.testing.assert_allclose(f[:, 2].sum(), -0.5e-6, rtol=1e-12)         # 1 N/m over the 0.5 um edge
+
+
+def test_edge_and_point_load_validation_and_roundtrip():
+    p = bar([SolidCondition("edge_load", start=["0", "0", "0"], end=["0", "0", "0"]),
+             SolidCondition("point_load", point=["0", "0"], load=["0", "0", "0"])], symmetry=())
+    errors = p.validate()
+    assert any("same point" in e for e in errors) and any("point needs 3" in e for e in errors)
+    c = SolidCondition("edge_load", start=["0", "0", "0"], end=["L", "0", "0"], load=["1", "0", "0"])
+    assert c.load_type == "length"
+    assert SolidPhysics.from_dict(SolidPhysics(conditions=[c]).to_dict()).conditions[0] == c
+    d = SolidCondition("point_load", point=["L", "0", "0"], load=["F", "0", "0"])
+    assert SolidPhysics.from_dict(SolidPhysics(conditions=[d]).to_dict()).conditions[0] == d

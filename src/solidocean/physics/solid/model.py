@@ -10,10 +10,13 @@ from ...tomlio import bypassed, label, table, without_defaults
 
 Expr = str | float | int
 
-SOLID_CONDITION_TYPES = ("fixed", "displacement", "load", "impedance")
+SOLID_CONDITION_TYPES = ("fixed", "displacement", "load", "impedance", "edge_load", "point_load")
 SOLID_CONDITION_TITLES = {"fixed": "Fixed constraint", "displacement": "Prescribed displacement",
-                          "load": "Boundary load", "impedance": "Absorbing boundary"}
-NOT_CONSTRAINTS = ("load", "impedance")   # conditions that hold no displacement component
+                          "load": "Boundary load", "impedance": "Absorbing boundary",
+                          "edge_load": "Edge load", "point_load": "Point load"}
+LINE_POINT_LOADS = ("edge_load", "point_load")   # located by coordinates, not by a selection of faces
+NOT_CONSTRAINTS = ("load", "impedance", "edge_load", "point_load")   # conditions that hold no displacement component
+EDGE_LOAD_TYPES = ("length", "total")        # force per length (N/m), total force (N) along the edges
 LOAD_TYPES = ("area", "total", "pressure")   # force per area (Pa), total force (N), pressure (Pa, along -n)
 
 
@@ -22,20 +25,37 @@ class SolidCondition:
     """Boundary condition on a selection of boundary faces (bounding-box faces or all faces of the model or
     of one object, optionally only inside a box): fixed constraint, prescribed displacement (per component;
     an empty component is free), boundary load (stationary and frequency-domain problems) or absorbing
-    (impedance) boundary, which lets waves leave through the faces (frequency-domain problems only)."""
+    (impedance) boundary, which lets waves leave through the faces (frequency-domain problems only). An edge
+    load acts along the boundary edges lying on a line segment (start to end), a point load at the mesh node
+    nearest to a point; neither takes faces."""
     type: str = "fixed"                # fixed | displacement | load | impedance
     faces: list[str] = field(default_factory=list)
     name: str = ""
     on: str = ""                       # "" = the whole model, else a feature or material name
     box: dict = field(default_factory=dict)
     displacement: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])   # "" = free component
-    load_type: str = "area"            # area | total | pressure
+    load_type: str = "area"            # area | total | pressure (edge load: length | total)
     load: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])           # Pa (area) or N (total)
+    start: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])   # edge load: the segment start -> end
+    end: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])
+    point: list[Expr] = field(default_factory=lambda: ["0", "0", "0"])   # point load: where the force acts
     pressure: Expr = "0[Pa]"           # pressure: acts against the outward normal (pushes on the surface)
     enabled: bool = True               # bypassed: kept in the file, but not applied
 
+    def __post_init__(self):
+        if self.type == "edge_load" and self.load_type == "area":    # not given: the default of an edge load
+            self.load_type = "length"
+
     def to_dict(self):
-        d = selection_to_dict(self, {"type": self.type, "name": self.name} if self.name else {"type": self.type})
+        head = {"type": self.type, "name": self.name} if self.name else {"type": self.type}
+        if self.type in LINE_POINT_LOADS:
+            if self.type == "edge_load":
+                head.update(start=list(self.start), end=list(self.end), load_type=self.load_type)
+            else:
+                head["point"] = list(self.point)
+            head["load"] = list(self.load)
+            return bypassed(self, head)
+        d = selection_to_dict(self, head)
         if self.type == "displacement":
             d["displacement"] = list(self.displacement)
         elif self.type == "load":
@@ -269,6 +289,9 @@ def validate_settings(project, ev, material_names) -> list[str]:
         if c.type not in SOLID_CONDITION_TYPES:
             errors.append(f"{where}: type must be one of {', '.join(SOLID_CONDITION_TYPES)}")
             continue
+        if c.type in LINE_POINT_LOADS:
+            errors += _check_line_point_load(where, c, ev)
+            continue
         errors += check_selection(where, c, ev, objects)
         if not c.on:
             for face in c.faces:
@@ -352,6 +375,28 @@ def validate_settings(project, ev, material_names) -> list[str]:
                     errors.append(f"solid.problem.kpath: point '{p}' not defined")
     errors += _check_kmesh(project, ev)
     errors += _check_fourier(project, ev)
+    return errors
+
+
+def _check_line_point_load(where: str, c, ev) -> list[str]:
+    """Problems with an edge load (segment, load type) or a point load (point) and its force vector."""
+    errors = []
+    try:
+        if len(ev.vector(c.load)) != 3:
+            errors.append(f"{where}: load needs 3 components")
+        if c.type == "point_load":
+            if len(ev.vector(c.point)) != 3:
+                errors.append(f"{where}: point needs 3 coordinates")
+        else:
+            if c.load_type not in EDGE_LOAD_TYPES:
+                errors.append(f"{where}: load_type must be one of {', '.join(EDGE_LOAD_TYPES)}")
+            start, end = ev.vector(c.start), ev.vector(c.end)
+            if len(start) != 3 or len(end) != 3:
+                errors.append(f"{where}: start and end need 3 coordinates")
+            elif (start == end).all():
+                errors.append(f"{where}: start and end are the same point")
+    except Exception as exc:
+        errors.append(f"{where}: {exc}")
     return errors
 
 

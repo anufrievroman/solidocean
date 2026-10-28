@@ -159,6 +159,12 @@ class Solver:
         mesh, b = m.mesh, m.boundary
         f = np.zeros((mesh.n_nodes, 3))
         for c in self.project.solid.active_conditions:
+            if c.type == "edge_load":
+                f += self._edge_load(m, c, ev)
+                continue
+            if c.type == "point_load":
+                f += self._point_load(m, c, ev)
+                continue
             if c.type != "load":
                 continue
             idx = self._selected(mesh, b, c, ev)
@@ -175,6 +181,37 @@ class Solver:
                     continue
                 vec = vec / area
             f += w[:, None] * vec[None, :]
+        return f
+
+    def _edge_load(self, m: Model, c, ev: Evaluator) -> np.ndarray:
+        """(N, 3) nodal forces of an edge load: the boundary-triangle edges lying on the segment start -> end
+        carry the force per length (N/m), or the total force (N) spread over their length."""
+        mesh, b = m.mesh, m.boundary
+        f = np.zeros((mesh.n_nodes, 3))
+        edges = surface.boundary_edges(b.tris, mesh.order)
+        on = surface.edges_on_segment(mesh.points, edges, ev.vector(c.start), ev.vector(c.end),
+                                      selection.tolerance(mesh))
+        if not on.any():
+            self.log(f"Warning: edge load '{c.name or c.type}' lies on no boundary edges of the mesh")
+            return f
+        w = surface.edge_terms(mesh.points, edges[on], mesh.order, mesh.n_nodes)
+        vec = ev.vector(c.load)
+        if c.load_type == "total":
+            vec = vec / w.sum()
+        return w[:, None] * vec[None, :]
+
+    def _point_load(self, m: Model, c, ev: Evaluator) -> np.ndarray:
+        """(N, 3) nodal forces of a point load: the force acts on the mesh node nearest to the point."""
+        mesh = m.mesh
+        f = np.zeros((mesh.n_nodes, 3))
+        x = ev.vector(c.point)
+        dist = np.linalg.norm(mesh.points - x, axis=1)
+        node = int(np.argmin(dist))
+        lo, hi = mesh.bounds()
+        if dist[node] > 1e-3 * np.linalg.norm(hi - lo):
+            self.log(f"Warning: point load '{c.name or c.type}' is {dist[node]:.3g} m from the nearest mesh node; "
+                     f"it acts there (place the point on a vertex of the geometry)")
+        f[node] = ev.vector(c.load)
         return f
 
     def impedance_matrix(self, m: Model, ev: Evaluator):
