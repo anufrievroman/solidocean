@@ -23,13 +23,14 @@ BACKGROUND = "#f4f5f7"
 BC_COLORS = {"periodic x": "#ff6347", "periodic y": "#2e8b57", "periodic z": "#4169e1",
              "periodic a1": "#ff6347", "periodic a2": "#2e8b57", "periodic a3": "#4169e1",
              "symmetry": "#9b59d0", "antisymmetry": "#e69a28", "fixed": "#3c3c3c",
-             "displacement": "#8c564b", "load": "#bcbd22",
+             "displacement": "#8c564b", "load": "#bcbd22", "impedance": "#2aa198",
              "temperature": "#d62728", "flux": "#c2189b", "convection": "#17becf",
              "radiation": "#ff7f0e"}
 BC_LEGEND = {"periodic x": "Periodic x", "periodic y": "Periodic y", "periodic z": "Periodic z",
              "periodic a1": "Periodic a1", "periodic a2": "Periodic a2", "periodic a3": "Periodic a3",
              "symmetry": "Symmetry", "antisymmetry": "Antisymmetry", "fixed": "Fixed",
              "displacement": "Prescribed displacement", "load": "Boundary load",
+             "impedance": "Absorbing boundary",
              "temperature": "Temperature", "flux": "Heat flux", "convection": "Convection",
              "radiation": "Radiation"}
 BC_BLEND = 0.6

@@ -111,3 +111,40 @@ def test_frequency_problem_input_and_checks(tmp_path):
     assert "rayleigh_beta must not be negative" in errors
     q.materials[0].props["eta"] = "foo"
     assert any("eta" in e for e in q.validate())
+
+
+def test_low_reflecting_boundary():
+    """Impedance iw Z u with Z = rho (c_p + c_s) / 2 on the far end of a driven bar: the wave is reflected with
+    r = (1 - z) / (1 + z), z = Z / (rho c_L) (zero for a matched Z; the mean of c_p and c_s is not matched to
+    a longitudinal wave), so u = u0 (e^{-ikx} + r e^{-2ikL} e^{ikx}) / (1 + r e^{-2ikL})."""
+    f, u0 = 1.3e9, 1e-9
+    p = bar([SolidCondition("displacement", ["xmin"], displacement=[f"{u0:g}[m]", "", ""]),
+             SolidCondition("impedance", ["xmax"])], f)
+    assert p.validate() == []
+    x, u = run(p)
+    k = 2 * np.pi * f / CL
+    cs = np.sqrt(E / (2 * (1 + NU)) / RHO)
+    r = (1 - (CL + cs) / 2 / CL) / (1 + (CL + cs) / 2 / CL)
+    q = r * np.exp(-2j * k * L)
+    exact = u0 * (np.exp(-1j * k * x) + q * np.exp(1j * k * x)) / (1 + q)
+    assert 0.1 < abs(r) < 0.15
+    np.testing.assert_allclose(u[:, 0], exact, atol=3e-3 * u0)
+
+
+def test_impedance_matrix_of_an_anisotropic_crystal():
+    """c_p and c_s come from the Christoffel matrix of the crystal along the face normal, and D sums to Z A on
+    each component: along [100] of a cubic crystal c_p^2 = C11 / rho, c_s^2 = C44 / rho; along [110]
+    c_p^2 = (C11 + C12 + 2 C44) / 2 rho and the two shears C44 / rho and (C11 - C12) / 2 rho (c_s: their mean)."""
+    rho, c11, c12, c44 = 2329.0, 165.7e9, 63.9e9, 79.6e9
+    s = lambda c: np.sqrt(c / rho)
+    for rotation, cp, cs in ((None, s(c11), s(c44)),
+                             (["0", "0", "45"], s((c11 + c12 + 2 * c44) / 2), (s(c44) + s((c11 - c12) / 2)) / 2)):
+        props = {"library": "Si"}
+        if rotation:
+            props["rotation_deg"] = rotation
+        p = bar([SolidCondition("impedance", ["xmax"])], 1e9)
+        p.materials = [Material("M", props)]
+        solver = Solver(p, log=lambda m: None)
+        ev = p.evaluator()
+        D = solver.impedance_matrix(solver.model(ev), ev)
+        np.testing.assert_allclose(D.sum() / 3, rho * (cp + cs) / 2 * W * W, rtol=1e-6)

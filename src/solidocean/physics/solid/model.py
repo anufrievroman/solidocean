@@ -10,9 +10,10 @@ from ...tomlio import bypassed, label, table, without_defaults
 
 Expr = str | float | int
 
-SOLID_CONDITION_TYPES = ("fixed", "displacement", "load")
+SOLID_CONDITION_TYPES = ("fixed", "displacement", "load", "impedance")
 SOLID_CONDITION_TITLES = {"fixed": "Fixed constraint", "displacement": "Prescribed displacement",
-                          "load": "Boundary load"}
+                          "load": "Boundary load", "impedance": "Absorbing boundary"}
+NOT_CONSTRAINTS = ("load", "impedance")   # conditions that hold no displacement component
 LOAD_TYPES = ("area", "total", "pressure")   # force per area (Pa), total force (N), pressure (Pa, along -n)
 
 
@@ -20,8 +21,9 @@ LOAD_TYPES = ("area", "total", "pressure")   # force per area (Pa), total force 
 class SolidCondition:
     """Boundary condition on a selection of boundary faces (bounding-box faces or all faces of the model or
     of one object, optionally only inside a box): fixed constraint, prescribed displacement (per component;
-    an empty component is free) or boundary load (stationary problems only)."""
-    type: str = "fixed"                # fixed | displacement | load
+    an empty component is free), boundary load (stationary and frequency-domain problems) or absorbing
+    (impedance) boundary, which lets waves leave through the faces (frequency-domain problems only)."""
+    type: str = "fixed"                # fixed | displacement | load | impedance
     faces: list[str] = field(default_factory=list)
     name: str = ""
     on: str = ""                       # "" = the whole model, else a feature or material name

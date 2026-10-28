@@ -1058,6 +1058,8 @@ SOLID_HELP = {
     "displacement": "The selected faces are moved by a given amount; an empty component is left free.",
     "load": "Force on the selected faces. Stationary and frequency-domain problems only — an eigenfrequency "
             "problem has no loads.",
+    "impedance": "First-order absorbing boundary: waves leave through the selected faces with little "
+                 "reflection, as at the far end of a long structure. Frequency-domain problems only.",
 }
 
 SOLID_FORMALISM = {
@@ -1080,6 +1082,16 @@ SOLID_FORMALISM = {
         ("t = −p n", "A pressure p on the surface, pushing against its outward normal n (negative = suction)."),
         "Implementation: ∫ v·t dS over the selected boundary triangles, added to the right-hand side. Loads "
         "from several conditions on the same face add up.",
+    ),
+    "impedance": equations(
+        ("t = −iω Z u,  Z = ρ (c<sub>p</sub> + c<sub>s</sub>) / 2", "The traction on the selected faces "
+         "is proportional to the particle velocity, as for a plane wave leaving the body: Z is the mean of the "
+         "longitudinal and shear impedances of the material behind the face. Waves arriving at any angle are "
+         "absorbed to a good approximation, those at normal incidence are reflected by (1 − z)/(1 + z) with "
+         "z = Z/ρc<sub>p</sub> (about 12 % in amplitude for ν = 0.25)."),
+        "Implementation: iω ∫ Z N<sub>a</sub> N<sub>b</sub> dS added to the system matrix of the frequency-domain "
+        "problem on every component. In an anisotropic crystal c<sub>p</sub> is the fastest wave along the "
+        "face normal and c<sub>s</sub> the mean of the two slower ones (Christoffel matrix n·C·n).",
     ),
 }
 
@@ -1127,7 +1139,11 @@ class SolidConditionPanel(Panel):
                         c.load[i] = t or "0"
                     f.addRow(f"F{axis} ({unit})", ExprEdit(self.win, lambda i=i: c.load[i], setter))
             if not self.p.solid.problem.field_problem:
-                f.addRow(muted_label("Loads act in stationary problems only (Problem → Problem type)."))
+                f.addRow(muted_label("Loads act in stationary and frequency-domain problems only (Problem → Problem type)."))
+        elif c.type == "impedance":
+            f.addRow(muted_label("No parameters: Z follows from the material of the selected faces."))
+            if not self.p.solid.problem.harmonic:
+                f.addRow(muted_label("Acts in frequency-domain problems only (Problem → Problem type)."))
         self.outer.addWidget(selection_box(self, c))
 
     def _refresh(self):
