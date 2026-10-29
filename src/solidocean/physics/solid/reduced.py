@@ -38,6 +38,10 @@ def sweep(solver, evs, tol: float, max_basis: int):
     cons, n = m.constraints, m.mesh.n_nodes
     if cons.n_free == 0:
         return None
+    if np.any(solver.k_of(evs[0])):
+        solver.log("Reduced sweep skipped: the model has a non-zero Bloch vector, whose complex "
+                   "reduction this path does not carry; solving every value directly")
+        return None
     T = cons.T().real.tocsr()
     D = solver.impedance_matrix(m, evs[0])
     Kc = m.K + 1j * m.K_loss if m.K_loss is not None else m.K.astype(complex)

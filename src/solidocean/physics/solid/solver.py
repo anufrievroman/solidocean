@@ -308,9 +308,14 @@ class Solver:
         A = self.harmonic_matrix(m, self.impedance_matrix(m, ev), omega, alpha, beta)
         if cons.n_free == 0:
             return g.reshape(n, 3).astype(complex)
-        T = cons.T().real.tocsr()
-        Ar = (T.T @ A @ T).tocsc()
-        rhs = T.T @ (f - A @ g)
+        # Bloch vector of a periodic model, as the eigenfrequency path does: T carries the phase
+        # e^{i k.R} and the reduction is Hermitian, T^H A T. At k = 0 the phases are 1, T is real
+        # and this is exactly the old T^T A T. A non-zero k makes the solve the response of the
+        # infinite periodic structure to a drive modulated by e^{i k.x} — one wavevector at a time.
+        T = cons.T(self.k_of(ev)).tocsr()
+        TH = T.conj().T.tocsr()
+        Ar = (TH @ A @ T).tocsc()
+        rhs = TH @ (f - A @ g)
         ur = eigen._factorize(Ar, self.project.problem.solver)(rhs)
         if not np.all(np.isfinite(ur)):
             raise ValueError("harmonic solve failed: the drive frequency is (numerically) an eigenfrequency of a "
